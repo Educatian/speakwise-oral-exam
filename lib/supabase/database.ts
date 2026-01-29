@@ -39,6 +39,7 @@ export async function getAllCourses(): Promise<Course[]> {
             password: course.password,
             prompt: course.prompt,
             createdAt: course.created_at ? new Date(course.created_at).getTime() : Date.now(),
+            ownerEmail: course.owner_email || '',
             submissions: (submissions || [])
                 .filter(s => s.course_id === course.id)
                 .map(s => ({
@@ -73,7 +74,8 @@ export async function addCourse(course: Course): Promise<void> {
             instructor_name: course.instructorName || 'Instructor',
             instructor_pin_hash: course.instructorPinHash || '',
             password: course.password,
-            prompt: course.prompt
+            prompt: course.prompt,
+            owner_email: course.ownerEmail || ''
         });
 
         if (error) throw error;
