@@ -226,10 +226,14 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                     realtimeInputConfig: {
                         automaticActivityDetection: {
                             disabled: false,
-                            startOfSpeechSensitivity: StartSensitivity.START_SENSITIVITY_LOW,
+                            // HIGH sensitivity = detect speech start faster (avoid missing beginning)
+                            startOfSpeechSensitivity: StartSensitivity.START_SENSITIVITY_HIGH,
+                            // LOW end sensitivity = wait longer before considering speech ended
                             endOfSpeechSensitivity: EndSensitivity.END_SENSITIVITY_LOW,
-                            prefixPaddingMs: 300,
-                            silenceDurationMs: 1200
+                            // Capture more audio before speech is detected (500ms buffer)
+                            prefixPaddingMs: 500,
+                            // Wait 1.5s of silence before ending turn
+                            silenceDurationMs: 1500
                         },
                         activityHandling: ActivityHandling.START_OF_ACTIVITY_INTERRUPTS
                     }
@@ -567,6 +571,31 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
 
     // End the current session
     const endSession = useCallback(() => {
+        // Flush any pending transcription buffers before cleanup
+        const now = Date.now();
+
+        // Save any pending user text
+        if (transcriptBufferRef.current.user.trim()) {
+            const userText = transcriptBufferRef.current.user.trim();
+            setTranscriptions(prev => [...prev, {
+                speaker: 'user',
+                text: userText,
+                timestamp: now
+            }]);
+            transcriptBufferRef.current.user = '';
+        }
+
+        // Save any pending interviewer text
+        if (transcriptBufferRef.current.interviewer.trim()) {
+            const aiText = transcriptBufferRef.current.interviewer.trim();
+            setTranscriptions(prev => [...prev, {
+                speaker: 'interviewer',
+                text: aiText,
+                timestamp: now
+            }]);
+            transcriptBufferRef.current.interviewer = '';
+        }
+
         // Calculate final metrics before cleanup
         setLatencyMetrics(calculateLatencyMetrics());
 
