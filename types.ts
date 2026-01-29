@@ -204,6 +204,7 @@ export interface Course {
   prompt: string;
   submissions: Submission[];
   createdAt?: number;          // Creation timestamp
+  ownerEmail?: string;         // Owner's email for visibility control
 }
 
 export interface InterviewSummary {

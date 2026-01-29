@@ -126,7 +126,8 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
             instructorName: instructorName.trim(),
             instructorPinHash: pinHash,
             password: coursePassword,
-            prompt: coursePrompt.trim()
+            prompt: coursePrompt.trim(),
+            ownerEmail: currentUserEmail // Set owner for visibility control
         });
 
         // Reset form
@@ -165,8 +166,13 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
         }
     };
 
-    // Get all submissions sorted by timestamp
-    const allSubmissions = courses
+    // Filter courses based on ownership (admin sees all, others see only their own)
+    const visibleCourses = isAdmin
+        ? courses
+        : courses.filter(c => c.ownerEmail?.toLowerCase() === currentUserEmail?.toLowerCase());
+
+    // Get all submissions sorted by timestamp (only from visible courses)
+    const allSubmissions = visibleCourses
         .flatMap(c => c.submissions.map(s => ({ ...s, courseName: c.name })))
         .sort((a, b) => b.timestamp - a.timestamp);
 
@@ -279,10 +285,10 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
                         </h3>
 
                         <div className="space-y-3">
-                            {courses.length === 0 ? (
+                            {visibleCourses.length === 0 ? (
                                 <p className="text-slate-600 text-xs italic">No courses created yet.</p>
                             ) : (
-                                courses.map(c => (
+                                visibleCourses.map(c => (
                                     <div
                                         key={c.id}
                                         className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex justify-between items-center group"
