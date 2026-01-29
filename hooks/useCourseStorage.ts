@@ -15,6 +15,7 @@ interface UseCourseStorageReturn {
     loading: boolean;
     error: string | null;
     addCourse: (courseData: Omit<Course, 'id' | 'submissions'>) => Promise<void>;
+    updateCourse: (courseId: string, updates: Partial<Course>) => Promise<void>;
     deleteCourse: (id: string) => Promise<void>;
     addSubmission: (courseId: string, submission: Submission) => Promise<void>;
     deleteSubmission: (courseId: string, submissionId: string) => Promise<void>;
@@ -121,6 +122,42 @@ export function useCourseStorage(): UseCourseStorageReturn {
         }
     }, []);
 
+    // Update a course
+    const updateCourse = useCallback(async (
+        courseId: string,
+        updates: Partial<Course>
+    ): Promise<void> => {
+        // Optimistic update
+        setCourses(prev => prev.map(c =>
+            c.id === courseId ? { ...c, ...updates } : c
+        ));
+
+        try {
+            if (isSupabaseConfigured()) {
+                // Map Course fields to Supabase columns
+                const supabaseUpdates: Record<string, unknown> = {};
+                if (updates.prompt !== undefined) supabaseUpdates.prompt = updates.prompt;
+                if (updates.name !== undefined) supabaseUpdates.name = updates.name;
+                if (updates.instructorName !== undefined) supabaseUpdates.instructor_name = updates.instructorName;
+                if (updates.password !== undefined) supabaseUpdates.password = updates.password;
+
+                const { error } = await (await import('../lib/supabase')).supabase
+                    .from('courses')
+                    .update(supabaseUpdates)
+                    .eq('id', courseId);
+
+                if (error) throw error;
+            }
+        } catch (e) {
+            console.error('Failed to update course:', e);
+            setError('Failed to update course. Please try again.');
+            // Revert by refetching
+            if (isSupabaseConfigured()) {
+                getAllCourses().then(setCourses);
+            }
+        }
+    }, []);
+
     // Add a submission to a course
     const addSubmission = useCallback(async (
         courseId: string,
@@ -181,6 +218,7 @@ export function useCourseStorage(): UseCourseStorageReturn {
         loading,
         error,
         addCourse,
+        updateCourse,
         deleteCourse,
         addSubmission,
         deleteSubmission

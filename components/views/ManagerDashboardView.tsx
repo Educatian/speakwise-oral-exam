@@ -11,6 +11,7 @@ import { ADMIN_EMAIL } from '../../types';
 interface ManagerDashboardViewProps {
     courses: Course[];
     onAddCourse: (course: Omit<Course, 'id' | 'submissions'>) => void;
+    onUpdateCourse?: (courseId: string, updates: Partial<Course>) => void;
     onDeleteCourse: (id: string) => void;
     onDeleteSubmission: (courseId: string, submissionId: string) => void;
     onSelectSubmission: (submission: Submission) => void;
@@ -26,6 +27,7 @@ interface ManagerDashboardViewProps {
 export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
     courses,
     onAddCourse,
+    onUpdateCourse,
     onDeleteCourse,
     onDeleteSubmission,
     onSelectSubmission,
@@ -46,6 +48,10 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
 
     // Modal state
     const [viewingCourse, setViewingCourse] = useState<Course | null>(null);
+
+    // Editing state for course prompt
+    const [isEditingPrompt, setIsEditingPrompt] = useState(false);
+    const [editedPrompt, setEditedPrompt] = useState('');
 
     // PIN verification state
     const [pinModalCourse, setPinModalCourse] = useState<Course | null>(null);
@@ -356,15 +362,15 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
                         </div>
 
                         <div className="p-6 flex-1 overflow-y-auto space-y-4 custom-scrollbar">
-                            {/* Admin access check */}
-                            {!isAdmin ? (
+                            {/* Check: Admin or course owner can see submissions */}
+                            {!isAdmin && visibleCourses.length === 0 ? (
                                 <div className="h-full flex flex-col items-center justify-center text-slate-600 py-20">
                                     <svg className="w-16 h-16 mb-4 text-red-500/30" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                                     </svg>
-                                    <p className="text-slate-500 font-medium mb-2">Admin Access Required</p>
+                                    <p className="text-slate-500 font-medium mb-2">No Courses Found</p>
                                     <p className="text-slate-600 text-sm text-center max-w-xs">
-                                        Only authorized administrators can view student submissions.
+                                        Create a course to view student submissions.
                                     </p>
                                 </div>
                             ) : totalSubmissions === 0 ? (
@@ -422,12 +428,55 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
                 }
             >
                 <div className="space-y-4">
-                    {/* System Prompt */}
+                    {/* System Prompt - Editable */}
                     <div>
-                        <h4 className="text-xs font-semibold text-slate-500 uppercase mb-2">System Prompt</h4>
-                        <div className="p-4 bg-slate-950/50 border border-slate-800 rounded-xl text-slate-300 text-sm leading-relaxed whitespace-pre-wrap font-mono max-h-[30vh] overflow-y-auto custom-scrollbar">
-                            {viewingCourse?.prompt}
+                        <div className="flex items-center justify-between mb-2">
+                            <h4 className="text-xs font-semibold text-slate-500 uppercase">System Prompt</h4>
+                            {!isEditingPrompt ? (
+                                <button
+                                    onClick={() => {
+                                        setIsEditingPrompt(true);
+                                        setEditedPrompt(viewingCourse?.prompt || '');
+                                    }}
+                                    className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
+                                >
+                                    ✏️ Edit
+                                </button>
+                            ) : (
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => {
+                                            if (viewingCourse && onUpdateCourse && editedPrompt !== viewingCourse.prompt) {
+                                                onUpdateCourse(viewingCourse.id, { prompt: editedPrompt });
+                                                setViewingCourse({ ...viewingCourse, prompt: editedPrompt });
+                                            }
+                                            setIsEditingPrompt(false);
+                                        }}
+                                        className="text-xs text-emerald-400 hover:text-emerald-300 font-medium"
+                                    >
+                                        ✓ Save
+                                    </button>
+                                    <button
+                                        onClick={() => setIsEditingPrompt(false)}
+                                        className="text-xs text-slate-500 hover:text-slate-400"
+                                    >
+                                        ✕ Cancel
+                                    </button>
+                                </div>
+                            )}
                         </div>
+                        {isEditingPrompt ? (
+                            <textarea
+                                value={editedPrompt}
+                                onChange={(e) => setEditedPrompt(e.target.value)}
+                                className="w-full p-4 bg-slate-950/50 border border-indigo-500/50 rounded-xl text-slate-300 text-sm leading-relaxed font-mono min-h-[30vh] max-h-[50vh] resize-y focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                placeholder="Enter system prompt..."
+                            />
+                        ) : (
+                            <div className="p-4 bg-slate-950/50 border border-slate-800 rounded-xl text-slate-300 text-sm leading-relaxed whitespace-pre-wrap font-mono max-h-[30vh] overflow-y-auto custom-scrollbar">
+                                {viewingCourse?.prompt || <span className="text-slate-600 italic">No prompt set</span>}
+                            </div>
+                        )}
                     </div>
 
                     {/* Submissions List */}

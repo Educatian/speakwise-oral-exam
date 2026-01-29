@@ -46,7 +46,7 @@ const App: React.FC = () => {
   const { user, isAuthenticated, savedSchool, setSchool, signOut } = useAuth();
 
   // Custom hooks for data management (with Supabase)
-  const { courses, loading: coursesLoading, addCourse, deleteCourse, addSubmission, deleteSubmission } = useCourseStorage();
+  const { courses, loading: coursesLoading, addCourse, updateCourse, deleteCourse, addSubmission, deleteSubmission } = useCourseStorage();
   const { history, loading: historyLoading, addToHistory } = useStudentHistory();
 
   const isLoading = coursesLoading || historyLoading;
@@ -204,6 +204,7 @@ const App: React.FC = () => {
           <ManagerDashboardView
             courses={courses}
             onAddCourse={handleAddCourse}
+            onUpdateCourse={updateCourse}
             onDeleteCourse={deleteCourse}
             onDeleteSubmission={deleteSubmission}
             onSelectSubmission={setSelectedSubmission}
@@ -270,6 +271,7 @@ const App: React.FC = () => {
           <ManagerDashboardView
             courses={courses}
             onAddCourse={handleAddCourse}
+            onUpdateCourse={updateCourse}
             onDeleteCourse={deleteCourse}
             onDeleteSubmission={deleteSubmission}
             onSelectSubmission={setSelectedSubmission}
