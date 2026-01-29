@@ -53,7 +53,7 @@ export const LandingView: React.FC<LandingViewProps> = ({ onNavigate }) => {
             <div className="flex flex-col sm:flex-row gap-6 w-full max-w-2xl animate-slide-in-up" style={{ animationDelay: '0.1s' }}>
                 {/* Instructor Card */}
                 <button
-                    onClick={() => onNavigate(AppView.INSTRUCTOR_LOGIN)}
+                    onClick={() => onNavigate(AppView.UNIFIED_AUTH)}
                     className="role-card flex-1 glass-panel p-8 rounded-3xl text-left group hover:border-indigo-500/50 transition-all duration-300"
                     aria-label="Enter Instructor Portal"
                 >
@@ -79,7 +79,7 @@ export const LandingView: React.FC<LandingViewProps> = ({ onNavigate }) => {
 
                 {/* Student Card */}
                 <button
-                    onClick={() => onNavigate(AppView.STUDENT_COURSES)}
+                    onClick={() => onNavigate(AppView.UNIFIED_AUTH)}
                     className="role-card flex-1 glass-panel p-8 rounded-3xl text-left group hover:border-emerald-500/50 transition-all duration-300"
                     aria-label="Enter Student Portal"
                 >

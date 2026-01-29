@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { AppView, Course, Submission } from './types';
-import { useCourseStorage, useStudentHistory } from './hooks';
+import { useCourseStorage, useStudentHistory, useAuth } from './hooks';
 import { isSupabaseConfigured } from './lib/supabase';
 
 // Views
@@ -8,7 +8,9 @@ import {
   StudentLoginView,
   StudentHistoryView,
   InterviewSessionView,
-  ManagerDashboardView
+  ManagerDashboardView,
+  UnifiedAuthView,
+  SchoolSelectView
 } from './components/views';
 import { LandingView } from './components/views/LandingView';
 import { InstructorLoginView } from './components/views/InstructorLoginView';
@@ -19,6 +21,7 @@ import { SubmissionDetailModal } from './components/modals';
 
 // Accessibility
 import { SkipLink } from './components/ui';
+
 /**
  * SpeakWise - AI-Powered Oral Examination Platform
  * 
@@ -36,6 +39,10 @@ const App: React.FC = () => {
   const [activeCourse, setActiveCourse] = useState<Course | null>(null);
   const [studentName, setStudentName] = useState('');
   const [selectedSubmission, setSelectedSubmission] = useState<Submission | null>(null);
+  const [userRole, setUserRole] = useState<'student' | 'instructor'>('student');
+
+  // Auth hook
+  const { user, isAuthenticated, savedSchool, setSchool, signOut } = useAuth();
 
   // Custom hooks for data management (with Supabase)
   const { courses, loading: coursesLoading, addCourse, deleteCourse, addSubmission, deleteSubmission } = useCourseStorage();
@@ -78,6 +85,30 @@ const App: React.FC = () => {
     setView(newView);
   }, []);
 
+  // Handle auth success
+  const handleAuthSuccess = useCallback((authUser: { id: string; email: string; displayName: string; role: 'student' | 'instructor' }) => {
+    setStudentName(authUser.displayName);
+    setUserRole(authUser.role);
+
+    // Instructor goes directly to dashboard
+    if (authUser.role === 'instructor') {
+      navigateTo(AppView.INSTRUCTOR_DASHBOARD);
+    } else {
+      // Student goes to school selection (or courses if school saved)
+      if (savedSchool) {
+        navigateTo(AppView.STUDENT_COURSES);
+      } else {
+        navigateTo(AppView.SCHOOL_SELECT);
+      }
+    }
+  }, [navigateTo, savedSchool]);
+
+  // Handle school selection
+  const handleSchoolSelect = useCallback((schoolId: string, schoolName: string) => {
+    setSchool(schoolId, schoolName);
+    navigateTo(AppView.STUDENT_COURSES);
+  }, [setSchool, navigateTo]);
+
   // Handle browser back/forward buttons
   useEffect(() => {
     const handlePopState = (event: PopStateEvent) => {
@@ -119,6 +150,26 @@ const App: React.FC = () => {
         return (
           <LandingView
             onNavigate={navigateTo}
+          />
+        );
+
+      // New unified auth flow
+      case AppView.UNIFIED_AUTH:
+        return (
+          <UnifiedAuthView
+            onAuthSuccess={handleAuthSuccess}
+            onBack={returnToLanding}
+            defaultRole={userRole}
+          />
+        );
+
+      case AppView.SCHOOL_SELECT:
+        return (
+          <SchoolSelectView
+            onSchoolSelect={handleSchoolSelect}
+            onBack={() => navigateTo(AppView.UNIFIED_AUTH)}
+            savedSchool={savedSchool}
+            userName={studentName || user?.displayName}
           />
         );
 
@@ -223,26 +274,47 @@ const App: React.FC = () => {
         <div className="flex items-center gap-3 md:gap-4">
           {/* Logo */}
           <div
-            className="w-9 h-9 md:w-10 md:h-10 bg-gradient-to-br from-emerald-400 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20"
-            aria-hidden="true"
+            className="w-9 h-9 md:w-10 md:h-10 bg-gradient-to-br from-emerald-400 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20 cursor-pointer"
+            onClick={returnToLanding}
+            aria-label="Return to home"
           >
             <span className="text-white font-black text-lg md:text-xl italic">W</span>
           </div>
 
           {/* Brand Name */}
-          <h1 className="text-2xl md:text-3xl font-black tracking-tight">
+          <h1 className="text-2xl md:text-3xl font-black tracking-tight cursor-pointer" onClick={returnToLanding}>
             <span className="text-gradient-white">SpeakWise</span>
             <span className="text-emerald-500">.</span>
           </h1>
         </div>
 
-        {/* Status Badges */}
+        {/* Status Badges & User Info */}
         <div className="flex items-center gap-3">
+          {/* User Badge */}
+          {isAuthenticated && user && (
+            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-slate-800/50 rounded-lg border border-slate-700">
+              <span className="text-slate-400 text-xs">{user.displayName}</span>
+              <button
+                onClick={() => {
+                  signOut();
+                  returnToLanding();
+                }}
+                className="text-slate-500 hover:text-red-400 text-xs transition-colors"
+              >
+                Sign Out
+              </button>
+            </div>
+          )}
 
           {/* Context Badge */}
           {view === AppView.MANAGER_DASHBOARD && (
             <div className="badge badge-accent">
               Manager Console
+            </div>
+          )}
+          {view === AppView.INSTRUCTOR_DASHBOARD && (
+            <div className="badge badge-accent">
+              Instructor Dashboard
             </div>
           )}
           {view === AppView.STUDENT_INTERVIEW && (
