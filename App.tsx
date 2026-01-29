@@ -36,7 +36,7 @@ const App: React.FC = () => {
   const [selectedSubmission, setSelectedSubmission] = useState<Submission | null>(null);
 
   // Custom hooks for data management (with Supabase)
-  const { courses, loading: coursesLoading, addCourse, deleteCourse, addSubmission } = useCourseStorage();
+  const { courses, loading: coursesLoading, addCourse, deleteCourse, addSubmission, deleteSubmission } = useCourseStorage();
   const { history, loading: historyLoading, addToHistory } = useStudentHistory();
 
   const isLoading = coursesLoading || historyLoading;
@@ -134,6 +134,7 @@ const App: React.FC = () => {
             courses={courses}
             onAddCourse={handleAddCourse}
             onDeleteCourse={deleteCourse}
+            onDeleteSubmission={deleteSubmission}
             onSelectSubmission={setSelectedSubmission}
             onBack={returnToLanding}
           />
@@ -193,6 +194,7 @@ const App: React.FC = () => {
             courses={courses}
             onAddCourse={handleAddCourse}
             onDeleteCourse={deleteCourse}
+            onDeleteSubmission={deleteSubmission}
             onSelectSubmission={setSelectedSubmission}
             onBack={returnToLanding}
           />

@@ -7,7 +7,35 @@ interface LandingViewProps {
 
 export const LandingView: React.FC<LandingViewProps> = ({ onNavigate }) => {
     return (
-        <div className="glass-container min-h-screen flex flex-col items-center justify-center p-6">
+        <div className="relative min-h-screen flex flex-col items-center justify-center p-6 overflow-hidden">
+            {/* Animated Background */}
+            <div className="absolute inset-0 -z-10">
+                {/* Gradient Orbs */}
+                <div className="absolute top-1/4 -left-1/4 w-96 h-96 bg-indigo-600/20 rounded-full blur-[100px] animate-float-slow" />
+                <div className="absolute bottom-1/4 -right-1/4 w-96 h-96 bg-purple-600/20 rounded-full blur-[100px] animate-float-slow-reverse" />
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-emerald-600/10 rounded-full blur-[80px] animate-pulse-slow" />
+
+                {/* Grid Pattern Overlay */}
+                <div className="absolute inset-0 bg-grid-pattern opacity-[0.02]" />
+
+                {/* Floating Particles */}
+                <div className="particles-container">
+                    {[...Array(6)].map((_, i) => (
+                        <div
+                            key={i}
+                            className="particle"
+                            style={{
+                                left: `${15 + i * 15}%`,
+                                animationDelay: `${i * 0.8}s`,
+                                animationDuration: `${8 + i * 2}s`
+                            }}
+                        />
+                    ))}
+                </div>
+            </div>
+
+            {/* Glass container overlay */}
+            <div className="glass-container absolute inset-0 -z-5" />
             {/* Logo & Branding */}
             <div className="text-center mb-12 animate-slide-in-up">
                 <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-gradient-to-br from-indigo-500 to-purple-600 mb-6 shadow-2xl">

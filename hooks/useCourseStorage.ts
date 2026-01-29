@@ -5,6 +5,7 @@ import {
     addCourse as addCourseToSupabase,
     deleteCourse as deleteCourseFromSupabase,
     addSubmissionToCourse,
+    deleteSubmission as deleteSubmissionFromSupabase,
     subscribeToCoursesRealtime,
     isSupabaseConfigured
 } from '../lib/supabase';
@@ -16,6 +17,7 @@ interface UseCourseStorageReturn {
     addCourse: (courseData: Omit<Course, 'id' | 'submissions'>) => Promise<void>;
     deleteCourse: (id: string) => Promise<void>;
     addSubmission: (courseId: string, submission: Submission) => Promise<void>;
+    deleteSubmission: (courseId: string, submissionId: string) => Promise<void>;
 }
 
 const STORAGE_KEY = 'speakwise_courses';
@@ -147,13 +149,41 @@ export function useCourseStorage(): UseCourseStorageReturn {
         }
     }, []);
 
+    // Delete a submission from a course
+    const deleteSubmission = useCallback(async (
+        courseId: string,
+        submissionId: string
+    ): Promise<void> => {
+        // Optimistic update - remove from UI immediately
+        setCourses(prev => prev.map(c =>
+            c.id === courseId
+                ? { ...c, submissions: c.submissions.filter(s => s.id !== submissionId) }
+                : c
+        ));
+
+        try {
+            if (isSupabaseConfigured()) {
+                await deleteSubmissionFromSupabase(submissionId);
+                // Real-time subscription will handle the update
+            }
+        } catch (e) {
+            console.error('Failed to delete submission:', e);
+            setError('Failed to delete submission. Please try again.');
+            // Revert by refetching
+            if (isSupabaseConfigured()) {
+                getAllCourses().then(setCourses);
+            }
+        }
+    }, []);
+
     return {
         courses,
         loading,
         error,
         addCourse,
         deleteCourse,
-        addSubmission
+        addSubmission,
+        deleteSubmission
     };
 }
 

@@ -137,6 +137,30 @@ export async function addSubmissionToCourse(
 }
 
 /**
+ * Delete a submission from Supabase
+ */
+export async function deleteSubmission(
+    submissionId: string
+): Promise<void> {
+    if (!isSupabaseConfigured()) {
+        deleteSubmissionFromLocalStorage(submissionId);
+        return;
+    }
+
+    try {
+        const { error } = await supabase
+            .from('submissions')
+            .delete()
+            .eq('id', submissionId);
+
+        if (error) throw error;
+    } catch (error) {
+        console.error('Error deleting submission from Supabase:', error);
+        deleteSubmissionFromLocalStorage(submissionId);
+    }
+}
+
+/**
  * Subscribe to real-time course updates
  */
 export function subscribeToCoursesRealtime(
@@ -290,6 +314,14 @@ function addSubmissionToLocalStorage(courseId: string, submission: Submission): 
             ? { ...c, submissions: [submission, ...c.submissions] }
             : c
     );
+    localStorage.setItem(COURSES_KEY, JSON.stringify(courses));
+}
+
+function deleteSubmissionFromLocalStorage(submissionId: string): void {
+    const courses = getCoursesFromLocalStorage().map(c => ({
+        ...c,
+        submissions: c.submissions.filter(s => s.id !== submissionId)
+    }));
     localStorage.setItem(COURSES_KEY, JSON.stringify(courses));
 }
 

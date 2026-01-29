@@ -10,6 +10,7 @@ interface ManagerDashboardViewProps {
     courses: Course[];
     onAddCourse: (course: Omit<Course, 'id' | 'submissions'>) => void;
     onDeleteCourse: (id: string) => void;
+    onDeleteSubmission: (courseId: string, submissionId: string) => void;
     onSelectSubmission: (submission: Submission) => void;
     onBack: () => void;
 }
@@ -22,6 +23,7 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
     courses,
     onAddCourse,
     onDeleteCourse,
+    onDeleteSubmission,
     onSelectSubmission,
     onBack
 }) => {
@@ -389,24 +391,42 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
                         ) : (
                             <div className="space-y-2 max-h-[30vh] overflow-y-auto custom-scrollbar">
                                 {viewingCourse?.submissions?.map(sub => (
-                                    <button
+                                    <div
                                         key={sub.id}
-                                        onClick={() => {
-                                            onSelectSubmission(sub);
-                                            setViewingCourse(null);
-                                        }}
-                                        className="w-full p-3 bg-slate-900 rounded-xl border border-slate-800 flex justify-between items-center hover:border-indigo-500/50 transition-all text-left"
+                                        className="w-full p-3 bg-slate-900 rounded-xl border border-slate-800 flex justify-between items-center hover:border-indigo-500/50 transition-all"
                                     >
-                                        <div>
+                                        <button
+                                            onClick={() => {
+                                                onSelectSubmission(sub);
+                                                setViewingCourse(null);
+                                            }}
+                                            className="flex-1 text-left"
+                                        >
                                             <p className="text-white text-sm font-medium">{sub.studentName}</p>
                                             <p className="text-slate-500 text-xs">
                                                 {new Date(sub.timestamp).toLocaleDateString()} • Score: {sub.score}/100
                                             </p>
+                                        </button>
+                                        <div className="flex items-center gap-2">
+                                            <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                            </svg>
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (window.confirm(`Delete submission from ${sub.studentName}?`)) {
+                                                        onDeleteSubmission(viewingCourse!.id, sub.id);
+                                                    }
+                                                }}
+                                                className="p-1 hover:bg-red-500/20 rounded-lg transition-colors"
+                                                title="Delete submission"
+                                            >
+                                                <svg className="w-4 h-4 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                </svg>
+                                            </button>
                                         </div>
-                                        <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                        </svg>
-                                    </button>
+                                    </div>
                                 ))}
                             </div>
                         )}
