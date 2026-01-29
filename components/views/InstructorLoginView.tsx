@@ -9,6 +9,7 @@ interface InstructorLoginViewProps {
 }
 
 export const InstructorLoginView: React.FC<InstructorLoginViewProps> = ({ onLogin, onBack }) => {
+    const [email, setEmail] = useState('');
     const [code, setCode] = useState('');
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -18,14 +19,27 @@ export const InstructorLoginView: React.FC<InstructorLoginViewProps> = ({ onLogi
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
+
+        // Validate email
+        if (!email.trim() || !email.includes('@')) {
+            setError('Please enter a valid email address.');
+            return;
+        }
+
         setIsLoading(true);
 
         // Simulate network delay for better UX
         await new Promise(resolve => setTimeout(resolve, 300));
 
         if (code === INSTRUCTOR_CODE) {
-            // Store instructor session
+            // Store instructor session AND user email for course ownership
             sessionStorage.setItem('speakwise_instructor', 'true');
+            localStorage.setItem('speakwise_user', JSON.stringify({
+                id: 'instructor_' + Date.now(),
+                email: email.trim().toLowerCase(),
+                displayName: email.split('@')[0],
+                role: 'instructor'
+            }));
             onLogin();
         } else {
             setError('Invalid instructor code. Please try again.');
@@ -62,6 +76,20 @@ export const InstructorLoginView: React.FC<InstructorLoginViewProps> = ({ onLogi
                 {/* Login Form */}
                 <form onSubmit={handleSubmit} className="glass-panel p-8 rounded-3xl space-y-6">
                     <div>
+                        <label htmlFor="instructor-email" className="block text-sm font-medium text-slate-300 mb-2">
+                            Your Email
+                        </label>
+                        <Input
+                            id="instructor-email"
+                            type="email"
+                            placeholder="you@university.edu"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            className="text-center"
+                            autoFocus
+                        />
+                    </div>
+                    <div>
                         <label htmlFor="instructor-code" className="block text-sm font-medium text-slate-300 mb-2">
                             Instructor Code
                         </label>
@@ -73,7 +101,6 @@ export const InstructorLoginView: React.FC<InstructorLoginViewProps> = ({ onLogi
                             onChange={(e) => setCode(e.target.value)}
                             maxLength={8}
                             className="text-center text-xl tracking-widest"
-                            autoFocus
                             aria-describedby={error ? 'error-message' : undefined}
                         />
                     </div>
