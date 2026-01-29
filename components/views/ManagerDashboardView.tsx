@@ -54,6 +54,16 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
 
     // Handle PIN verification action
     const handlePinAction = (course: Course, action: 'view' | 'delete') => {
+        // Admin bypasses PIN verification
+        if (isAdmin) {
+            if (action === 'view') {
+                setViewingCourse(course);
+            } else {
+                onDeleteCourse(course.id);
+            }
+            return;
+        }
+
         // If already verified for this course, proceed directly
         if (verifiedCourses.has(course.id)) {
             if (action === 'view') {
