@@ -79,10 +79,14 @@ const App: React.FC = () => {
     setStudentName('');
   }, []);
 
-  // Navigate with history
-  const navigateTo = useCallback((newView: AppView) => {
+  // Navigate with history (supports optional role for auth flow)
+  const navigateTo = useCallback((newView: AppView, role?: 'student' | 'instructor') => {
     window.history.pushState({ view: newView }, '', `#${newView.toLowerCase()}`);
     setView(newView);
+    // Set user role if provided (for auth flow)
+    if (role) {
+      setUserRole(role);
+    }
   }, []);
 
   // Handle auth success
