@@ -123,6 +123,34 @@ const App: React.FC = () => {
     navigateTo(AppView.STUDENT_COURSES);
   }, [setSchool, navigateTo]);
 
+  // Auto-redirect if already logged in
+  useEffect(() => {
+    // Skip if still loading or already navigated
+    if (view !== AppView.LANDING) return;
+
+    // Check for existing session in localStorage
+    const storedUser = localStorage.getItem('speakwise_user');
+    if (storedUser) {
+      try {
+        const userData = JSON.parse(storedUser);
+        if (userData.email) {
+          setStudentName(userData.displayName || userData.email.split('@')[0]);
+          setUserRole(userData.role || 'student');
+
+          // Auto-navigate based on role
+          if (userData.role === 'instructor') {
+            navigateTo(AppView.INSTRUCTOR_DASHBOARD);
+          } else {
+            navigateTo(AppView.STUDENT_COURSES);
+          }
+        }
+      } catch (e) {
+        // Invalid stored data, clear it
+        localStorage.removeItem('speakwise_user');
+      }
+    }
+  }, []); // Run once on mount
+
   // Handle browser back/forward buttons
   useEffect(() => {
     const handlePopState = (event: PopStateEvent) => {
@@ -136,11 +164,13 @@ const App: React.FC = () => {
 
     window.addEventListener('popstate', handlePopState);
 
-    // Set initial state
-    window.history.replaceState({ view: AppView.LANDING }, '', '#landing');
+    // Set initial state only if not auto-redirected
+    if (view === AppView.LANDING) {
+      window.history.replaceState({ view: AppView.LANDING }, '', '#landing');
+    }
 
     return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+  }, [view]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // View Rendering
