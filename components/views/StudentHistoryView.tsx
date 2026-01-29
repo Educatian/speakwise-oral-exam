@@ -1,6 +1,7 @@
 import React from 'react';
 import { Submission } from '../../types';
 import { Button } from '../ui';
+import { getMasteryLevel } from '../../lib/utils/scoreDisplay';
 
 interface StudentHistoryViewProps {
     submissions: Submission[];
@@ -74,14 +75,12 @@ export const StudentHistoryView: React.FC<StudentHistoryViewProps> = ({
                                         <div className="flex items-center gap-4 md:gap-6 flex-shrink-0 ml-4">
                                             <div className="text-right">
                                                 <span
-                                                    className={`block text-2xl font-bold ${sub.score >= 80 ? 'text-emerald-400' :
-                                                            sub.score >= 60 ? 'text-yellow-400' : 'text-red-400'
-                                                        }`}
+                                                    className={`block text-2xl font-bold ${getMasteryLevel(sub.score).color}`}
                                                 >
-                                                    {sub.score}%
+                                                    {getMasteryLevel(sub.score).emoji} {sub.score}%
                                                 </span>
-                                                <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">
-                                                    Grade
+                                                <span className={`text-[10px] uppercase tracking-widest font-bold ${getMasteryLevel(sub.score).color}`}>
+                                                    {getMasteryLevel(sub.score).label}
                                                 </span>
                                             </div>
                                             <svg

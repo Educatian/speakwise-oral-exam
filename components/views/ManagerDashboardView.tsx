@@ -5,6 +5,7 @@ import { Button, Input, Textarea, Modal, PinVerifyModal } from '../ui';
 import { createCoursePromptGenerator } from '../../lib/prompts/interviewerSystem';
 
 import { hashPin, isValidPin } from '../../lib/utils/pinHash';
+import { getMasteryLevel } from '../../lib/utils/scoreDisplay';
 
 import { ADMIN_EMAIL } from '../../types';
 
@@ -404,12 +405,12 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
                                                 </p>
                                             </div>
                                             <div className="text-right">
-                                                <div className={`text-xl font-bold ${sub.score >= 80 ? 'text-emerald-400' :
-                                                    sub.score >= 60 ? 'text-yellow-400' : 'text-red-400'
-                                                    }`}>
-                                                    {sub.score}%
+                                                <div className={`text-xl font-bold ${getMasteryLevel(sub.score).color}`}>
+                                                    {getMasteryLevel(sub.score).emoji} {sub.score}%
                                                 </div>
-                                                <p className="text-[10px] text-slate-500 uppercase">Assessment Score</p>
+                                                <p className={`text-[10px] uppercase ${getMasteryLevel(sub.score).color}`}>
+                                                    {getMasteryLevel(sub.score).label}
+                                                </p>
                                             </div>
                                         </div>
                                     </button>
@@ -508,7 +509,7 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
                                         >
                                             <p className="text-white text-sm font-medium">{sub.studentName}</p>
                                             <p className="text-slate-500 text-xs">
-                                                {new Date(sub.timestamp).toLocaleDateString()} • Score: {sub.score}/100
+                                                {new Date(sub.timestamp).toLocaleDateString()} • {getMasteryLevel(sub.score).emoji} {getMasteryLevel(sub.score).label}
                                             </p>
                                         </button>
                                         <div className="flex items-center gap-2">
