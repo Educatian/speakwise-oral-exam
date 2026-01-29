@@ -16,6 +16,7 @@ interface SchoolSelectViewProps {
 // Demo schools (will be replaced with Supabase data)
 const DEMO_SCHOOLS: School[] = [
     { id: 'ua', name: 'University of Alabama' },
+    { id: 'ou', name: 'University of Oklahoma' },
     { id: 'demo', name: 'Demo Institution' },
     { id: 'guest', name: 'Guest Access (No School)' }
 ];
@@ -23,6 +24,7 @@ const DEMO_SCHOOLS: School[] = [
 // Demo passcodes (will be replaced with Supabase validation)
 const DEMO_PASSCODES: Record<string, string> = {
     'ua': 'ROLL2025',
+    'ou': 'BOOMER2025',
     'demo': 'DEMO',
     'guest': '' // No passcode needed
 };
