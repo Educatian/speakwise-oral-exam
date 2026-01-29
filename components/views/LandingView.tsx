@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { AppView } from '../../types';
 
 interface LandingViewProps {
@@ -6,6 +6,44 @@ interface LandingViewProps {
 }
 
 export const LandingView: React.FC<LandingViewProps> = ({ onNavigate }) => {
+    // Check for existing login session
+    const [loggedInUser, setLoggedInUser] = useState<{ email: string; role: string } | null>(null);
+
+    useEffect(() => {
+        const storedUser = localStorage.getItem('speakwise_user');
+        if (storedUser) {
+            try {
+                const userData = JSON.parse(storedUser);
+                if (userData.email) {
+                    setLoggedInUser({ email: userData.email, role: userData.role || 'student' });
+                }
+            } catch (e) {
+                // Invalid data
+            }
+        }
+    }, []);
+
+    // Smart navigation: if logged in, go directly to dashboard
+    const handleInstructorClick = () => {
+        if (loggedInUser?.role === 'instructor') {
+            onNavigate(AppView.INSTRUCTOR_DASHBOARD);
+        } else if (loggedInUser) {
+            // Already logged in but as student - still go to auth to switch?
+            // Or just go to instructor dashboard if they have valid session
+            onNavigate(AppView.INSTRUCTOR_DASHBOARD);
+        } else {
+            onNavigate(AppView.UNIFIED_AUTH, 'instructor');
+        }
+    };
+
+    const handleStudentClick = () => {
+        if (loggedInUser) {
+            onNavigate(AppView.STUDENT_COURSES);
+        } else {
+            onNavigate(AppView.UNIFIED_AUTH, 'student');
+        }
+    };
+
     return (
         <div className="relative min-h-screen flex flex-col items-center justify-center p-6 overflow-hidden">
             {/* Animated Background */}
@@ -18,42 +56,37 @@ export const LandingView: React.FC<LandingViewProps> = ({ onNavigate }) => {
                 {/* Grid Pattern Overlay */}
                 <div className="absolute inset-0 bg-grid-pattern opacity-[0.02]" />
 
-                {/* Floating Particles */}
-                <div className="particles-container">
-                    {[...Array(6)].map((_, i) => (
-                        <div
-                            key={i}
-                            className="particle"
-                            style={{
-                                left: `${15 + i * 15}%`,
-                                animationDelay: `${i * 0.8}s`,
-                                animationDuration: `${8 + i * 2}s`
-                            }}
-                        />
-                    ))}
-                </div>
+                {/* Subtle Noise Texture */}
+                <div className="absolute inset-0 noise-overlay opacity-[0.015]" />
             </div>
 
-            {/* Glass container overlay */}
-            <div className="glass-container absolute inset-0 -z-5" />
             {/* Logo & Branding */}
             <div className="text-center mb-12 animate-slide-in-up">
-                <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-gradient-to-br from-indigo-500 to-purple-600 mb-6 shadow-2xl">
-                    <span className="text-4xl font-black text-white">W</span>
+                <div className="w-20 h-20 mx-auto mb-6 bg-gradient-to-br from-emerald-400 to-indigo-600 rounded-3xl flex items-center justify-center shadow-2xl shadow-emerald-500/25">
+                    <span className="text-white text-3xl font-black italic">W</span>
                 </div>
-                <h1 className="text-4xl font-black text-white mb-2">
-                    SpeakWise<span className="text-indigo-400">.</span>
+                <h1 className="text-4xl sm:text-5xl font-bold text-white mb-3 tracking-tight">
+                    SpeakWise
                 </h1>
-                <p className="text-slate-400 text-lg">
+                <p className="text-slate-400 text-lg max-w-md mx-auto">
                     AI-Powered Oral Examination Platform
                 </p>
+                {/* Logged in indicator */}
+                {loggedInUser && (
+                    <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-emerald-500/10 border border-emerald-500/30 rounded-full">
+                        <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
+                        <span className="text-emerald-400 text-sm font-medium">
+                            Signed in as {loggedInUser.email}
+                        </span>
+                    </div>
+                )}
             </div>
 
             {/* Role Selection Cards */}
             <div className="flex flex-col sm:flex-row gap-6 w-full max-w-2xl animate-slide-in-up" style={{ animationDelay: '0.1s' }}>
                 {/* Instructor Card */}
                 <button
-                    onClick={() => onNavigate(AppView.UNIFIED_AUTH, 'instructor')}
+                    onClick={handleInstructorClick}
                     className="role-card flex-1 glass-panel p-8 rounded-3xl text-left group hover:border-indigo-500/50 transition-all duration-300"
                     aria-label="Enter Instructor Portal"
                 >
@@ -70,7 +103,7 @@ export const LandingView: React.FC<LandingViewProps> = ({ onNavigate }) => {
                         Create and manage oral exam courses. View student submissions and performance analytics.
                     </p>
                     <div className="mt-6 flex items-center text-indigo-400 text-sm font-medium group-hover:translate-x-2 transition-transform">
-                        <span>Enter Dashboard</span>
+                        <span>{loggedInUser ? 'Continue to Dashboard →' : 'Enter Dashboard'}</span>
                         <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                         </svg>
@@ -79,7 +112,7 @@ export const LandingView: React.FC<LandingViewProps> = ({ onNavigate }) => {
 
                 {/* Student Card */}
                 <button
-                    onClick={() => onNavigate(AppView.UNIFIED_AUTH, 'student')}
+                    onClick={handleStudentClick}
                     className="role-card flex-1 glass-panel p-8 rounded-3xl text-left group hover:border-emerald-500/50 transition-all duration-300"
                     aria-label="Enter Student Portal"
                 >
@@ -93,10 +126,10 @@ export const LandingView: React.FC<LandingViewProps> = ({ onNavigate }) => {
                         </div>
                     </div>
                     <p className="text-slate-400 text-sm leading-relaxed">
-                        Browse available courses, join interview sessions, and view your submission history.
+                        Practice oral exams with AI feedback. Track your progress and improve your skills.
                     </p>
                     <div className="mt-6 flex items-center text-emerald-400 text-sm font-medium group-hover:translate-x-2 transition-transform">
-                        <span>Browse Courses</span>
+                        <span>{loggedInUser ? 'Continue to Courses →' : 'Start Practice'}</span>
                         <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                         </svg>
@@ -105,12 +138,11 @@ export const LandingView: React.FC<LandingViewProps> = ({ onNavigate }) => {
             </div>
 
             {/* Footer */}
-            <div className="mt-16 text-center animate-slide-in-up" style={{ animationDelay: '0.2s' }}>
-                <p className="text-slate-600 text-sm flex items-center justify-center gap-2">
-                    <span>Powered by</span>
-                    <span className="text-indigo-400 font-medium">Gemini 2.5 Native Audio</span>
-                </p>
+            <div className="mt-12 text-center text-slate-600 text-xs animate-slide-in-up" style={{ animationDelay: '0.2s' }}>
+                <p>Powered by Google Gemini 2.5 Native Audio</p>
             </div>
         </div>
     );
 };
+
+export default LandingView;
