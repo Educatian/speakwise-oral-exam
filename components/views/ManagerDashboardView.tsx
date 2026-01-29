@@ -35,8 +35,12 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
     currentUserEmail,
     onAdminPanel
 }) => {
+    // Get email from props or fallback to localStorage
+    const storedUser = typeof localStorage !== 'undefined' ? localStorage.getItem('speakwise_user') : null;
+    const effectiveEmail = currentUserEmail || (storedUser ? JSON.parse(storedUser)?.email : null);
+
     // Check if current user is admin
-    const isAdmin = currentUserEmail?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+    const isAdmin = effectiveEmail?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
     // Form state
     const [courseName, setCourseName] = useState('');
     const [instructorName, setInstructorName] = useState('');
@@ -184,12 +188,12 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
 
     // Filter courses based on ownership (admin sees all, others see only their own)
     // DEBUG: Log email matching
-    console.log('[DEBUG] currentUserEmail:', currentUserEmail);
+    console.log('[DEBUG] effectiveEmail:', effectiveEmail);
     console.log('[DEBUG] courses ownerEmails:', courses.map(c => ({ id: c.id, name: c.name, ownerEmail: c.ownerEmail })));
 
     const visibleCourses = isAdmin
         ? courses
-        : courses.filter(c => c.ownerEmail?.toLowerCase() === currentUserEmail?.toLowerCase());
+        : courses.filter(c => c.ownerEmail?.toLowerCase() === effectiveEmail?.toLowerCase());
 
     // Get all submissions sorted by timestamp (only from visible courses)
     const allSubmissions = visibleCourses
