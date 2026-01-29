@@ -95,8 +95,17 @@ const App: React.FC = () => {
     setStudentName(authUser.displayName);
     setUserRole(authUser.role);
 
-    // Instructor goes directly to dashboard
+    // Save user to localStorage for session persistence (critical for course ownership!)
+    localStorage.setItem('speakwise_user', JSON.stringify({
+      id: authUser.id,
+      email: authUser.email.toLowerCase(),
+      displayName: authUser.displayName,
+      role: authUser.role
+    }));
+
+    // Instructor also gets session marker
     if (authUser.role === 'instructor') {
+      sessionStorage.setItem('speakwise_instructor', 'true');
       navigateTo(AppView.INSTRUCTOR_DASHBOARD);
     } else {
       // Student goes to school selection (or courses if school saved)
