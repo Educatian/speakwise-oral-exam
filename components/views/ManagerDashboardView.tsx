@@ -183,6 +183,10 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
     };
 
     // Filter courses based on ownership (admin sees all, others see only their own)
+    // DEBUG: Log email matching
+    console.log('[DEBUG] currentUserEmail:', currentUserEmail);
+    console.log('[DEBUG] courses ownerEmails:', courses.map(c => ({ id: c.id, name: c.name, ownerEmail: c.ownerEmail })));
+
     const visibleCourses = isAdmin
         ? courses
         : courses.filter(c => c.ownerEmail?.toLowerCase() === currentUserEmail?.toLowerCase());
