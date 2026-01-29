@@ -204,7 +204,9 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
 
             // Initialize audio contexts
-            const inputCtx = new AudioContext({ sampleRate: 48000 });
+            // Note: Input context uses default sample rate to match system microphone
+            // This avoids "Connecting AudioNodes with different sample-rate" error
+            const inputCtx = new AudioContext();
             const outputCtx = new AudioContext({ sampleRate: 24000 });
             audioContextRef.current = { input: inputCtx, output: outputCtx };
 
@@ -398,6 +400,11 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                                 const aiText = transcriptBufferRef.current.interviewer.trim();
                                 const now = Date.now();
 
+                                // Add AI question to argument graph
+                                if (aiText.includes('?')) {
+                                    const questionId = argumentGraphBuilderRef.current.addQuestion(aiText, now);
+                                    lastQuestionIdRef.current = questionId;
+                                }
 
                                 setTranscriptions(prev => [...prev, {
                                     speaker: 'interviewer',
@@ -431,6 +438,32 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                                 const estimatedDuration = userText.length * 50;
                                 userSpeakingTimeRef.current += estimatedDuration;
 
+                                // Process user utterance for argument graph
+                                argumentGraphBuilderRef.current.processUserUtterance(
+                                    userText,
+                                    now,
+                                    lastQuestionIdRef.current || undefined
+                                );
+
+                                // Update dialogue metrics
+                                const isRephrasing = detectRephrasing(userText, previousUserTextRef.current);
+                                const isInitiative = detectTurnInitiative(userText, currentInterviewerTextRef.current);
+
+                                setDialogueMetrics(prev => ({
+                                    ...prev,
+                                    turnInitiatives: prev.turnInitiatives + (isInitiative ? 1 : 0),
+                                    rephrasingEvents: prev.rephrasingEvents + (isRephrasing ? 1 : 0),
+                                    followUpDepth: [...prev.followUpDepth, userText.length],
+                                    avgFollowUpDepth: Math.round(
+                                        [...prev.followUpDepth, userText.length].reduce((a, b) => a + b, 0) /
+                                        (prev.followUpDepth.length + 1)
+                                    )
+                                }));
+
+                                previousUserTextRef.current = userText;
+
+                                // Update argument graph state
+                                setArgumentGraph(argumentGraphBuilderRef.current.getGraph());
 
                                 setTranscriptions(prev => [...prev, {
                                     speaker: 'user',
@@ -536,10 +569,25 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
     const endSession = useCallback(() => {
         // Calculate final metrics before cleanup
         setLatencyMetrics(calculateLatencyMetrics());
+
+        // Get final argument graph
+        setArgumentGraph(argumentGraphBuilderRef.current.getGraph());
+
         cleanup();
         setStatus(InterviewStatus.ENDED);
         setIsInterviewerSpeaking(false);
     }, [cleanup, calculateLatencyMetrics]);
+
+    // Calculate reasoning rubric from all transcriptions
+    const getReasoningRubric = useCallback(() => {
+        const userText = transcriptions
+            .filter(t => t.speaker === 'user')
+            .map(t => t.text)
+            .join(' ');
+
+        const patterns = analyzeReasoningPatterns(userText);
+        return calculateReasoningScores(patterns);
+    }, [transcriptions]);
 
     // Cleanup on unmount
     useEffect(() => {
@@ -557,8 +605,14 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
         pendingUserText,
         pendingAIText,
         error,
+        // Learning Analytics (Basic)
         latencyMetrics,
         bargeInEvents,
+        // Advanced Analytics
+        dialogueMetrics,
+        argumentGraph,
+        getReasoningRubric,
+        // Session control
         startSession,
         endSession
     };

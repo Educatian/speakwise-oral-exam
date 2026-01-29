@@ -4,7 +4,7 @@ import { Course, InterviewStatus, Submission, TranscriptionItem, RubricBreakdown
 import { useGeminiLive } from '../../hooks';
 import { createInterviewerPrompt, createFeedbackPrompt } from '../../lib/prompts/interviewerSystem';
 import { AudioVisualizer } from '../AudioVisualizer';
-import { Button } from '../ui';
+import { Button, MicTest } from '../ui';
 import { sanitizeTranscript } from '../../lib/security/sanitize';
 
 interface InterviewSessionViewProps {
@@ -251,14 +251,23 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({
                     </div>
 
                     {status === InterviewStatus.IDLE ? (
-                        <Button
-                            onClick={startSession}
-                            variant="primary"
-                            size="lg"
-                            className="w-full"
-                        >
-                            Start Interview Session
-                        </Button>
+                        <div className="space-y-4">
+                            {/* Mic Test before starting */}
+                            <MicTest className="mb-4" />
+
+                            <Button
+                                onClick={startSession}
+                                variant="primary"
+                                size="lg"
+                                className="w-full"
+                            >
+                                Start Interview Session
+                            </Button>
+
+                            <p className="text-xs text-slate-500 text-center">
+                                💡 Test your microphone above before starting
+                            </p>
+                        </div>
                     ) : status === InterviewStatus.ENDED ? (
                         <Button
                             onClick={onBack}
@@ -277,6 +286,22 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({
                         >
                             End & Submit Session
                         </Button>
+                    )}
+
+                    {/* Error Display with Troubleshooting */}
+                    {error && (
+                        <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl">
+                            <p className="text-red-400 text-sm font-medium mb-2">⚠️ {error}</p>
+                            <div className="text-xs text-slate-400 space-y-1">
+                                <p>💡 Troubleshooting tips:</p>
+                                <ul className="list-disc list-inside text-slate-500 space-y-0.5">
+                                    <li>Make sure your microphone is connected</li>
+                                    <li>Allow microphone permission in your browser</li>
+                                    <li>Close other apps using the microphone</li>
+                                    <li>Try refreshing the page</li>
+                                </ul>
+                            </div>
+                        </div>
                     )}
                 </div>
 

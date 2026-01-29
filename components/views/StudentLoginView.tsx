@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Course } from '../../types';
-import { Button, Input } from '../ui';
+import { Button, Input, MicTest } from '../ui';
 import { sanitizeStudentName } from '../../lib/security/sanitize';
 
 interface StudentLoginViewProps {
@@ -157,6 +157,9 @@ export const StudentLoginView: React.FC<StudentLoginViewProps> = ({
                             {error}
                         </div>
                     )}
+
+                    {/* Microphone Test */}
+                    <MicTest />
 
                     <Button
                         type="submit"

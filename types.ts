@@ -257,9 +257,14 @@ export interface UseGeminiLiveReturn {
   pendingAIText: string;          // Real-time partial AI transcription
   error: string | null;
 
-  // Learning Analytics
+  // Learning Analytics (Basic)
   latencyMetrics: LatencyMetrics;
   bargeInEvents: BargeInEvent[];
+
+  // Advanced Analytics
+  dialogueMetrics: DialogueMetrics;
+  argumentGraph: ArgumentGraph;
+  getReasoningRubric: () => ReasoningRubric;
 
   // Session control
   startSession: () => Promise<void>;
