@@ -195,8 +195,11 @@ const App: React.FC = () => {
         );
 
       case AppView.INSTRUCTOR_DASHBOARD:
-        // Check if user is admin and add admin panel access
-        const isAdmin = user?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+        // Check if user is admin - supports both Supabase auth and localStorage
+        const storedUser = localStorage.getItem('speakwise_user');
+        const storedEmail = storedUser ? JSON.parse(storedUser)?.email : null;
+        const currentEmail = user?.email || storedEmail;
+        const isAdmin = currentEmail?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
         return (
           <ManagerDashboardView
             courses={courses}
@@ -205,7 +208,7 @@ const App: React.FC = () => {
             onDeleteSubmission={deleteSubmission}
             onSelectSubmission={setSelectedSubmission}
             onBack={returnToLanding}
-            currentUserEmail={user?.email}
+            currentUserEmail={currentEmail}
             onAdminPanel={isAdmin ? () => navigateTo(AppView.ADMIN_PANEL) : undefined}
           />
         );
@@ -259,7 +262,10 @@ const App: React.FC = () => {
         );
 
       case AppView.MANAGER_DASHBOARD:
-        const isAdminMgr = user?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+        const storedUserMgr = localStorage.getItem('speakwise_user');
+        const storedEmailMgr = storedUserMgr ? JSON.parse(storedUserMgr)?.email : null;
+        const currentEmailMgr = user?.email || storedEmailMgr;
+        const isAdminMgr = currentEmailMgr?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
         return (
           <ManagerDashboardView
             courses={courses}
@@ -268,7 +274,7 @@ const App: React.FC = () => {
             onDeleteSubmission={deleteSubmission}
             onSelectSubmission={setSelectedSubmission}
             onBack={returnToLanding}
-            currentUserEmail={user?.email}
+            currentUserEmail={currentEmailMgr}
             onAdminPanel={isAdminMgr ? () => navigateTo(AppView.ADMIN_PANEL) : undefined}
           />
         );
