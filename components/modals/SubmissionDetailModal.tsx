@@ -1,6 +1,7 @@
-import React from 'react';
-import { Submission } from '../../types';
+import React, { useMemo } from 'react';
+import { Submission, ArgumentGraph } from '../../types';
 import { Modal, Button, ArgumentMapView } from '../ui';
+import { ArgumentGraphBuilder } from '../../lib/reasoning';
 
 interface SubmissionDetailModalProps {
     submission: Submission | null;
@@ -15,6 +16,38 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
     submission,
     onClose
 }) => {
+    // Generate argument graph from transcript if not already present
+    const argumentGraph = useMemo<ArgumentGraph | null>(() => {
+        if (!submission) return null;
+
+        // Use existing argumentGraph if available
+        if (submission.argumentGraph && submission.argumentGraph.nodes.length > 0) {
+            return submission.argumentGraph;
+        }
+
+        // Generate from transcript for legacy submissions
+        if (submission.transcript && submission.transcript.length > 0) {
+            const builder = new ArgumentGraphBuilder();
+            let lastQuestionId: string | undefined;
+
+            submission.transcript.forEach(item => {
+                if (item.speaker === 'interviewer') {
+                    // AI questions
+                    if (item.text.includes('?')) {
+                        lastQuestionId = builder.addQuestion(item.text, item.timestamp);
+                    }
+                } else {
+                    // User responses - process for argument classification
+                    builder.processUserUtterance(item.text, item.timestamp, lastQuestionId);
+                }
+            });
+
+            return builder.getGraph();
+        }
+
+        return null;
+    }, [submission]);
+
     if (!submission) return null;
 
     const getScoreColor = (score: number) => {
@@ -85,12 +118,21 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                     </p>
                 </div>
 
-                {/* Argument Map - Displayed if available */}
-                {submission.argumentGraph && submission.argumentGraph.nodes.length > 0 && (
-                    <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
-                        <ArgumentMapView graph={submission.argumentGraph} />
-                    </div>
-                )}
+                {/* Argument Map - Always visible with fallback */}
+                <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
+                    {argumentGraph && argumentGraph.nodes.length > 0 ? (
+                        <ArgumentMapView graph={argumentGraph} />
+                    ) : (
+                        <div className="text-center py-6 text-slate-500">
+                            <span className="text-3xl mb-2 block">🗺️</span>
+                            <h4 className="text-slate-400 font-bold text-sm mb-1">Argument Structure Map</h4>
+                            <p className="text-xs">No argument data available for this session.</p>
+                            <p className="text-xs mt-1 text-slate-600">
+                                (Transcript too short or no recognizable argument patterns)
+                            </p>
+                        </div>
+                    )}
+                </div>
 
                 {/* Transcript */}
                 <div className="space-y-4">
