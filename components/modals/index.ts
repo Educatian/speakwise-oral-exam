@@ -1,0 +1,1 @@
+export { SubmissionDetailModal } from './SubmissionDetailModal';

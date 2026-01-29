@@ -1,0 +1,7 @@
+{
+  "name": "SpeakWise AI Platform",
+  "description": "Curriculum-driven AI interview platform for students and course managers.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
