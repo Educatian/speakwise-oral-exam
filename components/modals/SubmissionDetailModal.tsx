@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { Submission, ArgumentGraph } from '../../types';
 import { Modal, Button, ArgumentMapView } from '../ui';
 import { ArgumentGraphBuilder } from '../../lib/reasoning';
+import { getMasteryLevel } from '../../lib/utils/scoreDisplay';
 
 interface SubmissionDetailModalProps {
     submission: Submission | null;
@@ -50,19 +51,7 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
 
     if (!submission) return null;
 
-    const getScoreColor = (score: number) => {
-        if (score >= 80) return 'text-emerald-400';
-        if (score >= 60) return 'text-yellow-400';
-        return 'text-red-400';
-    };
-
-    const getScoreGrade = (score: number) => {
-        if (score >= 90) return 'A';
-        if (score >= 80) return 'B';
-        if (score >= 70) return 'C';
-        if (score >= 60) return 'D';
-        return 'F';
-    };
+    const mastery = getMasteryLevel(submission.score);
 
     return (
         <Modal
@@ -76,14 +65,11 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                 {/* Score & Date Summary */}
                 <div className="flex flex-col sm:flex-row items-center justify-between bg-slate-900/50 p-6 rounded-2xl border border-slate-800 gap-4">
                     <div className="flex items-center gap-4">
-                        <div className={`text-4xl font-black ${getScoreColor(submission.score)}`}>
-                            {submission.score}%
+                        <div className={`text-4xl font-black ${mastery.color}`}>
+                            {mastery.emoji} {submission.score}%
                         </div>
-                        <div className={`text-2xl font-bold px-3 py-1 rounded-lg ${submission.score >= 80 ? 'bg-emerald-500/20 text-emerald-400' :
-                            submission.score >= 60 ? 'bg-yellow-500/20 text-yellow-400' :
-                                'bg-red-500/20 text-red-400'
-                            }`}>
-                            {getScoreGrade(submission.score)}
+                        <div className={`text-lg font-bold px-3 py-1 rounded-lg ${mastery.bgColor} ${mastery.color}`}>
+                            {mastery.label}
                         </div>
                     </div>
                     <div className="text-center sm:text-right">
