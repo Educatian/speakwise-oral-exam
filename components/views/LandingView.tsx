@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { AppView, isInstructorEmail } from '../../types';
+import { AppView } from '../../types';
+import { checkInstructorStatus } from '../../lib/supabase/database';
 
 interface LandingViewProps {
     onNavigate: (view: AppView, role?: 'student' | 'instructor') => void;
@@ -8,6 +9,8 @@ interface LandingViewProps {
 export const LandingView: React.FC<LandingViewProps> = ({ onNavigate }) => {
     // Check for existing login session
     const [loggedInUser, setLoggedInUser] = useState<{ email: string; role: string } | null>(null);
+    const [isInstructor, setIsInstructor] = useState(false);
+    const [checkingRole, setCheckingRole] = useState(false);
 
     useEffect(() => {
         const storedUser = localStorage.getItem('speakwise_user');
@@ -16,6 +19,11 @@ export const LandingView: React.FC<LandingViewProps> = ({ onNavigate }) => {
                 const userData = JSON.parse(storedUser);
                 if (userData.email) {
                     setLoggedInUser({ email: userData.email, role: userData.role || 'student' });
+
+                    // Check instructor status from database
+                    checkInstructorStatus(userData.email).then(isInstr => {
+                        setIsInstructor(isInstr);
+                    });
                 }
             } catch (e) {
                 // Invalid data
@@ -24,17 +32,23 @@ export const LandingView: React.FC<LandingViewProps> = ({ onNavigate }) => {
     }, []);
 
     // Smart navigation: if logged in, go directly to dashboard
-    const handleInstructorClick = () => {
-        // Check if logged in user's EMAIL is in the instructor list (not just stored role)
-        if (loggedInUser && isInstructorEmail(loggedInUser.email)) {
-            // Update stored role to instructor and navigate
-            const updatedUser = { ...JSON.parse(localStorage.getItem('speakwise_user') || '{}'), role: 'instructor' };
-            localStorage.setItem('speakwise_user', JSON.stringify(updatedUser));
-            onNavigate(AppView.INSTRUCTOR_DASHBOARD);
-        } else if (loggedInUser) {
-            // Logged in but email is NOT in instructor list - they're a student
-            alert('Instructor access requires instructor credentials. Please sign in with an instructor account.');
-            onNavigate(AppView.UNIFIED_AUTH, 'instructor');
+    const handleInstructorClick = async () => {
+        if (loggedInUser) {
+            setCheckingRole(true);
+            // Check from database
+            const hasInstructorAccess = await checkInstructorStatus(loggedInUser.email);
+            setCheckingRole(false);
+
+            if (hasInstructorAccess) {
+                // Update stored role to instructor and navigate
+                const updatedUser = { ...JSON.parse(localStorage.getItem('speakwise_user') || '{}'), role: 'instructor' };
+                localStorage.setItem('speakwise_user', JSON.stringify(updatedUser));
+                onNavigate(AppView.INSTRUCTOR_DASHBOARD);
+            } else {
+                // Logged in but email is NOT in instructor list - they're a student
+                alert('Instructor access requires instructor credentials. Please sign in with an instructor account.');
+                onNavigate(AppView.UNIFIED_AUTH, 'instructor');
+            }
         } else {
             // Not logged in - go to auth
             onNavigate(AppView.UNIFIED_AUTH, 'instructor');

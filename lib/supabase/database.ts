@@ -358,6 +358,110 @@ function addToHistoryLocalStorage(submission: Submission): void {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Instructor Management - Database-driven role checking
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Fallback instructors (used if database is unavailable)
+const FALLBACK_INSTRUCTORS = [
+    'jewoong.moon@gmail.com',
+    'yongju017@gmail.com',
+];
+
+/**
+ * Check if an email has instructor privileges (from database)
+ * Falls back to hardcoded list if Supabase unavailable
+ */
+export async function checkInstructorStatus(email: string): Promise<boolean> {
+    if (!email) return false;
+    const normalizedEmail = email.toLowerCase().trim();
+
+    // Check fallback list first (for known admins/instructors)
+    if (FALLBACK_INSTRUCTORS.some(e => e.toLowerCase() === normalizedEmail)) {
+        return true;
+    }
+
+    if (!isSupabaseConfigured()) {
+        return false;
+    }
+
+    try {
+        // Check instructors table
+        const { data, error } = await supabase
+            .from('instructors')
+            .select('email')
+            .eq('email', normalizedEmail)
+            .single();
+
+        if (error && error.code !== 'PGRST116') { // PGRST116 = row not found
+            console.warn('Error checking instructor status:', error);
+            return false;
+        }
+
+        return !!data;
+    } catch (error) {
+        console.error('Error checking instructor status:', error);
+        return false;
+    }
+}
+
+/**
+ * Add a new instructor to the database
+ */
+export async function addInstructor(email: string, addedBy: string): Promise<boolean> {
+    if (!isSupabaseConfigured()) {
+        console.warn('Supabase not configured, cannot add instructor');
+        return false;
+    }
+
+    try {
+        const { error } = await supabase.from('instructors').insert({
+            email: email.toLowerCase().trim(),
+            added_by: addedBy,
+            added_at: new Date().toISOString()
+        });
+
+        if (error) {
+            console.error('Error adding instructor:', error);
+            return false;
+        }
+
+        return true;
+    } catch (error) {
+        console.error('Error adding instructor:', error);
+        return false;
+    }
+}
+
+/**
+ * Get all instructors from database
+ */
+export async function getAllInstructors(): Promise<string[]> {
+    if (!isSupabaseConfigured()) {
+        return FALLBACK_INSTRUCTORS;
+    }
+
+    try {
+        const { data, error } = await supabase
+            .from('instructors')
+            .select('email')
+            .order('added_at', { ascending: false });
+
+        if (error) {
+            console.error('Error fetching instructors:', error);
+            return FALLBACK_INSTRUCTORS;
+        }
+
+        const dbEmails = (data || []).map(d => d.email);
+        // Combine with fallback list (remove duplicates)
+        const allEmails = [...new Set([...FALLBACK_INSTRUCTORS, ...dbEmails])];
+        return allEmails;
+    } catch (error) {
+        console.error('Error fetching instructors:', error);
+        return FALLBACK_INSTRUCTORS;
+    }
+}
+
 export default {
     getAllCourses,
     addCourse,
@@ -365,5 +469,8 @@ export default {
     addSubmissionToCourse,
     subscribeToCoursesRealtime,
     getStudentHistory,
-    addToStudentHistory
+    addToStudentHistory,
+    checkInstructorStatus,
+    addInstructor,
+    getAllInstructors
 };
