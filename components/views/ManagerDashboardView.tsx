@@ -6,8 +6,7 @@ import { createCoursePromptGenerator } from '../../lib/prompts/interviewerSystem
 
 import { hashPin, isValidPin } from '../../lib/utils/pinHash';
 
-// Admin email - only this user can see all submissions
-const ADMIN_EMAIL = 'jewoong.moon@gmail.com';
+import { ADMIN_EMAIL } from '../../types';
 
 interface ManagerDashboardViewProps {
     courses: Course[];
@@ -17,6 +16,7 @@ interface ManagerDashboardViewProps {
     onSelectSubmission: (submission: Submission) => void;
     onBack: () => void;
     currentUserEmail?: string; // For access control
+    onAdminPanel?: () => void; // Admin-only panel access
 }
 
 /**
@@ -30,7 +30,8 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
     onDeleteSubmission,
     onSelectSubmission,
     onBack,
-    currentUserEmail
+    currentUserEmail,
+    onAdminPanel
 }) => {
     // Check if current user is admin
     const isAdmin = currentUserEmail?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
@@ -175,7 +176,19 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
         <div className="w-full max-w-6xl mx-auto space-y-8 animate-slide-in-up pb-20">
             {/* Header */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                <h2 className="text-2xl font-bold text-white">Course Manager Dashboard</h2>
+                <div className="flex items-center gap-4">
+                    <h2 className="text-2xl font-bold text-white">Course Manager Dashboard</h2>
+                    {/* Admin Panel Button - only for admins */}
+                    {onAdminPanel && (
+                        <button
+                            onClick={onAdminPanel}
+                            className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 text-xs font-bold rounded-lg flex items-center gap-2 transition-all"
+                            title="Admin Panel"
+                        >
+                            👑 Admin Panel
+                        </button>
+                    )}
+                </div>
                 <Button variant="ghost" onClick={onBack}>
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 15l-3-3m0 0l3-3m-3 3h8M3 12a9 9 0 1118 0 9 9 0 0118 0z" />

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { AppView, Course, Submission } from './types';
+import { AppView, Course, Submission, ADMIN_EMAIL } from './types';
 import { useCourseStorage, useStudentHistory, useAuth } from './hooks';
 import { isSupabaseConfigured } from './lib/supabase';
 
@@ -10,7 +10,8 @@ import {
   InterviewSessionView,
   ManagerDashboardView,
   UnifiedAuthView,
-  SchoolSelectView
+  SchoolSelectView,
+  AdminPanelView
 } from './components/views';
 import { LandingView } from './components/views/LandingView';
 import { InstructorLoginView } from './components/views/InstructorLoginView';
@@ -185,7 +186,17 @@ const App: React.FC = () => {
           />
         );
 
+      case AppView.ADMIN_PANEL:
+        return (
+          <AdminPanelView
+            currentUserEmail={user?.email}
+            onBack={() => navigateTo(AppView.INSTRUCTOR_DASHBOARD)}
+          />
+        );
+
       case AppView.INSTRUCTOR_DASHBOARD:
+        // Check if user is admin and add admin panel access
+        const isAdmin = user?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
         return (
           <ManagerDashboardView
             courses={courses}
@@ -195,6 +206,7 @@ const App: React.FC = () => {
             onSelectSubmission={setSelectedSubmission}
             onBack={returnToLanding}
             currentUserEmail={user?.email}
+            onAdminPanel={isAdmin ? () => navigateTo(AppView.ADMIN_PANEL) : undefined}
           />
         );
 
@@ -247,6 +259,7 @@ const App: React.FC = () => {
         );
 
       case AppView.MANAGER_DASHBOARD:
+        const isAdminMgr = user?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
         return (
           <ManagerDashboardView
             courses={courses}
@@ -256,6 +269,7 @@ const App: React.FC = () => {
             onSelectSubmission={setSelectedSubmission}
             onBack={returnToLanding}
             currentUserEmail={user?.email}
+            onAdminPanel={isAdminMgr ? () => navigateTo(AppView.ADMIN_PANEL) : undefined}
           />
         );
 

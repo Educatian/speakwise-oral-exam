@@ -1,10 +1,23 @@
 // Types & Interfaces for SpeakWise Platform
 
+// Admin email - single super admin
+export const ADMIN_EMAIL = 'jewoong.moon@gmail.com';
+
+// User role hierarchy (higher = more permissions)
+export enum UserRole {
+  STUDENT = 'student',
+  INSTRUCTOR = 'instructor',
+  MODERATOR = 'moderator',
+  ADMIN = 'admin'
+}
+
 export enum AppView {
   LANDING = 'LANDING',
   // New unified auth flow
   UNIFIED_AUTH = 'UNIFIED_AUTH',
   SCHOOL_SELECT = 'SCHOOL_SELECT',
+  // Admin panel
+  ADMIN_PANEL = 'ADMIN_PANEL',
   // Instructor flow
   INSTRUCTOR_LOGIN = 'INSTRUCTOR_LOGIN',
   INSTRUCTOR_DASHBOARD = 'INSTRUCTOR_DASHBOARD',
