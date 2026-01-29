@@ -20,15 +20,15 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
  * Check if Supabase is properly configured
  */
 export function isSupabaseConfigured(): boolean {
-    return Boolean(supabaseUrl && supabaseAnonKey && supabaseUrl !== '');
+  return Boolean(supabaseUrl && supabaseAnonKey && supabaseUrl !== '');
 }
 
 /**
  * Supabase client instance
  */
 export const supabase: SupabaseClient = createClient(
-    supabaseUrl || 'https://placeholder.supabase.co',
-    supabaseAnonKey || 'placeholder-key'
+  supabaseUrl || 'https://placeholder.supabase.co',
+  supabaseAnonKey || 'placeholder-key'
 );
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -55,6 +55,16 @@ CREATE TABLE submissions (
   transcript JSONB NOT NULL DEFAULT '[]',
   score INTEGER NOT NULL DEFAULT 0,
   feedback TEXT,
+  -- Learning Analytics
+  latency_metrics JSONB,
+  barge_in_events JSONB,
+  -- Advanced Reasoning Analytics
+  dialogue_metrics JSONB,
+  argument_graph JSONB,
+  reasoning_rubric JSONB,
+  -- AI Confidence
+  confidence_score NUMERIC,
+  rubric_breakdown JSONB,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -68,6 +78,16 @@ CREATE TABLE student_history (
   transcript JSONB NOT NULL DEFAULT '[]',
   score INTEGER NOT NULL DEFAULT 0,
   feedback TEXT,
+  -- Learning Analytics
+  latency_metrics JSONB,
+  barge_in_events JSONB,
+  -- Advanced Reasoning Analytics
+  dialogue_metrics JSONB,
+  argument_graph JSONB,
+  reasoning_rubric JSONB,
+  -- AI Confidence
+  confidence_score NUMERIC,
+  rubric_breakdown JSONB,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

@@ -51,6 +51,10 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({
         error,
         latencyMetrics,
         bargeInEvents,
+        // Advanced Analytics
+        dialogueMetrics,
+        argumentGraph,
+        getReasoningRubric,
         startSession,
         endSession
     } = useGeminiLive({
@@ -180,6 +184,11 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({
                 latencyMetrics: latencyMetrics,
                 bargeInEvents: bargeInEvents,
 
+                // Advanced Reasoning Analytics
+                dialogueMetrics: dialogueMetrics,
+                argumentGraph: argumentGraph,
+                reasoningRubric: getReasoningRubric(),
+
                 // AI Confidence & Rubric
                 confidenceScore: analysis.confidenceScore,
                 confidenceRationale: analysis.confidenceRationale,
@@ -200,8 +209,17 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({
                 score: 0,
                 feedback: 'Feedback generation failed. Please contact your instructor.',
                 latencyMetrics: latencyMetrics,
-                bargeInEvents: bargeInEvents
+                bargeInEvents: bargeInEvents,
+
+                // Advanced Reasoning Analytics (still capture even on failure)
+                dialogueMetrics: dialogueMetrics,
+                argumentGraph: argumentGraph,
+                reasoningRubric: getReasoningRubric()
             };
+
+            // Log for debugging
+            console.log('[Analytics] ArgumentGraph:', JSON.stringify(argumentGraph, null, 2));
+            console.log('[Analytics] DialogueMetrics:', JSON.stringify(dialogueMetrics, null, 2));
 
             onComplete(submission);
         }

@@ -126,10 +126,26 @@ export async function addSubmissionToCourse(
             timestamp: submission.timestamp,
             transcript: submission.transcript,
             score: submission.score,
-            feedback: submission.feedback
+            feedback: submission.feedback,
+            // Learning Analytics
+            latency_metrics: submission.latencyMetrics,
+            barge_in_events: submission.bargeInEvents,
+            // Advanced Reasoning Analytics
+            dialogue_metrics: submission.dialogueMetrics,
+            argument_graph: submission.argumentGraph,
+            reasoning_rubric: submission.reasoningRubric,
+            // AI Confidence
+            confidence_score: submission.confidenceScore,
+            rubric_breakdown: submission.rubricBreakdown
         });
 
         if (error) throw error;
+
+        console.log('[Supabase] Submission saved with analytics:', {
+            id: submission.id,
+            hasArgumentGraph: !!submission.argumentGraph,
+            argumentGraphNodes: submission.argumentGraph?.nodes?.length || 0
+        });
     } catch (error) {
         console.error('Error adding submission to Supabase:', error);
         addSubmissionToLocalStorage(courseId, submission);
