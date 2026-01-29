@@ -3,6 +3,26 @@
 // Admin email - single super admin
 export const ADMIN_EMAIL = 'jewoong.moon@gmail.com';
 
+// Instructor emails - users with instructor privileges
+// TODO: Move to Supabase database for dynamic management
+export const INSTRUCTOR_EMAILS = [
+  'jewoong.moon@gmail.com',
+  'yongju017@gmail.com',
+];
+
+// Check if an email has instructor privileges
+export function isInstructorEmail(email: string | null | undefined): boolean {
+  if (!email) return false;
+  const normalizedEmail = email.toLowerCase().trim();
+  return INSTRUCTOR_EMAILS.some(e => e.toLowerCase() === normalizedEmail);
+}
+
+// Check if an email has admin privileges
+export function isAdminEmail(email: string | null | undefined): boolean {
+  if (!email) return false;
+  return email.toLowerCase().trim() === ADMIN_EMAIL.toLowerCase();
+}
+
 // User role hierarchy (higher = more permissions)
 export enum UserRole {
   STUDENT = 'student',

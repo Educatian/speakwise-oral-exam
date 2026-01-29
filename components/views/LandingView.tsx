@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { AppView } from '../../types';
+import { AppView, isInstructorEmail } from '../../types';
 
 interface LandingViewProps {
     onNavigate: (view: AppView, role?: 'student' | 'instructor') => void;
@@ -25,12 +25,15 @@ export const LandingView: React.FC<LandingViewProps> = ({ onNavigate }) => {
 
     // Smart navigation: if logged in, go directly to dashboard
     const handleInstructorClick = () => {
-        // Check if logged in user is an instructor
-        if (loggedInUser?.role === 'instructor') {
+        // Check if logged in user's EMAIL is in the instructor list (not just stored role)
+        if (loggedInUser && isInstructorEmail(loggedInUser.email)) {
+            // Update stored role to instructor and navigate
+            const updatedUser = { ...JSON.parse(localStorage.getItem('speakwise_user') || '{}'), role: 'instructor' };
+            localStorage.setItem('speakwise_user', JSON.stringify(updatedUser));
             onNavigate(AppView.INSTRUCTOR_DASHBOARD);
-        } else if (loggedInUser?.role === 'student') {
-            // Students cannot access instructor dashboard - show message or redirect to auth
-            alert('Instructor access requires instructor credentials. Please sign in as an instructor.');
+        } else if (loggedInUser) {
+            // Logged in but email is NOT in instructor list - they're a student
+            alert('Instructor access requires instructor credentials. Please sign in with an instructor account.');
             onNavigate(AppView.UNIFIED_AUTH, 'instructor');
         } else {
             // Not logged in - go to auth
