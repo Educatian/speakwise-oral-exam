@@ -23,7 +23,9 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
-    const [displayName, setDisplayName] = useState('');
+    const [firstName, setFirstName] = useState('');
+    const [lastName, setLastName] = useState('');
+    const [school, setSchool] = useState('');
     const [role, setRole] = useState<'student' | 'instructor'>(defaultRole);
     const [showPassword, setShowPassword] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
@@ -56,9 +58,17 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
             }
 
             if (mode === 'signup') {
-                // Validation
-                if (!displayName.trim()) {
-                    setError('Please enter your name');
+                // Validation for student signup
+                if (!firstName.trim()) {
+                    setError('Please enter your first name');
+                    return;
+                }
+                if (!lastName.trim()) {
+                    setError('Please enter your last name');
+                    return;
+                }
+                if (!school.trim()) {
+                    setError('Please enter your school/institution name');
                     return;
                 }
                 if (password.length < 6) {
@@ -79,12 +89,17 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
             // Simulate auth - will integrate with useAuth
             await new Promise(resolve => setTimeout(resolve, 800));
 
+            // Build display name from first and last name
+            const displayName = mode === 'signup'
+                ? `${firstName.trim()} ${lastName.trim()}`
+                : email.split('@')[0];
+
             // Success - pass user data
             onAuthSuccess({
                 id: `user_${Date.now()}`,
                 email,
-                displayName: displayName || email.split('@')[0],
-                role
+                displayName,
+                role: 'student' // Sign up is always student
             });
 
         } catch (err) {
@@ -133,22 +148,54 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
                     </div>
                 )}
 
-                {/* Name Field (Sign Up only) */}
+                {/* Name Fields (Sign Up only) */}
                 {mode === 'signup' && (
-                    <div>
-                        <label htmlFor="displayName" className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                            Your Name
-                        </label>
-                        <Input
-                            id="displayName"
-                            type="text"
-                            value={displayName}
-                            onChange={(e) => setDisplayName(e.target.value)}
-                            placeholder="Enter your full name"
-                            autoComplete="name"
-                            disabled={isLoading}
-                        />
-                    </div>
+                    <>
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label htmlFor="firstName" className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                                    First Name
+                                </label>
+                                <Input
+                                    id="firstName"
+                                    type="text"
+                                    value={firstName}
+                                    onChange={(e) => setFirstName(e.target.value)}
+                                    placeholder="John"
+                                    autoComplete="given-name"
+                                    disabled={isLoading}
+                                />
+                            </div>
+                            <div>
+                                <label htmlFor="lastName" className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                                    Last Name
+                                </label>
+                                <Input
+                                    id="lastName"
+                                    type="text"
+                                    value={lastName}
+                                    onChange={(e) => setLastName(e.target.value)}
+                                    placeholder="Doe"
+                                    autoComplete="family-name"
+                                    disabled={isLoading}
+                                />
+                            </div>
+                        </div>
+                        <div>
+                            <label htmlFor="school" className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                                School / Institution
+                            </label>
+                            <Input
+                                id="school"
+                                type="text"
+                                value={school}
+                                onChange={(e) => setSchool(e.target.value)}
+                                placeholder="University of Example"
+                                autoComplete="organization"
+                                disabled={isLoading}
+                            />
+                        </div>
+                    </>
                 )}
 
                 {/* Email Field */}
