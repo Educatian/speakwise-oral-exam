@@ -17,7 +17,8 @@ import {
     DialogueMetrics,
     ArgumentGraph
 } from '../types';
-import { decode, decodeAudioData, createBlob } from '../utils/audioHelpers';
+import { decode, decodeAudioData } from '../utils/audioHelpers';
+import { createAudioProcessor, fadeOutAudioSource, AudioProcessorResult } from '../utils/audioPipeline';
 import {
     analyzeReasoningPatterns,
     calculateReasoningScores,
@@ -87,6 +88,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
     const sessionRef = useRef<any>(null);
     const streamRef = useRef<MediaStream | null>(null);
     const transcriptBufferRef = useRef({ user: '', interviewer: '' });
+    const audioProcessorRef = useRef<AudioProcessorResult | null>(null);
 
     // Learning Analytics Refs
     const lastTurnEndTimeRef = useRef<number>(0);
@@ -112,6 +114,12 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
             }
         });
         sourcesRef.current.clear();
+
+        // Cleanup audio processor
+        if (audioProcessorRef.current) {
+            audioProcessorRef.current.cleanup();
+            audioProcessorRef.current = null;
+        }
 
         // Close audio contexts
         if (audioContextRef.current) {
@@ -252,62 +260,36 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                         });
                         streamRef.current = stream;
 
-                        // Set up audio capture
-                        const source = inputCtx.createMediaStreamSource(stream);
-                        const scriptProcessor = inputCtx.createScriptProcessor(4096, 1, 1);
-
-                        // Calculate resampling ratio
-                        const inputSampleRate = inputCtx.sampleRate;
-                        const outputSampleRate = 16000;
-                        const ratio = inputSampleRate / outputSampleRate;
-
-                        scriptProcessor.onaudioprocess = (e) => {
-                            const inputData = e.inputBuffer.getChannelData(0);
-
-                            // Calculate audio level for voice activity indicator
-                            let sum = 0;
-                            for (let i = 0; i < inputData.length; i++) {
-                                sum += inputData[i] * inputData[i];
-                            }
-                            const rms = Math.sqrt(sum / inputData.length);
-                            const normalizedLevel = Math.min(100, Math.round(rms * 500)); // Normalize to 0-100
-                            setAudioLevel(normalizedLevel);
-
-                            // Detect if user is speaking (threshold-based)
-                            const isSpeaking = normalizedLevel > 8;
-                            setIsUserSpeaking(isSpeaking);
-
-                            // Resample to 16kHz if needed
-                            let pcmData: Float32Array;
-                            if (ratio !== 1) {
-                                const outputLength = Math.floor(inputData.length / ratio);
-                                pcmData = new Float32Array(outputLength);
-                                for (let i = 0; i < outputLength; i++) {
-                                    pcmData[i] = inputData[Math.floor(i * ratio)];
+                        // Set up audio processing with new pipeline
+                        // Uses AudioWorklet if available, falls back to ScriptProcessor
+                        // Includes linear interpolation resampling and adaptive noise threshold
+                        audioProcessorRef.current = await createAudioProcessor(
+                            inputCtx,
+                            stream,
+                            {
+                                onAudioLevel: (level) => {
+                                    setAudioLevel(level);
+                                },
+                                onVoiceActivity: (isSpeaking) => {
+                                    setIsUserSpeaking(isSpeaking);
+                                },
+                                onPCMData: (pcmBlob) => {
+                                    // Send audio to Gemini if session active
+                                    sessionPromise.then(s => {
+                                        if (sessionRef.current) {
+                                            try {
+                                                s.sendRealtimeInput({ media: pcmBlob });
+                                            } catch {
+                                                // Ignore errors if session closed
+                                            }
+                                        }
+                                    });
+                                },
+                                onCalibration: (noiseFloor, threshold) => {
+                                    console.log(`[Audio] Calibrated - Noise floor: ${noiseFloor.toFixed(4)}, Threshold: ${threshold.toFixed(4)}`);
                                 }
-                            } else {
-                                // Create a copy to avoid mutated data
-                                pcmData = new Float32Array(inputData);
                             }
-
-                            const pcmBlob = createBlob(pcmData);
-
-
-
-                            // Only send if session is still active
-                            sessionPromise.then(s => {
-                                if (sessionRef.current) {
-                                    try {
-                                        s.sendRealtimeInput({ media: pcmBlob });
-                                    } catch {
-                                        // Ignore errors if session closed
-                                    }
-                                }
-                            });
-                        };
-
-                        source.connect(scriptProcessor);
-                        scriptProcessor.connect(inputCtx.destination);
+                        );
                     },
 
                     onmessage: async (message: LiveServerMessage) => {

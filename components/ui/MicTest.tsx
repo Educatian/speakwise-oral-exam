@@ -2,22 +2,52 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 
 interface MicTestProps {
     className?: string;
+    onDeviceSelect?: (deviceId: string) => void;
 }
 
 /**
  * Microphone Test Component
  * Allows users to test their microphone setup before interviews
+ * Now with device selection support
  */
-export const MicTest: React.FC<MicTestProps> = ({ className = '' }) => {
+export const MicTest: React.FC<MicTestProps> = ({ className = '', onDeviceSelect }) => {
     const [isTesting, setIsTesting] = useState(false);
     const [audioLevel, setAudioLevel] = useState(0);
     const [error, setError] = useState<string | null>(null);
     const [deviceName, setDeviceName] = useState<string>('');
 
+    // Device selection
+    const [availableDevices, setAvailableDevices] = useState<MediaDeviceInfo[]>([]);
+    const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
+
     const streamRef = useRef<MediaStream | null>(null);
     const audioContextRef = useRef<AudioContext | null>(null);
     const analyserRef = useRef<AnalyserNode | null>(null);
     const animationFrameRef = useRef<number | null>(null);
+
+    // Enumerate audio devices on mount
+    useEffect(() => {
+        const enumerateDevices = async () => {
+            try {
+                // Request permission first to get device labels
+                await navigator.mediaDevices.getUserMedia({ audio: true })
+                    .then(stream => stream.getTracks().forEach(t => t.stop()));
+
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const audioInputs = devices.filter(d => d.kind === 'audioinput');
+                setAvailableDevices(audioInputs);
+
+                // Select default device
+                if (audioInputs.length > 0 && !selectedDeviceId) {
+                    setSelectedDeviceId(audioInputs[0].deviceId);
+                }
+            } catch (err) {
+                console.error('Failed to enumerate devices:', err);
+            }
+        };
+
+        enumerateDevices();
+    }, []);
 
     const stopTest = useCallback(() => {
         // Stop animation frame
@@ -47,14 +77,17 @@ export const MicTest: React.FC<MicTestProps> = ({ className = '' }) => {
         setError(null);
 
         try {
-            // Request microphone access
-            const stream = await navigator.mediaDevices.getUserMedia({
+            // Request microphone access with selected device
+            const constraints: MediaStreamConstraints = {
                 audio: {
                     echoCancellation: true,
                     noiseSuppression: true,
-                    autoGainControl: true
+                    autoGainControl: true,
+                    ...(selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : {})
                 }
-            });
+            };
+
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
             streamRef.current = stream;
 
             // Get device name
@@ -101,7 +134,7 @@ export const MicTest: React.FC<MicTestProps> = ({ className = '' }) => {
             }
             console.error('Mic test error:', err);
         }
-    }, []);
+    }, [selectedDeviceId]);
 
     // Cleanup on unmount
     useEffect(() => {
@@ -146,13 +179,37 @@ export const MicTest: React.FC<MicTestProps> = ({ className = '' }) => {
                     type="button"
                     onClick={handleToggle}
                     className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${isTesting
-                            ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-                            : 'bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30'
+                        ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
+                        : 'bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30'
                         }`}
                 >
                     {isTesting ? 'Stop' : 'Test Mic'}
                 </button>
             </div>
+
+            {/* Device Selector */}
+            {availableDevices.length > 1 && (
+                <div className="mb-3">
+                    <select
+                        value={selectedDeviceId}
+                        onChange={(e) => {
+                            setSelectedDeviceId(e.target.value);
+                            onDeviceSelect?.(e.target.value);
+                            if (isTesting) {
+                                stopTest();
+                            }
+                        }}
+                        disabled={isTesting}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
+                    >
+                        {availableDevices.map(device => (
+                            <option key={device.deviceId} value={device.deviceId}>
+                                {device.label || `Microphone ${availableDevices.indexOf(device) + 1}`}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+            )}
 
             {/* Audio Level Bar */}
             <div className="h-3 bg-slate-900 rounded-full overflow-hidden mb-2">
