@@ -6,6 +6,9 @@ import { createCoursePromptGenerator } from '../../lib/prompts/interviewerSystem
 
 import { hashPin, isValidPin } from '../../lib/utils/pinHash';
 
+// Admin email - only this user can see all submissions
+const ADMIN_EMAIL = 'jewoong.moon@gmail.com';
+
 interface ManagerDashboardViewProps {
     courses: Course[];
     onAddCourse: (course: Omit<Course, 'id' | 'submissions'>) => void;
@@ -13,6 +16,7 @@ interface ManagerDashboardViewProps {
     onDeleteSubmission: (courseId: string, submissionId: string) => void;
     onSelectSubmission: (submission: Submission) => void;
     onBack: () => void;
+    currentUserEmail?: string; // For access control
 }
 
 /**
@@ -25,8 +29,11 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
     onDeleteCourse,
     onDeleteSubmission,
     onSelectSubmission,
-    onBack
+    onBack,
+    currentUserEmail
 }) => {
+    // Check if current user is admin
+    const isAdmin = currentUserEmail?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
     // Form state
     const [courseName, setCourseName] = useState('');
     const [instructorName, setInstructorName] = useState('');
@@ -320,7 +327,18 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
                         </div>
 
                         <div className="p-6 flex-1 overflow-y-auto space-y-4 custom-scrollbar">
-                            {totalSubmissions === 0 ? (
+                            {/* Admin access check */}
+                            {!isAdmin ? (
+                                <div className="h-full flex flex-col items-center justify-center text-slate-600 py-20">
+                                    <svg className="w-16 h-16 mb-4 text-red-500/30" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                    </svg>
+                                    <p className="text-slate-500 font-medium mb-2">Admin Access Required</p>
+                                    <p className="text-slate-600 text-sm text-center max-w-xs">
+                                        Only authorized administrators can view student submissions.
+                                    </p>
+                                </div>
+                            ) : totalSubmissions === 0 ? (
                                 <div className="h-full flex flex-col items-center justify-center text-slate-600 py-20">
                                     <svg className="w-12 h-12 mb-4 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />

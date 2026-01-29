@@ -190,6 +190,7 @@ const App: React.FC = () => {
             onDeleteSubmission={deleteSubmission}
             onSelectSubmission={setSelectedSubmission}
             onBack={returnToLanding}
+            currentUserEmail={user?.email}
           />
         );
 
@@ -250,6 +251,7 @@ const App: React.FC = () => {
             onDeleteSubmission={deleteSubmission}
             onSelectSubmission={setSelectedSubmission}
             onBack={returnToLanding}
+            currentUserEmail={user?.email}
           />
         );
 
