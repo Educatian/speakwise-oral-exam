@@ -1,47 +1,132 @@
 /**
- * Argument Graph Builder
- * Captures claim-evidence-counterargument structure during interviews
+ * Causal/Argument Graph Builder
+ * Extracts keywords and identifies causal relationships from speech
  */
 
 import { ArgumentNode, ArgumentEdge, ArgumentGraph } from '../../types';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Argument Classification Patterns
+// Causal Relationship Patterns (English & Korean)
 // ─────────────────────────────────────────────────────────────────────────────
 
-const CLAIM_PATTERNS = [
-    /I (think|believe|argue|claim)/gi,
-    /in my (opinion|view)/gi,
-    /my (position|stance) is/gi,
-    /the (answer|solution|point) is/gi,
-    // Korean
-    /제 생각에는/g,
-    /저는.*생각합니다/g
+const CAUSAL_PATTERNS: { pattern: RegExp; relation: string }[] = [
+    // Cause-Effect
+    { pattern: /(.+?)\s+(causes?|caused)\s+(.+)/gi, relation: 'causes' },
+    { pattern: /(.+?)\s+(leads? to|led to)\s+(.+)/gi, relation: 'leads to' },
+    { pattern: /(.+?)\s+(results? in|resulted in)\s+(.+)/gi, relation: 'results in' },
+    { pattern: /because\s+(.+?),?\s+(.+)/gi, relation: 'because' },
+    { pattern: /(.+?)\s+because\s+(.+)/gi, relation: 'because' },
+    { pattern: /if\s+(.+?),?\s+then\s+(.+)/gi, relation: 'if-then' },
+
+    // Influence
+    { pattern: /(.+?)\s+(affects?|affected)\s+(.+)/gi, relation: 'affects' },
+    { pattern: /(.+?)\s+(influences?|influenced)\s+(.+)/gi, relation: 'influences' },
+    { pattern: /(.+?)\s+(impacts?|impacted)\s+(.+)/gi, relation: 'impacts' },
+
+    // Dependency
+    { pattern: /(.+?)\s+(depends? on|dependent on)\s+(.+)/gi, relation: 'depends on' },
+    { pattern: /(.+?)\s+(requires?|required)\s+(.+)/gi, relation: 'requires' },
+    { pattern: /(.+?)\s+(needs?|needed)\s+(.+)/gi, relation: 'needs' },
+
+    // Correlation
+    { pattern: /(.+?)\s+(is related to|relates? to)\s+(.+)/gi, relation: 'related to' },
+    { pattern: /(.+?)\s+(is connected to|connects? to)\s+(.+)/gi, relation: 'connected to' },
+    { pattern: /(.+?)\s+(is associated with|associates? with)\s+(.+)/gi, relation: 'associated with' },
+
+    // Contrast
+    { pattern: /(.+?)\s+(but|however)\s+(.+)/gi, relation: 'contrasts' },
+    { pattern: /although\s+(.+?),?\s+(.+)/gi, relation: 'although' },
+
+    // Korean patterns
+    { pattern: /(.+?)(?:이|가)\s*(.+?)(?:을|를)?\s*(?:초래|야기)/g, relation: 'causes' },
+    { pattern: /(.+?)(?:때문에|으로 인해)\s*(.+)/g, relation: 'because' },
+    { pattern: /(.+?)(?:이|가)\s*(.+?)에\s*영향/g, relation: 'affects' },
+    { pattern: /만약\s*(.+?)(?:이|가|라면),?\s*(.+)/g, relation: 'if-then' },
 ];
 
-const EVIDENCE_PATTERNS = [
-    /because\s+/gi,
-    /for example/gi,
-    /according to/gi,
-    /evidence (shows|suggests)/gi,
-    /research (indicates|shows)/gi,
-    /this is (shown|demonstrated) by/gi,
-    // Korean
-    /왜냐하면/g,
-    /예를 들어/g,
-    /근거로는/g
-];
+// Stopwords to exclude from keywords
+const STOPWORDS = new Set([
+    'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+    'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should',
+    'may', 'might', 'must', 'shall', 'can', 'need', 'dare', 'ought', 'used',
+    'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from', 'as', 'into',
+    'that', 'which', 'who', 'whom', 'this', 'these', 'those', 'it', 'its',
+    'and', 'but', 'or', 'nor', 'so', 'yet', 'both', 'either', 'neither',
+    'not', 'only', 'own', 'same', 'than', 'too', 'very', 'just',
+    'i', 'me', 'my', 'myself', 'we', 'our', 'you', 'your', 'he', 'she', 'they',
+    'think', 'believe', 'know', 'see', 'say', 'said', 'like', 'well', 'also',
+    'really', 'actually', 'basically', 'something', 'thing', 'things'
+]);
 
-const COUNTER_PATTERNS = [
-    /but (on the other hand|however)/gi,
-    /some (might|may|would) argue/gi,
-    /while (this|that) is true/gi,
-    /I (understand|see) (the|your) point, (but|however)/gi,
-    // Korean
-    /그러나/g,
-    /반면에/g,
-    /하지만/g
-];
+// ─────────────────────────────────────────────────────────────────────────────
+// Keyword Extraction
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface ExtractedKeyword {
+    word: string;
+    count: number;
+    firstMention: number;
+}
+
+function extractKeywords(text: string): string[] {
+    // Tokenize and clean
+    const words = text
+        .toLowerCase()
+        .replace(/[^a-zA-Z가-힣\s]/g, ' ')
+        .split(/\s+/)
+        .filter(word => word.length > 2 && !STOPWORDS.has(word));
+
+    // Count frequency
+    const freq: Record<string, number> = {};
+    words.forEach(w => { freq[w] = (freq[w] || 0) + 1; });
+
+    // Return top keywords (appearing more than once or significant)
+    return Object.entries(freq)
+        .filter(([_, count]) => count >= 1)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+        .map(([word]) => word);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Causal Relationship Extraction
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface CausalRelation {
+    from: string;
+    to: string;
+    relation: string;
+}
+
+function extractCausalRelations(text: string): CausalRelation[] {
+    const relations: CausalRelation[] = [];
+
+    for (const { pattern, relation } of CAUSAL_PATTERNS) {
+        // Reset regex
+        pattern.lastIndex = 0;
+
+        let match;
+        while ((match = pattern.exec(text)) !== null) {
+            // Extract the two concepts being related
+            const parts = match.slice(1).filter(p => p && p.trim().length > 0);
+            if (parts.length >= 2) {
+                // Clean and extract key concept from each part
+                const fromKeywords = extractKeywords(parts[0]);
+                const toKeywords = extractKeywords(parts[parts.length - 1]);
+
+                if (fromKeywords.length > 0 && toKeywords.length > 0) {
+                    relations.push({
+                        from: fromKeywords[0],
+                        to: toKeywords[0],
+                        relation
+                    });
+                }
+            }
+        }
+    }
+
+    return relations;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Argument Graph Builder Class
@@ -51,35 +136,33 @@ export class ArgumentGraphBuilder {
     private nodes: ArgumentNode[] = [];
     private edges: ArgumentEdge[] = [];
     private nodeCounter = 0;
+    private keywordNodes: Map<string, string> = new Map(); // keyword -> nodeId
 
-    /**
-     * Generate unique node ID
-     */
     private generateId(): string {
-        return `arg_${++this.nodeCounter}_${Date.now()}`;
+        return `node_${++this.nodeCounter}_${Date.now()}`;
     }
 
     /**
-     * Classify utterance type based on patterns
+     * Get or create a keyword node
      */
-    classifyUtterance(text: string): 'claim' | 'evidence' | 'counterargument' | 'justification' {
-        // Check for counter-argument patterns first (highest priority)
-        for (const pattern of COUNTER_PATTERNS) {
-            if (pattern.test(text)) return 'counterargument';
+    private getOrCreateKeywordNode(keyword: string, timestamp: number): string {
+        const normalizedKeyword = keyword.toLowerCase().trim();
+
+        if (this.keywordNodes.has(normalizedKeyword)) {
+            return this.keywordNodes.get(normalizedKeyword)!;
         }
 
-        // Check for evidence patterns
-        for (const pattern of EVIDENCE_PATTERNS) {
-            if (pattern.test(text)) return 'evidence';
-        }
+        const id = this.generateId();
+        this.nodes.push({
+            id,
+            type: 'claim', // Using 'claim' type for keywords
+            content: normalizedKeyword,
+            speaker: 'user',
+            timestamp
+        });
 
-        // Check for claim patterns
-        for (const pattern of CLAIM_PATTERNS) {
-            if (pattern.test(text)) return 'claim';
-        }
-
-        // Default to justification for explanatory text
-        return 'justification';
+        this.keywordNodes.set(normalizedKeyword, id);
+        return id;
     }
 
     /**
@@ -87,140 +170,77 @@ export class ArgumentGraphBuilder {
      */
     addQuestion(content: string, timestamp: number): string {
         const id = this.generateId();
+
+        // Extract keywords from question
+        const keywords = extractKeywords(content);
+
         this.nodes.push({
             id,
             type: 'question',
-            content: content.substring(0, 200), // Truncate for storage
+            content: keywords.length > 0 ? keywords.join(', ') : content.substring(0, 50),
             speaker: 'interviewer',
             timestamp
         });
-        return id;
-    }
-
-    /**
-     * Add a claim node
-     */
-    addClaim(content: string, timestamp: number, respondsTo?: string): string {
-        const id = this.generateId();
-        this.nodes.push({
-            id,
-            type: 'claim',
-            content: content.substring(0, 200),
-            speaker: 'user',
-            timestamp
-        });
-
-        if (respondsTo) {
-            this.edges.push({
-                from: id,
-                to: respondsTo,
-                relation: 'responds_to'
-            });
-        }
 
         return id;
     }
 
     /**
-     * Add evidence supporting a claim
-     */
-    addEvidence(content: string, supportsClaim: string, timestamp: number): string {
-        const id = this.generateId();
-        this.nodes.push({
-            id,
-            type: 'evidence',
-            content: content.substring(0, 200),
-            speaker: 'user',
-            timestamp
-        });
-
-        this.edges.push({
-            from: id,
-            to: supportsClaim,
-            relation: 'supports'
-        });
-
-        return id;
-    }
-
-    /**
-     * Add counter-argument
-     */
-    addCounterArgument(content: string, refutesClaim: string, timestamp: number): string {
-        const id = this.generateId();
-        this.nodes.push({
-            id,
-            type: 'counterargument',
-            content: content.substring(0, 200),
-            speaker: 'user',
-            timestamp
-        });
-
-        this.edges.push({
-            from: id,
-            to: refutesClaim,
-            relation: 'refutes'
-        });
-
-        return id;
-    }
-
-    /**
-     * Process a user utterance and auto-classify
+     * Process user utterance - extract keywords and causal relations
      */
     processUserUtterance(text: string, timestamp: number, lastQuestionId?: string): string {
-        const type = this.classifyUtterance(text);
-        const id = this.generateId();
+        // Extract causal relationships
+        const causalRelations = extractCausalRelations(text);
 
-        this.nodes.push({
-            id,
-            type,
-            content: text.substring(0, 200),
-            speaker: 'user',
-            timestamp
-        });
+        // Add causal relations to graph
+        for (const rel of causalRelations) {
+            const fromId = this.getOrCreateKeywordNode(rel.from, timestamp);
+            const toId = this.getOrCreateKeywordNode(rel.to, timestamp);
 
-        // Connect to last question if this is a direct response
-        if (lastQuestionId && type === 'claim') {
-            this.edges.push({
-                from: id,
-                to: lastQuestionId,
-                relation: 'responds_to'
-            });
+            // Avoid duplicate edges
+            const existingEdge = this.edges.find(e =>
+                e.from === fromId && e.to === toId && e.relation === rel.relation
+            );
+
+            if (!existingEdge && fromId !== toId) {
+                this.edges.push({
+                    from: fromId,
+                    to: toId,
+                    relation: rel.relation as any
+                });
+            }
         }
 
-        // Find if this could be evidence for a recent claim
-        const lastClaim = this.nodes.filter(n => n.type === 'claim').pop();
-        if (type === 'evidence' && lastClaim) {
-            this.edges.push({
-                from: id,
-                to: lastClaim.id,
-                relation: 'supports'
-            });
+        // If no causal relations found, extract standalone keywords
+        if (causalRelations.length === 0) {
+            const keywords = extractKeywords(text);
+            keywords.forEach(kw => this.getOrCreateKeywordNode(kw, timestamp));
         }
 
-        return id;
+        // Return a virtual node ID (for compatibility)
+        return this.generateId();
     }
 
     /**
-     * Calculate coherence score based on graph structure
+     * Calculate coherence score based on graph connectivity
      */
     private calculateCoherence(): number {
         if (this.nodes.length === 0) return 0;
 
-        const claims = this.nodes.filter(n => n.type === 'claim').length;
-        const evidence = this.nodes.filter(n => n.type === 'evidence').length;
-        const connected = new Set(this.edges.flatMap(e => [e.from, e.to])).size;
+        const connectedNodes = new Set(this.edges.flatMap(e => [e.from, e.to]));
+        const keywordNodes = this.nodes.filter(n => n.type === 'claim').length;
 
-        // Coherence: ratio of connected nodes + evidence-to-claim ratio
-        const connectionRatio = connected / Math.max(this.nodes.length, 1);
-        const evidenceRatio = claims > 0 ? Math.min(1, evidence / claims) : 0;
+        if (keywordNodes === 0) return 0;
 
-        return Math.round((connectionRatio * 0.5 + evidenceRatio * 0.5) * 100);
+        // Coherence based on how connected the concepts are
+        const connectionRatio = connectedNodes.size / Math.max(keywordNodes, 1);
+        const edgeDensity = this.edges.length / Math.max(keywordNodes, 1);
+
+        return Math.min(100, Math.round((connectionRatio * 50) + (edgeDensity * 30)));
     }
 
     /**
-     * Get the complete argument graph
+     * Get the complete causal map
      */
     getGraph(): ArgumentGraph {
         return {
@@ -238,12 +258,14 @@ export class ArgumentGraphBuilder {
         this.nodes = [];
         this.edges = [];
         this.nodeCounter = 0;
+        this.keywordNodes.clear();
     }
 }
 
-/**
- * Create a singleton instance for use in hooks
- */
-export const argumentGraphBuilder = new ArgumentGraphBuilder();
+// Legacy classification (for backward compatibility)
+export function classifyUtterance(text: string): 'claim' | 'evidence' | 'counterargument' | 'justification' {
+    return 'claim';
+}
 
+export const argumentGraphBuilder = new ArgumentGraphBuilder();
 export default ArgumentGraphBuilder;

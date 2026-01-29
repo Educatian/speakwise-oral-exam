@@ -5,351 +5,256 @@ interface ArgumentMapViewProps {
     graph: ArgumentGraph;
 }
 
-interface NodePosition {
-    x: number;
-    y: number;
-    node: ArgumentNode;
-}
-
 /**
- * Argument Concept Map Visualization
- * Displays nodes with connecting lines showing relationships
+ * Causal Concept Map Visualization
+ * Displays keywords with labeled causal relationship connections
  */
 export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({ graph }) => {
     const { nodes, edges, coherenceScore, complexity } = graph;
 
-    // Node styling by type
-    const getNodeStyle = (type: string) => {
-        switch (type) {
-            case 'claim':
-                return { bg: '#3b82f6', border: '#60a5fa', text: '#bfdbfe', icon: '💡', label: 'Claim' };
-            case 'evidence':
-                return { bg: '#10b981', border: '#34d399', text: '#a7f3d0', icon: '📊', label: 'Evidence' };
-            case 'counterargument':
-                return { bg: '#f43f5e', border: '#fb7185', text: '#fecdd3', icon: '⚖️', label: 'Counter' };
-            case 'justification':
-                return { bg: '#f59e0b', border: '#fbbf24', text: '#fde68a', icon: '📝', label: 'Justify' };
-            case 'question':
-                return { bg: '#8b5cf6', border: '#a78bfa', text: '#ddd6fe', icon: '❓', label: 'Question' };
-            default:
-                return { bg: '#64748b', border: '#94a3b8', text: '#e2e8f0', icon: '•', label: 'Other' };
+    // Filter only keyword nodes (type 'claim') for the concept map
+    const keywordNodes = useMemo(() =>
+        nodes.filter(n => n.type === 'claim' || n.type === 'evidence'),
+        [nodes]
+    );
+
+    // Relationship colors
+    const getRelationStyle = (relation: string) => {
+        const rel = relation.toLowerCase();
+        if (rel.includes('cause') || rel.includes('leads') || rel.includes('result')) {
+            return { color: '#f43f5e', label: relation, arrow: '→' }; // Red - causal
         }
+        if (rel.includes('affect') || rel.includes('influence') || rel.includes('impact')) {
+            return { color: '#f59e0b', label: relation, arrow: '⟶' }; // Orange - influence
+        }
+        if (rel.includes('depend') || rel.includes('require') || rel.includes('need')) {
+            return { color: '#8b5cf6', label: relation, arrow: '⤙' }; // Purple - dependency
+        }
+        if (rel.includes('related') || rel.includes('connect') || rel.includes('associate')) {
+            return { color: '#06b6d4', label: relation, arrow: '↔' }; // Cyan - correlation
+        }
+        if (rel.includes('contrast') || rel.includes('although') || rel.includes('but')) {
+            return { color: '#64748b', label: relation, arrow: '⊗' }; // Gray - contrast
+        }
+        if (rel.includes('because') || rel.includes('if-then')) {
+            return { color: '#10b981', label: relation, arrow: '∵' }; // Green - reasoning
+        }
+        return { color: '#3b82f6', label: relation, arrow: '→' }; // Blue - default
     };
 
-    // Edge styling by relation
-    const getEdgeStyle = (relation: ArgumentEdge['relation']) => {
-        switch (relation) {
-            case 'supports': return { color: '#10b981', dash: '', arrow: true };
-            case 'refutes': return { color: '#f43f5e', dash: '5,5', arrow: true };
-            case 'responds_to': return { color: '#8b5cf6', dash: '3,3', arrow: true };
-            case 'extends': return { color: '#3b82f6', dash: '', arrow: true };
-            default: return { color: '#64748b', dash: '', arrow: false };
-        }
-    };
+    // Calculate node positions in circular layout
+    const nodePositions = useMemo(() => {
+        if (keywordNodes.length === 0) return [];
 
-    // Calculate node positions in a radial/concept map layout
-    const nodePositions = useMemo<NodePosition[]>(() => {
-        if (nodes.length === 0) return [];
+        const centerX = 220;
+        const centerY = 160;
+        const radius = Math.min(140, 40 + keywordNodes.length * 15);
 
-        const positions: NodePosition[] = [];
-        const centerX = 280;
-        const centerY = 150;
-
-        // Separate by type for layered layout
-        const questions = nodes.filter(n => n.type === 'question');
-        const claims = nodes.filter(n => n.type === 'claim');
-        const evidence = nodes.filter(n => n.type === 'evidence');
-        const counters = nodes.filter(n => n.type === 'counterargument');
-        const justifications = nodes.filter(n => n.type === 'justification');
-
-        // Place questions at top
-        questions.forEach((node, i) => {
-            const angle = (Math.PI * (i + 1)) / (questions.length + 1);
-            positions.push({
-                x: centerX + Math.cos(angle - Math.PI / 2) * 100,
-                y: 30,
-                node
-            });
-        });
-
-        // Place claims in center area
-        claims.forEach((node, i) => {
-            const angle = (2 * Math.PI * i) / Math.max(claims.length, 1);
-            const radius = 60;
-            positions.push({
+        return keywordNodes.map((node, idx) => {
+            const angle = (2 * Math.PI * idx) / keywordNodes.length - Math.PI / 2;
+            return {
                 x: centerX + Math.cos(angle) * radius,
-                y: centerY + Math.sin(angle) * radius * 0.6,
+                y: centerY + Math.sin(angle) * radius,
                 node
-            });
+            };
         });
+    }, [keywordNodes]);
 
-        // Place evidence around claims (below)
-        evidence.forEach((node, i) => {
-            const angle = (Math.PI * (i + 0.5)) / Math.max(evidence.length, 1);
-            positions.push({
-                x: 80 + (i * 120) % 400,
-                y: centerY + 80 + Math.floor(i / 4) * 50,
-                node
-            });
-        });
+    // Find node position by ID
+    const findPosition = (nodeId: string) => nodePositions.find(p => p.node.id === nodeId);
 
-        // Place counter-arguments to the right
-        counters.forEach((node, i) => {
-            positions.push({
-                x: 450,
-                y: 80 + i * 70,
-                node
-            });
-        });
-
-        // Place justifications scattered
-        justifications.forEach((node, i) => {
-            positions.push({
-                x: 50 + (i * 150) % 350,
-                y: centerY + 50 + (i % 2) * 60,
-                node
-            });
-        });
-
-        return positions;
-    }, [nodes]);
-
-    // Find position by node ID
-    const findPosition = (nodeId: string): NodePosition | undefined => {
-        return nodePositions.find(p => p.node.id === nodeId);
-    };
-
-    if (nodes.length === 0) {
+    if (keywordNodes.length === 0) {
         return (
             <div className="text-center py-8 text-slate-500">
-                <span className="text-3xl mb-2 block">🗺️</span>
-                <p className="text-sm">No argument structure detected</p>
+                <span className="text-3xl mb-2 block">🔗</span>
+                <p className="text-sm">No causal relationships detected</p>
+                <p className="text-xs mt-1 text-slate-600">
+                    Try using phrases like "A causes B" or "X leads to Y"
+                </p>
             </div>
         );
     }
 
-    const svgWidth = 560;
-    const svgHeight = Math.max(300, nodePositions.length * 40);
+    const svgWidth = 440;
+    const svgHeight = 340;
 
     return (
         <div className="space-y-3">
             {/* Header */}
             <div className="flex items-center justify-between">
                 <h4 className="text-slate-400 font-bold text-xs uppercase tracking-widest flex items-center gap-2">
-                    <span>🗺️</span>
-                    Argument Concept Map
+                    <span>🔗</span>
+                    Causal Concept Map
                 </h4>
                 <div className="flex items-center gap-3 text-xs">
                     <span className="text-slate-500">
-                        Coherence:
-                        <span className={`ml-1 font-bold ${coherenceScore >= 70 ? 'text-emerald-400' :
-                                coherenceScore >= 40 ? 'text-yellow-400' : 'text-red-400'
-                            }`}>
-                            {coherenceScore}%
-                        </span>
+                        Concepts: <span className="text-slate-300 font-bold">{keywordNodes.length}</span>
+                    </span>
+                    <span className="text-slate-600">|</span>
+                    <span className="text-slate-500">
+                        Relations: <span className="text-slate-300 font-bold">{edges.length}</span>
                     </span>
                 </div>
             </div>
 
-            {/* SVG Concept Map */}
-            <div className="relative bg-slate-900/50 rounded-xl p-2 overflow-x-auto">
-                <svg
-                    width={svgWidth}
-                    height={svgHeight}
-                    className="min-w-full"
-                    style={{ minHeight: svgHeight }}
-                >
+            {/* SVG Causal Map */}
+            <div className="relative bg-slate-900/70 rounded-xl overflow-hidden border border-slate-800">
+                <svg width={svgWidth} height={svgHeight} className="w-full">
                     {/* Defs for arrow markers */}
                     <defs>
-                        <marker
-                            id="arrowhead-green"
-                            markerWidth="10"
-                            markerHeight="7"
-                            refX="9"
-                            refY="3.5"
-                            orient="auto"
-                        >
-                            <polygon points="0 0, 10 3.5, 0 7" fill="#10b981" />
-                        </marker>
-                        <marker
-                            id="arrowhead-red"
-                            markerWidth="10"
-                            markerHeight="7"
-                            refX="9"
-                            refY="3.5"
-                            orient="auto"
-                        >
-                            <polygon points="0 0, 10 3.5, 0 7" fill="#f43f5e" />
-                        </marker>
-                        <marker
-                            id="arrowhead-purple"
-                            markerWidth="10"
-                            markerHeight="7"
-                            refX="9"
-                            refY="3.5"
-                            orient="auto"
-                        >
-                            <polygon points="0 0, 10 3.5, 0 7" fill="#8b5cf6" />
-                        </marker>
-                        <marker
-                            id="arrowhead-blue"
-                            markerWidth="10"
-                            markerHeight="7"
-                            refX="9"
-                            refY="3.5"
-                            orient="auto"
-                        >
-                            <polygon points="0 0, 10 3.5, 0 7" fill="#3b82f6" />
-                        </marker>
+                        {['f43f5e', 'f59e0b', '8b5cf6', '06b6d4', '10b981', '3b82f6', '64748b'].map(color => (
+                            <marker
+                                key={color}
+                                id={`arrow-${color}`}
+                                markerWidth="8"
+                                markerHeight="6"
+                                refX="7"
+                                refY="3"
+                                orient="auto"
+                            >
+                                <polygon points="0 0, 8 3, 0 6" fill={`#${color}`} />
+                            </marker>
+                        ))}
                     </defs>
 
-                    {/* Draw edges first (behind nodes) */}
+                    {/* Draw edges with labels */}
                     {edges.map((edge, idx) => {
                         const fromPos = findPosition(edge.from);
                         const toPos = findPosition(edge.to);
                         if (!fromPos || !toPos) return null;
 
-                        const style = getEdgeStyle(edge.relation);
-                        const markerId = edge.relation === 'supports' ? 'arrowhead-green' :
-                            edge.relation === 'refutes' ? 'arrowhead-red' :
-                                edge.relation === 'responds_to' ? 'arrowhead-purple' :
-                                    'arrowhead-blue';
+                        const style = getRelationStyle(edge.relation);
+                        const colorHex = style.color.replace('#', '');
 
-                        // Calculate offset points for curved lines
-                        const midX = (fromPos.x + toPos.x) / 2;
-                        const midY = (fromPos.y + toPos.y) / 2;
-                        const offset = 20;
-                        const ctrlX = midX + (idx % 2 === 0 ? offset : -offset);
-                        const ctrlY = midY + (idx % 2 === 0 ? -offset : offset);
+                        // Calculate curved path
+                        const dx = toPos.x - fromPos.x;
+                        const dy = toPos.y - fromPos.y;
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+
+                        // Offset for node radius
+                        const offset = 35;
+                        const startX = fromPos.x + (dx / dist) * offset;
+                        const startY = fromPos.y + (dy / dist) * offset;
+                        const endX = toPos.x - (dx / dist) * offset;
+                        const endY = toPos.y - (dy / dist) * offset;
+
+                        // Control point for curve
+                        const midX = (startX + endX) / 2;
+                        const midY = (startY + endY) / 2;
+                        const curvature = 20 + (idx % 3) * 10;
+                        const perpX = -dy / dist * curvature;
+                        const perpY = dx / dist * curvature;
+                        const ctrlX = midX + (idx % 2 === 0 ? perpX : -perpX);
+                        const ctrlY = midY + (idx % 2 === 0 ? perpY : -perpY);
 
                         return (
                             <g key={`edge-${idx}`}>
+                                {/* Edge line */}
                                 <path
-                                    d={`M ${fromPos.x} ${fromPos.y} Q ${ctrlX} ${ctrlY} ${toPos.x} ${toPos.y}`}
+                                    d={`M ${startX} ${startY} Q ${ctrlX} ${ctrlY} ${endX} ${endY}`}
                                     fill="none"
                                     stroke={style.color}
-                                    strokeWidth="2"
-                                    strokeDasharray={style.dash}
-                                    markerEnd={style.arrow ? `url(#${markerId})` : undefined}
-                                    opacity="0.7"
+                                    strokeWidth="2.5"
+                                    opacity="0.8"
+                                    markerEnd={`url(#arrow-${colorHex})`}
                                 />
-                                {/* Edge label */}
+
+                                {/* Relation label */}
+                                <rect
+                                    x={ctrlX - 30}
+                                    y={ctrlY - 8}
+                                    width="60"
+                                    height="16"
+                                    rx="4"
+                                    fill="#1e293b"
+                                    stroke={style.color}
+                                    strokeWidth="1"
+                                    opacity="0.95"
+                                />
                                 <text
                                     x={ctrlX}
-                                    y={ctrlY}
+                                    y={ctrlY + 4}
                                     fill={style.color}
                                     fontSize="9"
-                                    textAnchor="middle"
-                                    className="select-none"
-                                >
-                                    {edge.relation}
-                                </text>
-                            </g>
-                        );
-                    })}
-
-                    {/* Draw nodes */}
-                    {nodePositions.map((pos, idx) => {
-                        const style = getNodeStyle(pos.node.type);
-                        const nodeWidth = 100;
-                        const nodeHeight = 50;
-
-                        return (
-                            <g key={pos.node.id} transform={`translate(${pos.x - nodeWidth / 2}, ${pos.y - nodeHeight / 2})`}>
-                                {/* Node background */}
-                                <rect
-                                    width={nodeWidth}
-                                    height={nodeHeight}
-                                    rx="8"
-                                    fill={style.bg}
-                                    stroke={style.border}
-                                    strokeWidth="2"
-                                    opacity="0.9"
-                                />
-
-                                {/* Icon */}
-                                <text
-                                    x="10"
-                                    y="22"
-                                    fontSize="14"
-                                >
-                                    {style.icon}
-                                </text>
-
-                                {/* Type label */}
-                                <text
-                                    x="28"
-                                    y="18"
-                                    fill={style.text}
-                                    fontSize="9"
                                     fontWeight="bold"
-                                    textTransform="uppercase"
+                                    textAnchor="middle"
                                 >
                                     {style.label}
                                 </text>
-
-                                {/* Content preview */}
-                                <text
-                                    x="10"
-                                    y="38"
-                                    fill="#e2e8f0"
-                                    fontSize="8"
-                                    className="select-none"
-                                >
-                                    {pos.node.content.slice(0, 12)}...
-                                </text>
                             </g>
                         );
                     })}
+
+                    {/* Draw keyword nodes */}
+                    {nodePositions.map((pos) => (
+                        <g key={pos.node.id}>
+                            {/* Node circle */}
+                            <circle
+                                cx={pos.x}
+                                cy={pos.y}
+                                r="30"
+                                fill="#1e293b"
+                                stroke="#3b82f6"
+                                strokeWidth="2.5"
+                            />
+
+                            {/* Keyword text */}
+                            <text
+                                x={pos.x}
+                                y={pos.y + 4}
+                                fill="#e2e8f0"
+                                fontSize="11"
+                                fontWeight="bold"
+                                textAnchor="middle"
+                            >
+                                {pos.node.content.length > 10
+                                    ? pos.node.content.substring(0, 9) + '…'
+                                    : pos.node.content
+                                }
+                            </text>
+                        </g>
+                    ))}
                 </svg>
             </div>
 
-            {/* Node Details (expandable list) */}
-            <details className="group">
-                <summary className="text-[10px] text-slate-500 uppercase cursor-pointer hover:text-slate-400 flex items-center gap-1">
-                    <span className="group-open:rotate-90 transition-transform">▶</span>
-                    View Full Node Details ({nodes.length} nodes)
-                </summary>
-                <div className="mt-2 space-y-2 max-h-[200px] overflow-y-auto custom-scrollbar">
-                    {nodes.map(node => {
-                        const style = getNodeStyle(node.type);
-                        return (
-                            <div
-                                key={node.id}
-                                className="flex gap-2 p-2 rounded-lg text-xs"
-                                style={{ backgroundColor: `${style.bg}20`, borderLeft: `3px solid ${style.border}` }}
-                            >
-                                <span>{style.icon}</span>
-                                <div>
-                                    <span className="font-bold uppercase text-[10px]" style={{ color: style.text }}>
-                                        {style.label}
-                                    </span>
-                                    <p className="text-slate-300 mt-0.5">{node.content}</p>
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            </details>
-
-            {/* Legend */}
-            <div className="flex flex-wrap gap-3 pt-2 border-t border-slate-800 text-[10px] text-slate-500">
+            {/* Relationship Legend */}
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-slate-500 pt-2 border-t border-slate-800">
                 <span className="flex items-center gap-1">
-                    <span className="w-3 h-3 rounded" style={{ backgroundColor: '#3b82f6' }} /> Claim
+                    <span className="w-3 h-0.5 bg-rose-500 rounded" /> Causal
                 </span>
                 <span className="flex items-center gap-1">
-                    <span className="w-3 h-3 rounded" style={{ backgroundColor: '#10b981' }} /> Evidence
+                    <span className="w-3 h-0.5 bg-amber-500 rounded" /> Influence
                 </span>
                 <span className="flex items-center gap-1">
-                    <span className="w-3 h-3 rounded" style={{ backgroundColor: '#f43f5e' }} /> Counter
+                    <span className="w-3 h-0.5 bg-purple-500 rounded" /> Dependency
                 </span>
                 <span className="flex items-center gap-1">
-                    <span className="w-8 h-0.5" style={{ backgroundColor: '#10b981' }} /> Supports
+                    <span className="w-3 h-0.5 bg-cyan-500 rounded" /> Correlation
                 </span>
                 <span className="flex items-center gap-1">
-                    <span className="w-8 h-0.5 border-t-2 border-dashed" style={{ borderColor: '#f43f5e' }} /> Refutes
+                    <span className="w-3 h-0.5 bg-emerald-500 rounded" /> Reasoning
                 </span>
             </div>
+
+            {/* Node list for details */}
+            {keywordNodes.length > 0 && (
+                <details className="group">
+                    <summary className="text-[10px] text-slate-500 uppercase cursor-pointer hover:text-slate-400 flex items-center gap-1">
+                        <span className="group-open:rotate-90 transition-transform">▶</span>
+                        View All Concepts ({keywordNodes.length})
+                    </summary>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                        {keywordNodes.map(node => (
+                            <span
+                                key={node.id}
+                                className="px-2 py-1 bg-blue-500/20 border border-blue-500/40 rounded-full text-xs text-blue-300"
+                            >
+                                {node.content}
+                            </span>
+                        ))}
+                    </div>
+                </details>
+            )}
         </div>
     );
 };
