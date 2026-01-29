@@ -123,29 +123,13 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
 
             {/* Auth Form */}
             <form onSubmit={handleSubmit} className="space-y-4">
-                {/* Role Toggle (Sign Up only) */}
+                {/* Info: Sign Up is for students only */}
                 {mode === 'signup' && (
-                    <div className="flex gap-2 p-1 bg-slate-800 rounded-xl mb-6">
-                        <button
-                            type="button"
-                            onClick={() => setRole('student')}
-                            className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${role === 'student'
-                                    ? 'bg-emerald-500 text-white shadow-lg'
-                                    : 'text-slate-400 hover:text-white'
-                                }`}
-                        >
-                            🎓 Student
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setRole('instructor')}
-                            className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${role === 'instructor'
-                                    ? 'bg-indigo-500 text-white shadow-lg'
-                                    : 'text-slate-400 hover:text-white'
-                                }`}
-                        >
-                            👨‍🏫 Instructor
-                        </button>
+                    <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-emerald-400 text-sm mb-4">
+                        🎓 Student Registration
+                        <p className="text-xs text-emerald-300/70 mt-1">
+                            Instructors: Please use Sign In with your provided credentials.
+                        </p>
                     </div>
                 )}
 

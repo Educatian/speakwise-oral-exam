@@ -25,19 +25,22 @@ export const LandingView: React.FC<LandingViewProps> = ({ onNavigate }) => {
 
     // Smart navigation: if logged in, go directly to dashboard
     const handleInstructorClick = () => {
+        // Check if logged in user is an instructor
         if (loggedInUser?.role === 'instructor') {
             onNavigate(AppView.INSTRUCTOR_DASHBOARD);
-        } else if (loggedInUser) {
-            // Already logged in but as student - still go to auth to switch?
-            // Or just go to instructor dashboard if they have valid session
-            onNavigate(AppView.INSTRUCTOR_DASHBOARD);
+        } else if (loggedInUser?.role === 'student') {
+            // Students cannot access instructor dashboard - show message or redirect to auth
+            alert('Instructor access requires instructor credentials. Please sign in as an instructor.');
+            onNavigate(AppView.UNIFIED_AUTH, 'instructor');
         } else {
+            // Not logged in - go to auth
             onNavigate(AppView.UNIFIED_AUTH, 'instructor');
         }
     };
 
     const handleStudentClick = () => {
         if (loggedInUser) {
+            // Both students and instructors can access student courses
             onNavigate(AppView.STUDENT_COURSES);
         } else {
             onNavigate(AppView.UNIFIED_AUTH, 'student');
