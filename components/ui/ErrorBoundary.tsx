@@ -15,13 +15,23 @@ interface ErrorBoundaryState {
 /**
  * Error Boundary Component
  * Catches JavaScript errors in child components and displays a fallback UI
+ * 
+ * Note: This uses a wrapper pattern to work around TypeScript strict mode issues
+ * with class component inheritance.
  */
-export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
-    state: ErrorBoundaryState = {
-        hasError: false,
-        error: null,
-        errorInfo: null
-    };
+class ErrorBoundaryClass extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+    public state: ErrorBoundaryState;
+    public props!: ErrorBoundaryProps;
+
+    constructor(props: ErrorBoundaryProps) {
+        super(props);
+        this.state = {
+            hasError: false,
+            error: null,
+            errorInfo: null
+        };
+        this.handleReset = this.handleReset.bind(this);
+    }
 
     static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
         return { hasError: true, error };
@@ -29,16 +39,18 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
 
     componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
         console.error('ErrorBoundary caught an error:', error, errorInfo);
-        this.setState({ errorInfo });
+        // Use inherited setState from React.Component
+        (this as React.Component<ErrorBoundaryProps, ErrorBoundaryState>).setState({ errorInfo });
     }
 
-    handleReset = (): void => {
-        this.setState({
+    handleReset(): void {
+        // Use inherited setState from React.Component
+        (this as React.Component<ErrorBoundaryProps, ErrorBoundaryState>).setState({
             hasError: false,
             error: null,
             errorInfo: null
         });
-    };
+    }
 
     handleReload = (): void => {
         window.location.reload();
@@ -108,4 +120,6 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
     }
 }
 
+// Export with the expected name
+export const ErrorBoundary = ErrorBoundaryClass;
 export default ErrorBoundary;

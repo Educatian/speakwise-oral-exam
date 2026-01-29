@@ -114,6 +114,30 @@
   --z-modal: 200;
   --z-popover: 300;
   --z-tooltip: 400;
+  --z-toast: 500;
+
+  /* Typography Scale */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+  --text-4xl: 2.25rem;
+  --text-5xl: 3rem;
+
+  /* Focus Ring Tokens */
+  --focus-ring-color: var(--color-primary-400);
+  --focus-ring-offset: 3px;
+  --focus-ring-width: 3px;
+
+  /* Motion/Animation Tokens */
+  --animation-duration-fast: 150ms;
+  --animation-duration-base: 300ms;
+  --animation-duration-slow: 500ms;
+  --animation-easing-default: cubic-bezier(0.4, 0, 0.2, 1);
+  --animation-easing-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -1212,5 +1236,167 @@ button:focus-visible,
   .nav,
   .modal {
     display: none !important;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Accessibility: Skip Link
+   ───────────────────────────────────────────────────────────────────────────── */
+.skip-link {
+  position: absolute;
+  top: -100%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  padding: var(--space-3) var(--space-6);
+  background: var(--color-primary-600);
+  color: white;
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  transition: top var(--transition-fast);
+}
+
+.skip-link:focus {
+  top: var(--space-4);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Toast Notifications
+   ───────────────────────────────────────────────────────────────────────────── */
+.toast-container {
+  position: fixed;
+  top: var(--space-6);
+  right: var(--space-6);
+  z-index: var(--z-toast);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 400px;
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
+  animation: toast-slide-in var(--animation-duration-base) var(--animation-easing-spring);
+  pointer-events: auto;
+}
+
+.toast-icon {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-full);
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.toast-message {
+  flex: 1;
+  font-size: var(--text-sm);
+  color: var(--color-slate-100);
+}
+
+.toast-dismiss {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--color-slate-400);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.toast-dismiss:hover {
+  color: var(--color-slate-100);
+  background: var(--color-slate-700);
+}
+
+.toast-success .toast-icon {
+  background: var(--color-success);
+  color: white;
+}
+
+.toast-error .toast-icon {
+  background: var(--color-error);
+  color: white;
+}
+
+.toast-warning .toast-icon {
+  background: var(--color-warning);
+  color: white;
+}
+
+.toast-info .toast-icon {
+  background: var(--color-info);
+  color: white;
+}
+
+@keyframes toast-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Accessibility: Reduced Motion
+   ───────────────────────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .animate-float-slow,
+  .animate-float-slow-reverse,
+  .animate-pulse-slow,
+  .animate-slide-in-up {
+    animation: none !important;
+  }
+
+  .particle {
+    display: none !important;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Accessibility: High Contrast Mode
+   ───────────────────────────────────────────────────────────────────────────── */
+@media (prefers-contrast: high) {
+  :root {
+    --glass-bg: rgba(0, 0, 0, 0.9);
+    --glass-border: rgba(255, 255, 255, 0.3);
+  }
+
+  .glass-panel,
+  .glass-panel-light {
+    border-width: 2px;
   }
 }

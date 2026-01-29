@@ -17,6 +17,8 @@ import { StudentCoursesView } from './components/views/StudentCoursesView';
 // Modals
 import { SubmissionDetailModal } from './components/modals';
 
+// Accessibility
+import { SkipLink } from './components/ui';
 /**
  * SpeakWise - AI-Powered Oral Examination Platform
  * 

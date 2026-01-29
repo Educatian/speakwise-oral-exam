@@ -1,6 +1,6 @@
 import React from 'react';
 import { Submission } from '../../types';
-import { Modal, Button } from '../ui';
+import { Modal, Button, ArgumentMapView } from '../ui';
 
 interface SubmissionDetailModalProps {
     submission: Submission | null;
@@ -47,8 +47,8 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                             {submission.score}%
                         </div>
                         <div className={`text-2xl font-bold px-3 py-1 rounded-lg ${submission.score >= 80 ? 'bg-emerald-500/20 text-emerald-400' :
-                                submission.score >= 60 ? 'bg-yellow-500/20 text-yellow-400' :
-                                    'bg-red-500/20 text-red-400'
+                            submission.score >= 60 ? 'bg-yellow-500/20 text-yellow-400' :
+                                'bg-red-500/20 text-red-400'
                             }`}>
                             {getScoreGrade(submission.score)}
                         </div>
@@ -85,6 +85,13 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                     </p>
                 </div>
 
+                {/* Argument Map - Displayed if available */}
+                {submission.argumentGraph && submission.argumentGraph.nodes.length > 0 && (
+                    <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
+                        <ArgumentMapView graph={submission.argumentGraph} />
+                    </div>
+                )}
+
                 {/* Transcript */}
                 <div className="space-y-4">
                     <h4 className="text-slate-500 font-bold text-xs uppercase tracking-widest flex items-center gap-2">
@@ -108,8 +115,8 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                                 </div>
                                 <div
                                     className={`flex-1 px-4 py-3 rounded-xl text-sm ${t.speaker === 'user'
-                                            ? 'bg-indigo-600/20 text-indigo-100 rounded-tr-sm'
-                                            : 'bg-slate-800 text-slate-300 rounded-tl-sm'
+                                        ? 'bg-indigo-600/20 text-indigo-100 rounded-tr-sm'
+                                        : 'bg-slate-800 text-slate-300 rounded-tl-sm'
                                         }`}
                                 >
                                     {t.text}
