@@ -236,10 +236,10 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                             disabled: false,
                             // HIGH sensitivity = detect speech start faster (avoid missing beginning)
                             startOfSpeechSensitivity: StartSensitivity.START_SENSITIVITY_HIGH,
-                            // LOW end sensitivity = wait longer before considering speech ended
-                            endOfSpeechSensitivity: EndSensitivity.END_SENSITIVITY_LOW,
-                            // Capture more audio before speech is detected (500ms buffer)
-                            prefixPaddingMs: 500,
+                            // HIGH end sensitivity = trigger turn end even when speech goes quiet
+                            endOfSpeechSensitivity: EndSensitivity.END_SENSITIVITY_HIGH,
+                            // Capture more audio before speech is detected (800ms buffer to ensure no clipping)
+                            prefixPaddingMs: 800,
                             // Wait 1.5s of silence before ending turn
                             silenceDurationMs: 1500
                         },
