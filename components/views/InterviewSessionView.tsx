@@ -500,6 +500,34 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({
                             </div>
                         )}
 
+                        {/* Real-time Voice Detection Indicator — shows IMMEDIATELY from local VAD */}
+                        {status === InterviewStatus.LIVE && isUserSpeaking && !pendingUserText && (
+                            <div className="flex flex-col items-end animate-fade-in">
+                                <div className="chat-bubble chat-bubble-user opacity-60 border border-dashed border-emerald-500/30 flex items-center gap-3 py-3 px-4">
+                                    {/* Animated waveform bars */}
+                                    <div className="flex items-center gap-[3px] h-5">
+                                        {[1, 2, 3, 4, 5].map((i) => (
+                                            <div
+                                                key={i}
+                                                className="w-[3px] bg-emerald-400 rounded-full animate-pulse"
+                                                style={{
+                                                    height: `${Math.max(4, Math.min(20, audioLevel * 0.3 + Math.random() * 8))}px`,
+                                                    animationDelay: `${i * 0.1}s`,
+                                                    animationDuration: '0.3s'
+                                                }}
+                                            />
+                                        ))}
+                                    </div>
+                                    <span className="text-emerald-300 text-sm font-medium">
+                                        Listening...
+                                    </span>
+                                </div>
+                                <span className="text-[9px] text-emerald-400/70 font-bold uppercase tracking-tight mt-1">
+                                    🎤 Voice detected — transcribing...
+                                </span>
+                            </div>
+                        )}
+
                         {/* Thinking Prompt - Appears after 5 seconds of silence */}
                         {status === InterviewStatus.LIVE && showThinkingPrompt && !pendingUserText && !pendingAIText && !isInterviewerSpeaking && (
                             <div className="flex flex-col items-center py-4 animate-fade-in">
