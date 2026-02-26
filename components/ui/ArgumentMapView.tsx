@@ -50,75 +50,26 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({ graph }) => {
         const centerY = 160;
         const padding = 45;
 
-        // 1. Initial arrangement (Golden Spiral for nice even spread)
-        let positions = keywordNodes.map((node, i) => {
-            const angle = i * Math.PI * (3 - Math.sqrt(5)); // Golden angle
-            const radius = Math.sqrt(i) * 25 + 10;
+        // Determine central node (e.g. the first one added)
+        const positions = keywordNodes.map((node, i) => {
+            // First node placed in the center
+            if (i === 0) {
+                return { x: centerX, y: centerY, node };
+            }
+
+            // Distribute remaining nodes evenly in a circle (Radial layout)
+            const totalRemaining = keywordNodes.length - 1;
+            const angle = ((i - 1) * (2 * Math.PI / totalRemaining)) - Math.PI / 2;
+
+            // Expand radius slightly if there are many nodes to avoid overlap
+            const radius = 110 + (totalRemaining > 5 ? (totalRemaining - 5) * 8 : 0);
+
             return {
                 x: centerX + Math.cos(angle) * radius,
                 y: centerY + Math.sin(angle) * radius,
-                vx: 0,
-                vy: 0,
                 node
             };
         });
-
-        // 2. Simple Force-Directed Simulation (Run for 50 iterations)
-        for (let iter = 0; iter < 50; iter++) {
-            // Node Repulsion (push nodes apart)
-            for (let i = 0; i < positions.length; i++) {
-                for (let j = i + 1; j < positions.length; j++) {
-                    const dx = positions[i].x - positions[j].x;
-                    const dy = positions[i].y - positions[j].y;
-                    const distSq = dx * dx + dy * dy;
-                    const dist = Math.sqrt(distSq) || 1;
-
-                    if (dist < 90) { // Repulsion radius
-                        const force = ((90 - dist) / dist) * 0.6;
-                        positions[i].vx += dx * force;
-                        positions[i].vy += dy * force;
-                        positions[j].vx -= dx * force;
-                        positions[j].vy -= dy * force;
-                    }
-                }
-
-                // Gravity (pull gently to center)
-                const dcx = centerX - positions[i].x;
-                const dcy = centerY - positions[i].y;
-                positions[i].vx += dcx * 0.015;
-                positions[i].vy += dcy * 0.015;
-            }
-
-            // Edge Attraction (pull connected nodes together)
-            edges.forEach(edge => {
-                const fromIdx = positions.findIndex(p => p.node.id === edge.from);
-                const toIdx = positions.findIndex(p => p.node.id === edge.to);
-
-                if (fromIdx >= 0 && toIdx >= 0) {
-                    const dx = positions[toIdx].x - positions[fromIdx].x;
-                    const dy = positions[toIdx].y - positions[fromIdx].y;
-                    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-
-                    const force = (dist - 100) * 0.04; // Ideal spring length is 100
-
-                    positions[fromIdx].vx += dx * force;
-                    positions[fromIdx].vy += dy * force;
-                    positions[toIdx].vx -= dx * force;
-                    positions[toIdx].vy -= dy * force;
-                }
-            });
-
-            // 3. Apply velocities, dampen, and constrain to bounding box
-            positions.forEach(p => {
-                p.x += p.vx;
-                p.y += p.vy;
-                p.vx *= 0.4; // Friction damping
-                p.vy *= 0.4;
-
-                p.x = Math.max(padding, Math.min(440 - padding, p.x));
-                p.y = Math.max(padding, Math.min(340 - padding, p.y));
-            });
-        }
 
         return positions;
     }, [keywordNodes, edges]);
