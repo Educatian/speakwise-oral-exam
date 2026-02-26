@@ -426,11 +426,15 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                                 userSpeakingTimeRef.current += estimatedDuration;
 
                                 // Process user utterance for argument graph
-                                argumentGraphBuilderRef.current.processUserUtterance(
-                                    userText,
-                                    now,
-                                    lastQuestionIdRef.current || undefined
-                                );
+                                try {
+                                    argumentGraphBuilderRef.current.processUserUtterance(
+                                        userText,
+                                        now,
+                                        lastQuestionIdRef.current || undefined
+                                    );
+                                } catch (e) {
+                                    console.error('Argument graph processing error:', e);
+                                }
 
                                 // Update dialogue metrics
                                 const isRephrasing = detectRephrasing(userText, previousUserTextRef.current);
@@ -482,8 +486,12 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
 
                                 // Add AI question to argument graph if it contains a question mark
                                 if (interviewer.trim().includes('?')) {
-                                    const questionId = argumentGraphBuilderRef.current.addQuestion(interviewer.trim(), now);
-                                    lastQuestionIdRef.current = questionId;
+                                    try {
+                                        const questionId = argumentGraphBuilderRef.current.addQuestion(interviewer.trim(), now);
+                                        lastQuestionIdRef.current = questionId;
+                                    } catch (e) {
+                                        console.error('Argument graph error:', e);
+                                    }
                                 }
                             }
 
@@ -503,12 +511,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                             setLatencyMetrics(updateLatencyMetrics());
                         }
 
-                        // Clear pending text displays
-                        setPendingUserText('');
-                        setPendingAIText('');
-
-                        // Update latency metrics
-                        setLatencyMetrics(updateLatencyMetrics());
+                        // NOTE: Do not clear pending text displays here! They should remain visible until Speaker Turn Swap.
                     }
                 },
 
