@@ -107,12 +107,12 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({
 
     // Generate feedback and submit when session ends
     const handleEndAndSubmit = async () => {
-        endSession();
+        const finalTranscripts = endSession();
 
         try {
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-            const transcriptStr = transcriptions
-                .map(t => `${t.speaker}: ${sanitizeTranscript(t.text)}`)
+            const transcriptStr = finalTranscripts
+                .map((t: TranscriptionItem) => `${t.speaker}: ${sanitizeTranscript(t.text)}`)
                 .join('\n');
 
             const feedbackPrompt = createFeedbackPrompt(course.name, transcriptStr);

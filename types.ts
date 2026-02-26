@@ -307,7 +307,7 @@ export interface UseGeminiLiveReturn {
 
   // Session control
   startSession: () => Promise<void>;
-  endSession: () => void;
+  endSession: () => TranscriptionItem[];
 }
 
 export interface UseCourseStorageReturn {

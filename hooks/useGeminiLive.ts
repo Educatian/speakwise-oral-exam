@@ -55,6 +55,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
     // Session State
     const [status, setStatus] = useState<InterviewStatus>(InterviewStatus.IDLE);
     const [transcriptions, setTranscriptions] = useState<TranscriptionItem[]>([]);
+    const transcriptionsRef = useRef<TranscriptionItem[]>([]);
     const [isInterviewerSpeaking, setIsInterviewerSpeaking] = useState(false);
     const [isUserSpeaking, setIsUserSpeaking] = useState(false);
     const [audioLevel, setAudioLevel] = useState(0); // 0-100 normalized level
@@ -136,6 +137,13 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
         transcriptBufferRef.current = { user: '', interviewer: '' };
         lastTurnEndTimeRef.current = 0;
         currentInterviewerTextRef.current = '';
+        transcriptionsRef.current = [];
+    }, []);
+
+    // Helper to add transcription and sync ref
+    const addTranscription = useCallback((item: TranscriptionItem) => {
+        transcriptionsRef.current = [...transcriptionsRef.current, item];
+        setTranscriptions(transcriptionsRef.current);
     }, []);
 
     // Calculate latency metrics using external utilities
@@ -393,11 +401,11 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                                     lastQuestionIdRef.current = questionId;
                                 }
 
-                                setTranscriptions(prev => [...prev, {
+                                addTranscription({
                                     speaker: 'interviewer',
                                     text: aiText,
                                     timestamp: now
-                                }]);
+                                });
 
                                 transcriptBufferRef.current.interviewer = '';
                                 lastTurnEndTimeRef.current = now;
@@ -456,14 +464,14 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                                 // Update argument graph state
                                 setArgumentGraph(argumentGraphBuilderRef.current.getGraph());
 
-                                setTranscriptions(prev => [...prev, {
+                                addTranscription({
                                     speaker: 'user',
                                     text: userText,
                                     timestamp: now,
                                     latency: latency > 0 ? latency : undefined,
                                     duration: estimatedDuration,
                                     isBargeIn: isInterviewerSpeaking
-                                }]);
+                                });
 
                                 setPendingUserText('');
                                 transcriptBufferRef.current.user = ''; // FIX: MUST CLEAR USER BUFFER HERE!
@@ -478,11 +486,11 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                             const now = Date.now();
 
                             if (interviewer.trim()) {
-                                setTranscriptions(prev => [...prev, {
+                                addTranscription({
                                     speaker: 'interviewer',
                                     text: interviewer.trim(),
                                     timestamp: now
-                                }]);
+                                });
 
                                 // Add AI question to argument graph if it contains a question mark
                                 if (interviewer.trim().includes('?')) {
@@ -519,7 +527,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                     setStatus(InterviewStatus.ENDED);
                     setLatencyMetrics(updateLatencyMetrics());
                     if (onTranscriptionComplete) {
-                        onTranscriptionComplete(transcriptions);
+                        onTranscriptionComplete(transcriptionsRef.current);
                     }
                 },
 
@@ -575,22 +583,22 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
         // Save any pending user text
         if (transcriptBufferRef.current.user.trim()) {
             const userText = transcriptBufferRef.current.user.trim();
-            setTranscriptions(prev => [...prev, {
+            addTranscription({
                 speaker: 'user',
                 text: userText,
                 timestamp: now
-            }]);
+            });
             transcriptBufferRef.current.user = '';
         }
 
         // Save any pending interviewer text
         if (transcriptBufferRef.current.interviewer.trim()) {
             const aiText = transcriptBufferRef.current.interviewer.trim();
-            setTranscriptions(prev => [...prev, {
+            addTranscription({
                 speaker: 'interviewer',
                 text: aiText,
                 timestamp: now
-            }]);
+            });
             transcriptBufferRef.current.interviewer = '';
         }
 
@@ -603,7 +611,9 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
         cleanup();
         setStatus(InterviewStatus.ENDED);
         setIsInterviewerSpeaking(false);
-    }, [cleanup, updateLatencyMetrics]);
+
+        return transcriptionsRef.current;
+    }, [cleanup, updateLatencyMetrics, addTranscription]);
 
     // Calculate reasoning rubric from all transcriptions
     const getReasoningRubric = useCallback(() => {
