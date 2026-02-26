@@ -20,6 +20,8 @@ import { StudentCoursesView } from './components/views/StudentCoursesView';
 // Modals
 import { SubmissionDetailModal } from './components/modals';
 
+import { AppRouter } from './components/AppRouter';
+
 // Accessibility
 import { SkipLink } from './components/ui';
 
@@ -194,7 +196,6 @@ const App: React.FC = () => {
         handleAuthSuccess={handleAuthSuccess}
         handleSchoolSelect={handleSchoolSelect}
         handleStudentLogin={handleStudentLogin}
-        handleInitStudentSession={handleInitStudentSession}
         handleInterviewComplete={handleInterviewComplete}
         handleAddCourse={handleAddCourse}
         updateCourse={updateCourse}

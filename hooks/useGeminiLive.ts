@@ -260,6 +260,25 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                                 }
                             }
                         );
+
+                        // Force the AI to start speaking by acting as the initializing turn
+                        sessionPromise.then(s => {
+                            if (s) {
+                                try {
+                                    (s as any).send({
+                                        clientContent: {
+                                            turns: [{
+                                                role: 'user',
+                                                parts: [{ text: "System Notification: The student has just entered the room. Please begin the interview immediately as per your instructions." }]
+                                            }],
+                                            turnComplete: true
+                                        }
+                                    });
+                                } catch (e) {
+                                    console.error('Failed to send initial ping to AI', e);
+                                }
+                            }
+                        });
                     },
 
                     onmessage: async (message: LiveServerMessage) => {

@@ -1,14 +1,15 @@
 import React from 'react';
 import { AppView, Course, Submission, ADMIN_EMAIL } from '../types';
 
+import { LandingView } from './views/LandingView';
+import { InstructorLoginView } from './views/InstructorLoginView';
+import { StudentCoursesView } from './views/StudentCoursesView';
+
 import {
-    LandingView,
     UnifiedAuthView,
     SchoolSelectView,
-    InstructorLoginView,
     AdminPanelView,
     ManagerDashboardView,
-    StudentCoursesView,
     StudentLoginView,
     StudentHistoryView,
     InterviewSessionView
@@ -30,7 +31,6 @@ interface AppRouterProps {
     handleAuthSuccess: (user: any, role: 'student' | 'instructor', name: string) => void;
     handleSchoolSelect: (schoolId: string, name: string) => void;
     handleStudentLogin: (course: Course, name: string) => void;
-    handleInitStudentSession: (name: string, school: string) => void;
     handleInterviewComplete: (submission: Submission) => void;
     handleAddCourse: (courseData: Omit<Course, 'id' | 'submissions'>) => void;
     updateCourse: (course: Course) => void;
