@@ -242,6 +242,22 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                                 },
                                 onVoiceActivity: (isSpeaking) => {
                                     setIsUserSpeaking(isSpeaking);
+
+                                    // Manually signal activity start and end as VAD state changes
+                                    // This is critical to let Gemini know we've finished speaking to trigger its reply
+                                    if (sessionRef.current) {
+                                        try {
+                                            if (isSpeaking) {
+                                                console.log('[GeminiLive] Sent: activityStart');
+                                                sessionRef.current.sendRealtimeInput({ activityStart: {} });
+                                            } else {
+                                                console.log('[GeminiLive] Sent: activityEnd');
+                                                sessionRef.current.sendRealtimeInput({ activityEnd: {} });
+                                            }
+                                        } catch (e) {
+                                            // Session closed or not ready
+                                        }
+                                    }
                                 },
                                 onPCMData: (pcmBlob) => {
                                     // Send audio to Gemini if session active
@@ -467,71 +483,65 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                             lastSpeakerRef.current = 'ai';
                         }
 
-                        // Process completed turn (fallback if turnComplete fires)
+                        // Process completed turn from Server (AI finished speaking)
                         if (message.serverContent?.turnComplete) {
-
-                            const { user, interviewer } = transcriptBufferRef.current;
+                            const { interviewer } = transcriptBufferRef.current;
                             const now = Date.now();
 
-                            if (user.trim()) {
-                                const latency = lastTurnEndTimeRef.current > 0
-                                    ? now - lastTurnEndTimeRef.current
-                                    : 0;
-
-                                if (latency > 0 && latency < 60000) {
-                                    latencyListRef.current.push(latency);
-                                }
-
-                                const estimatedDuration = user.trim().length * 50;
-                                userSpeakingTimeRef.current += estimatedDuration;
-
-                                setTranscriptions(prev => [...prev, {
-                                    speaker: 'user',
-                                    text: user.trim(),
-                                    timestamp: now,
-                                    latency: latency > 0 ? latency : undefined,
-                                    duration: estimatedDuration,
-                                    isBargeIn: isInterviewerSpeaking
-                                }]);
-                            }
                             if (interviewer.trim()) {
                                 setTranscriptions(prev => [...prev, {
                                     speaker: 'interviewer',
                                     text: interviewer.trim(),
                                     timestamp: now
                                 }]);
+
+                                // Add AI question to argument graph if it contains a question mark
+                                if (interviewer.trim().includes('?')) {
+                                    const questionId = argumentGraphBuilderRef.current.addQuestion(interviewer.trim(), now);
+                                    lastQuestionIdRef.current = questionId;
+                                }
                             }
+
+                            // Only reset the interviewer buffer. Leave user alone.
+                            transcriptBufferRef.current.interviewer = '';
+                            currentInterviewerTextRef.current = '';
+                            setPendingAIText('');
+                            setIsInterviewerSpeaking(false);
+
+                            // It's technically the user's turn now
+                            lastSpeakerRef.current = 'user';
 
                             // Update last turn end time
                             lastTurnEndTimeRef.current = now;
-                            transcriptBufferRef.current = { user: '', interviewer: '' };
-                            currentInterviewerTextRef.current = '';
-
-                            // Clear pending text displays
-                            setPendingUserText('');
-                            setPendingAIText('');
 
                             // Update latency metrics
                             setLatencyMetrics(updateLatencyMetrics());
                         }
-                    },
 
-                    onclose: () => {
-                        setStatus(InterviewStatus.ENDED);
+                        // Clear pending text displays
+                        setPendingUserText('');
+                        setPendingAIText('');
+
+                        // Update latency metrics
                         setLatencyMetrics(updateLatencyMetrics());
-                        if (onTranscriptionComplete) {
-                            onTranscriptionComplete(transcriptions);
-                        }
-                    },
-
-                    onerror: (err) => {
-                        console.error('Gemini Live error:', err);
-                        setError('Connection error occurred. Please try again.');
-                        setStatus(InterviewStatus.ERROR);
-                        cleanup();
                     }
+                },
+
+                onclose: () => {
+                    setStatus(InterviewStatus.ENDED);
+                    setLatencyMetrics(updateLatencyMetrics());
+                    if (onTranscriptionComplete) {
+                        onTranscriptionComplete(transcriptions);
+                    }
+                },
+
+                onerror: (err: any) => {
+                    console.error('Gemini Live error:', err);
+                    setError('Connection error occurred. Please try again.');
+                    setStatus(InterviewStatus.ERROR);
+                    cleanup();
                 }
-            });
+            } as any);
 
             sessionRef.current = await sessionPromise;
 
