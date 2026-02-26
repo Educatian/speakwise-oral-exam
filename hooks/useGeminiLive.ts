@@ -462,6 +462,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                                 }]);
 
                                 setPendingUserText('');
+                                transcriptBufferRef.current.user = ''; // FIX: MUST CLEAR USER BUFFER HERE!
                                 setLatencyMetrics(updateLatencyMetrics());
                             }
                             lastSpeakerRef.current = 'ai';
