@@ -188,6 +188,14 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
             const outputCtx = new AudioContext({ sampleRate: 24000 });
             audioContextRef.current = { input: inputCtx, output: outputCtx };
 
+            // Ensure AudioContexts are running (browsers often suspend them initially)
+            if (inputCtx.state === 'suspended') {
+                await inputCtx.resume();
+            }
+            if (outputCtx.state === 'suspended') {
+                await outputCtx.resume();
+            }
+
             const sessionPromise = ai.live.connect({
                 model: 'gemini-2.5-flash-native-audio-preview-12-2025',
                 config: {
