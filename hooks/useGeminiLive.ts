@@ -242,22 +242,10 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                                 },
                                 onVoiceActivity: (isSpeaking) => {
                                     setIsUserSpeaking(isSpeaking);
-
-                                    // Manually signal activity start and end as VAD state changes
-                                    // This is critical to let Gemini know we've finished speaking to trigger its reply
-                                    if (sessionRef.current) {
-                                        try {
-                                            if (isSpeaking) {
-                                                console.log('[GeminiLive] Sent: activityStart');
-                                                sessionRef.current.sendRealtimeInput({ activityStart: {} });
-                                            } else {
-                                                console.log('[GeminiLive] Sent: activityEnd');
-                                                sessionRef.current.sendRealtimeInput({ activityEnd: {} });
-                                            }
-                                        } catch (e) {
-                                            // Session closed or not ready
-                                        }
-                                    }
+                                    // Note: We rely on Gemini's built-in automatic activity detection
+                                    // (configured above) to handle turn boundaries.
+                                    // Do NOT send manual activityStart/activityEnd signals here
+                                    // as they conflict with the server-side VAD.
                                 },
                                 onPCMData: (pcmBlob) => {
                                     // Send audio to Gemini if session active
