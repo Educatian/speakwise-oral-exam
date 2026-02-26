@@ -42,6 +42,7 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
 
     // Check if current user is admin
     const isAdmin = effectiveEmail?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+
     // Form state
     const [courseName, setCourseName] = useState('');
     const [instructorName, setInstructorName] = useState('');
@@ -104,6 +105,147 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
         setPinModalCourse(null);
         setPinModalAction(null);
     };
+    // File upload state for Document-Driven Course Creation
+    const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+    const [isDragging, setIsDragging] = useState(false);
+    const [isExtracting, setIsExtracting] = useState(false);
+    const [extractedQuestions, setExtractedQuestions] = useState<string[]>([]);
+    const [extractedContext, setExtractedContext] = useState('');
+    const [showQuestionReview, setShowQuestionReview] = useState(false);
+    const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+    // Handle file drop
+    const handleDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragging(false);
+        const files = Array.from(e.dataTransfer.files).slice(0, 2) as File[];
+        const validFiles = files.filter(f =>
+            f.type === 'application/pdf' ||
+            f.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+            f.type === 'text/plain' ||
+            f.name.endsWith('.txt') || f.name.endsWith('.pdf') || f.name.endsWith('.docx')
+        );
+        if (validFiles.length > 0) {
+            setUploadedFiles(prev => [...prev, ...validFiles].slice(0, 2));
+        }
+    };
+
+    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files) {
+            const files = Array.from(e.target.files).slice(0, 2);
+            setUploadedFiles(prev => [...prev, ...files].slice(0, 2));
+        }
+    };
+
+    const removeFile = (index: number) => {
+        setUploadedFiles(prev => prev.filter((_, i) => i !== index));
+        setExtractedQuestions([]);
+        setExtractedContext('');
+        setShowQuestionReview(false);
+    };
+
+    // Extract questions from uploaded files using Gemini
+    const handleExtractFromFiles = async () => {
+        if (uploadedFiles.length === 0) return;
+        setIsExtracting(true);
+        setFormError(null);
+
+        try {
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+
+            // Read files as text/base64
+            const fileContents = await Promise.all(
+                uploadedFiles.map(async (file) => {
+                    if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
+                        return { name: file.name, text: await file.text() };
+                    }
+                    // For PDF/DOCX, send as inline data
+                    const arrayBuffer = await file.arrayBuffer();
+                    const base64 = btoa(
+                        new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+                    );
+                    return { name: file.name, base64, mimeType: file.type };
+                })
+            );
+
+            // Build multimodal content parts
+            const parts: any[] = [];
+            for (const fc of fileContents) {
+                if ('text' in fc && fc.text) {
+                    parts.push({ text: `--- File: ${fc.name} ---\n${fc.text}` });
+                } else if ('base64' in fc && fc.base64) {
+                    parts.push({
+                        inlineData: { data: fc.base64, mimeType: fc.mimeType }
+                    });
+                }
+            }
+
+            parts.push({
+                text: `You are analyzing course materials for an oral examination platform.
+Based on the uploaded document(s), extract:
+1. A concise knowledge base summary (2-3 paragraphs) covering the key concepts, topics, and learning objectives.
+2. A list of 5-7 high-quality interview questions that an AI interviewer should ask students. Questions should test understanding, not just recall.
+
+Respond in this exact JSON format:
+{
+  "knowledgeBase": "...",
+  "questions": ["Question 1?", "Question 2?", ...]
+}
+
+Course name context: "${courseName || 'Unknown Course'}"
+Only output valid JSON, nothing else.`
+            });
+
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: [{ role: 'user', parts }]
+            });
+
+            const text = response.text || '';
+            // Parse JSON from response (handle markdown code blocks)
+            const jsonMatch = text.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                const parsed = JSON.parse(jsonMatch[0]);
+                setExtractedQuestions(parsed.questions || []);
+                setExtractedContext(parsed.knowledgeBase || '');
+                setShowQuestionReview(true);
+            } else {
+                setFormError('Failed to parse questions from documents. Try again.');
+            }
+        } catch (err) {
+            console.error('Extraction failed:', err);
+            setFormError('Failed to extract questions. Please check your files and try again.');
+        } finally {
+            setIsExtracting(false);
+        }
+    };
+
+    // Apply extracted questions to the system prompt
+    const handleApproveQuestions = () => {
+        const questionsBlock = extractedQuestions
+            .map((q, i) => `${i + 1}. ${q}`)
+            .join('\n');
+
+        const prompt = `## Knowledge Base (from uploaded documents)\n${extractedContext}\n\n## Required Interview Questions\nYou MUST ask these questions in order:\n${questionsBlock}\n\nEvaluate the student's answers against the Knowledge Base above. Be thorough but encouraging.`;
+
+        setCoursePrompt(prompt);
+        setShowQuestionReview(false);
+    };
+
+    // Edit a question
+    const updateQuestion = (index: number, value: string) => {
+        setExtractedQuestions(prev => prev.map((q, i) => i === index ? value : q));
+    };
+
+    // Remove a question
+    const removeQuestion = (index: number) => {
+        setExtractedQuestions(prev => prev.filter((_, i) => i !== index));
+    };
+
+    // Add a question
+    const addQuestion = () => {
+        setExtractedQuestions(prev => [...prev, '']);
+    };
 
     // Validate and add course
     const handleAddCourse = async () => {
@@ -157,6 +299,10 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
         setInstructorPin('');
         setCoursePassword('');
         setCoursePrompt('');
+        setUploadedFiles([]);
+        setExtractedQuestions([]);
+        setExtractedContext('');
+        setShowQuestionReview(false);
     };
 
     // Generate AI prompt
@@ -264,6 +410,125 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
                             onChange={(e) => setCoursePassword(e.target.value)}
                             aria-label="Student passcode"
                         />
+
+                        {/* ── Document Upload Section ────────────────────────────── */}
+                        <div className="border border-dashed border-indigo-500/30 rounded-2xl p-4 space-y-3">
+                            <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-widest flex items-center gap-2">
+                                📄 Knowledge Source (Optional)
+                                <span className="text-slate-600 font-normal normal-case tracking-normal">Max 2 files</span>
+                            </h4>
+
+                            {/* Dropzone */}
+                            <div
+                                className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all ${isDragging
+                                    ? 'border-indigo-400 bg-indigo-500/10'
+                                    : 'border-slate-700 hover:border-indigo-500/50 hover:bg-slate-800/30'
+                                    }`}
+                                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                                onDragLeave={() => setIsDragging(false)}
+                                onDrop={handleDrop}
+                                onClick={() => fileInputRef.current?.click()}
+                            >
+                                <input
+                                    ref={fileInputRef}
+                                    type="file"
+                                    accept=".pdf,.docx,.txt"
+                                    multiple
+                                    className="hidden"
+                                    onChange={handleFileSelect}
+                                />
+                                <svg className="w-8 h-8 mx-auto text-slate-600 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                </svg>
+                                <p className="text-xs text-slate-500">
+                                    {isDragging ? 'Drop files here' : 'Drop PDF, DOCX, or TXT — or click to browse'}
+                                </p>
+                            </div>
+
+                            {/* Uploaded Files */}
+                            {uploadedFiles.length > 0 && (
+                                <div className="space-y-2">
+                                    {uploadedFiles.map((file, i) => (
+                                        <div key={i} className="flex items-center justify-between bg-slate-800/50 rounded-lg px-3 py-2">
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <span className="text-indigo-400 text-sm">📎</span>
+                                                <span className="text-xs text-slate-300 truncate">{file.name}</span>
+                                                <span className="text-[10px] text-slate-600">({(file.size / 1024).toFixed(0)} KB)</span>
+                                            </div>
+                                            <button
+                                                onClick={() => removeFile(i)}
+                                                className="text-slate-600 hover:text-red-400 transition-colors flex-shrink-0"
+                                            >
+                                                ✕
+                                            </button>
+                                        </div>
+                                    ))}
+
+                                    {!showQuestionReview && (
+                                        <button
+                                            onClick={handleExtractFromFiles}
+                                            disabled={isExtracting}
+                                            className="w-full py-2 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/30 text-indigo-300 text-xs font-bold rounded-xl flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                                        >
+                                            {isExtracting ? (
+                                                <>
+                                                    <span className="spinner w-3 h-3" />
+                                                    Analyzing documents...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    🔍 Extract Questions from Documents
+                                                </>
+                                            )}
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Question Review Panel */}
+                            {showQuestionReview && extractedQuestions.length > 0 && (
+                                <div className="space-y-3 border-t border-slate-700 pt-3">
+                                    <div className="flex items-center justify-between">
+                                        <h5 className="text-xs font-bold text-emerald-400 uppercase">
+                                            📋 Extracted Questions ({extractedQuestions.length})
+                                        </h5>
+                                        <button
+                                            onClick={addQuestion}
+                                            className="text-[10px] text-indigo-400 hover:text-indigo-300 font-bold"
+                                        >
+                                            + Add Question
+                                        </button>
+                                    </div>
+
+                                    <div className="space-y-2 max-h-[200px] overflow-y-auto custom-scrollbar">
+                                        {extractedQuestions.map((q, i) => (
+                                            <div key={i} className="flex items-start gap-2">
+                                                <span className="text-[10px] text-slate-600 mt-2 flex-shrink-0">{i + 1}.</span>
+                                                <input
+                                                    type="text"
+                                                    value={q}
+                                                    onChange={(e) => updateQuestion(i, e.target.value)}
+                                                    className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-300 focus:border-indigo-500/50 focus:outline-none"
+                                                />
+                                                <button
+                                                    onClick={() => removeQuestion(i)}
+                                                    className="text-slate-600 hover:text-red-400 text-xs mt-1 flex-shrink-0"
+                                                >
+                                                    ✕
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    <button
+                                        onClick={handleApproveQuestions}
+                                        className="w-full py-2 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 text-emerald-300 text-xs font-bold rounded-xl transition-all"
+                                    >
+                                        ✓ Approve & Generate Prompt
+                                    </button>
+                                </div>
+                            )}
+                        </div>
 
                         <div className="relative">
                             <Textarea

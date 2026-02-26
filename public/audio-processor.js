@@ -15,12 +15,16 @@ class AudioProcessor extends AudioWorkletProcessor {
         this.calibrationSamples = 50; // ~1 second at 128 samples per frame
 
         // Adaptive threshold
-        this.adaptiveThreshold = 0.02; // Will be adjusted based on noise floor
+        this.adaptiveThreshold = 0.01; // Will be adjusted based on noise floor
 
         // Resampling state for linear interpolation
         this.resampleRatio = sampleRate / 16000;
         this.lastSample = 0;
         this.fractionalIndex = 0;
+
+        // VAD smoothing state
+        this.speakingHangover = 0;
+        this.isSpeaking = false;
     }
 
     /**
@@ -82,8 +86,8 @@ class AudioProcessor extends AudioWorkletProcessor {
 
             if (this.calibrationFrames >= this.calibrationSamples) {
                 this.noiseFloor = this.calibrationSum / this.calibrationFrames;
-                // Set threshold to 3x noise floor (with minimum)
-                this.adaptiveThreshold = Math.max(0.015, this.noiseFloor * 3);
+                // Set threshold to 2x noise floor (with minimum of 0.01 for higher sensitivity)
+                this.adaptiveThreshold = Math.max(0.01, this.noiseFloor * 2.0);
                 this.noiseCalibrated = true;
 
                 this.port.postMessage({
@@ -98,7 +102,17 @@ class AudioProcessor extends AudioWorkletProcessor {
         const normalizedLevel = Math.min(100, Math.round(rms * 500));
 
         // Detect voice activity using adaptive threshold
-        const isSpeaking = rms > this.adaptiveThreshold;
+        const isCurrentlySpeaking = rms > this.adaptiveThreshold;
+
+        // Apply VAD smoothing (hangover) to bridge short pauses and prevent flickering
+        if (isCurrentlySpeaking) {
+            this.speakingHangover = 50; // Keep speaking true for ~50 frames after last detection
+            this.isSpeaking = true;
+        } else if (this.speakingHangover > 0) {
+            this.speakingHangover--;
+        } else {
+            this.isSpeaking = false;
+        }
 
         // Resample using linear interpolation
         const resampled = this.resampleLinear(channelData);
@@ -108,7 +122,7 @@ class AudioProcessor extends AudioWorkletProcessor {
         this.port.postMessage({
             type: 'audio',
             audioLevel: normalizedLevel,
-            isSpeaking: isSpeaking,
+            isSpeaking: this.isSpeaking,
             pcmData: pcmInt16.buffer
         }, [pcmInt16.buffer]); // Transfer buffer ownership
 

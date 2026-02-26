@@ -264,19 +264,23 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                         // Force the AI to start speaking by acting as the initializing turn
                         sessionPromise.then(s => {
                             if (s) {
-                                try {
-                                    (s as any).send({
-                                        clientContent: {
-                                            turns: [{
-                                                role: 'user',
-                                                parts: [{ text: "System Notification: The student has just entered the room. Please begin the interview immediately as per your instructions." }]
-                                            }],
-                                            turnComplete: true
-                                        }
-                                    });
-                                } catch (e) {
-                                    console.error('Failed to send initial ping to AI', e);
-                                }
+                                // Add a short delay to ensure the server is ready to receive input
+                                setTimeout(() => {
+                                    try {
+                                        (s as any).send({
+                                            clientContent: {
+                                                turns: [{
+                                                    role: 'user',
+                                                    parts: [{ text: "Hello, I have joined the room. Please begin the interview and introduce yourself." }]
+                                                }],
+                                                turnComplete: true
+                                            }
+                                        });
+                                        console.log('[GeminiLive] Sent init ping to trigger AI introduction');
+                                    } catch (e) {
+                                        console.error('Failed to send initial ping to AI', e);
+                                    }
+                                }, 500);
                             }
                         });
                     },

@@ -123,7 +123,11 @@ function setupScriptProcessor(
     let calibrated = false;
     let calibrationFrames = 0;
     let calibrationSum = 0;
-    let adaptiveThreshold = 0.02;
+    let adaptiveThreshold = 0.01;
+
+    // VAD smoothing state
+    let speakingHangover = 0;
+    let isSpeaking = false;
 
     scriptProcessor.onaudioprocess = (e) => {
         const inputData = e.inputBuffer.getChannelData(0);
@@ -142,7 +146,7 @@ function setupScriptProcessor(
 
             if (calibrationFrames >= 50) {
                 noiseFloor = calibrationSum / calibrationFrames;
-                adaptiveThreshold = Math.max(0.015, noiseFloor * 3);
+                adaptiveThreshold = Math.max(0.01, noiseFloor * 2.0);
                 calibrated = true;
                 callbacks.onCalibration?.(noiseFloor, adaptiveThreshold);
             }
@@ -153,7 +157,18 @@ function setupScriptProcessor(
         callbacks.onAudioLevel(normalizedLevel);
 
         // Voice activity with adaptive threshold
-        const isSpeaking = rms > adaptiveThreshold;
+        const isCurrentlySpeaking = rms > adaptiveThreshold;
+
+        // Apply VAD smoothing (hangover)
+        if (isCurrentlySpeaking) {
+            speakingHangover = 50;
+            isSpeaking = true;
+        } else if (speakingHangover > 0) {
+            speakingHangover--;
+        } else {
+            isSpeaking = false;
+        }
+
         callbacks.onVoiceActivity(isSpeaking);
 
         // Resample with linear interpolation
