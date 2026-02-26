@@ -27,31 +27,18 @@ import {
     ArgumentGraphBuilder
 } from '../lib/reasoning';
 
+import {
+    DEFAULT_LATENCY_METRICS,
+    DEFAULT_DIALOGUE_METRICS,
+    calculateLatencyMetrics,
+    detectBargeInEvent
+} from '../lib/voice/analyticsUtils';
+
 interface UseGeminiLiveOptions {
     systemInstruction: string;
     voiceName?: string;
     onTranscriptionComplete?: (transcriptions: TranscriptionItem[]) => void;
 }
-
-// Default latency metrics
-const DEFAULT_LATENCY_METRICS: LatencyMetrics = {
-    avgInitialLatency: 0,
-    maxLatency: 0,
-    minLatency: Infinity,
-    totalThinkingTime: 0,
-    turnCount: 0,
-    turnTakingRatio: 0
-};
-
-// Default dialogue metrics
-const DEFAULT_DIALOGUE_METRICS: DialogueMetrics = {
-    turnInitiatives: 0,
-    rephrasingEvents: 0,
-    followUpDepth: [],
-    avgFollowUpDepth: 0,
-    latencyVariation: 0,
-    questionResponseRatio: 0
-};
 
 /**
  * Custom hook for managing Gemini Live audio sessions
@@ -151,41 +138,24 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
         currentInterviewerTextRef.current = '';
     }, []);
 
-    // Calculate latency metrics
-    const calculateLatencyMetrics = useCallback((): LatencyMetrics => {
-        const latencies = latencyListRef.current;
-        if (latencies.length === 0) {
-            return DEFAULT_LATENCY_METRICS;
-        }
-
-        const sum = latencies.reduce((a, b) => a + b, 0);
-        const avg = sum / latencies.length;
-        const max = Math.max(...latencies);
-        const min = Math.min(...latencies);
-
-        const userTime = userSpeakingTimeRef.current;
-        const interviewerTime = interviewerSpeakingTimeRef.current;
-        const ratio = interviewerTime > 0 ? userTime / interviewerTime : 0;
-
-        return {
-            avgInitialLatency: Math.round(avg),
-            maxLatency: max,
-            minLatency: min === Infinity ? 0 : min,
-            totalThinkingTime: sum,
-            turnCount: latencies.length,
-            turnTakingRatio: Math.round(ratio * 100) / 100
-        };
+    // Calculate latency metrics using external utilities
+    const updateLatencyMetrics = useCallback(() => {
+        const metrics = calculateLatencyMetrics(
+            latencyListRef.current,
+            userSpeakingTimeRef.current,
+            interviewerSpeakingTimeRef.current
+        );
+        return metrics;
     }, []);
 
     // Detect and log barge-in events
-    const detectBargeIn = useCallback((userText: string) => {
-        if (isInterviewerSpeaking && currentInterviewerTextRef.current) {
-            const event: BargeInEvent = {
-                timestamp: Date.now(),
-                interruptedContent: currentInterviewerTextRef.current,
-                studentUtterance: userText,
-                interpretationType: 'unknown' // Could be enhanced with NLP
-            };
+    const processBargeIn = useCallback((userText: string) => {
+        const event = detectBargeInEvent(
+            isInterviewerSpeaking,
+            currentInterviewerTextRef.current,
+            userText
+        );
+        if (event) {
             setBargeInEvents(prev => [...prev, event]);
             return true;
         }
@@ -344,7 +314,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                                 // Update real-time pending text display
                                 setPendingUserText(transcriptBufferRef.current.user);
                                 // Check for barge-in
-                                detectBargeIn(userText);
+                                processBargeIn(userText);
                             }
                         }
 
@@ -460,9 +430,8 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                                     isBargeIn: isInterviewerSpeaking
                                 }]);
 
-                                transcriptBufferRef.current.user = '';
                                 setPendingUserText('');
-                                setLatencyMetrics(calculateLatencyMetrics());
+                                setLatencyMetrics(updateLatencyMetrics());
                             }
                             lastSpeakerRef.current = 'ai';
                         }
@@ -512,13 +481,13 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                             setPendingAIText('');
 
                             // Update latency metrics
-                            setLatencyMetrics(calculateLatencyMetrics());
+                            setLatencyMetrics(updateLatencyMetrics());
                         }
                     },
 
                     onclose: () => {
                         setStatus(InterviewStatus.ENDED);
-                        setLatencyMetrics(calculateLatencyMetrics());
+                        setLatencyMetrics(updateLatencyMetrics());
                         if (onTranscriptionComplete) {
                             onTranscriptionComplete(transcriptions);
                         }
@@ -549,7 +518,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
             setStatus(InterviewStatus.IDLE);
             cleanup();
         }
-    }, [systemInstruction, voiceName, cleanup, onTranscriptionComplete, transcriptions, detectBargeIn, calculateLatencyMetrics, isInterviewerSpeaking]);
+    }, [systemInstruction, voiceName, cleanup, onTranscriptionComplete, transcriptions, processBargeIn, updateLatencyMetrics, isInterviewerSpeaking]);
 
     // End the current session
     const endSession = useCallback(() => {
@@ -579,7 +548,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
         }
 
         // Calculate final metrics before cleanup
-        setLatencyMetrics(calculateLatencyMetrics());
+        setLatencyMetrics(updateLatencyMetrics());
 
         // Get final argument graph
         setArgumentGraph(argumentGraphBuilderRef.current.getGraph());
@@ -587,7 +556,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
         cleanup();
         setStatus(InterviewStatus.ENDED);
         setIsInterviewerSpeaking(false);
-    }, [cleanup, calculateLatencyMetrics]);
+    }, [cleanup, updateLatencyMetrics]);
 
     // Calculate reasoning rubric from all transcriptions
     const getReasoningRubric = useCallback(() => {

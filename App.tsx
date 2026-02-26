@@ -177,152 +177,33 @@ const App: React.FC = () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   const renderCurrentView = () => {
-    // Show loading state while Supabase data loads
-    if (isLoading) {
-      return (
-        <div className="flex flex-col items-center justify-center min-h-[50vh] gap-4">
-          <div className="w-12 h-12 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
-          <p className="text-slate-500 text-sm animate-pulse">
-            Loading from {isSupabaseConfigured() ? 'Supabase' : 'localStorage'}...
-          </p>
-        </div>
-      );
-    }
-
-    switch (view) {
-      case AppView.LANDING:
-        return (
-          <LandingView
-            onNavigate={navigateTo}
-          />
-        );
-
-      // New unified auth flow
-      case AppView.UNIFIED_AUTH:
-        return (
-          <UnifiedAuthView
-            onAuthSuccess={handleAuthSuccess}
-            onBack={returnToLanding}
-            defaultRole={userRole}
-          />
-        );
-
-      case AppView.SCHOOL_SELECT:
-        return (
-          <SchoolSelectView
-            onSchoolSelect={handleSchoolSelect}
-            onBack={() => navigateTo(AppView.UNIFIED_AUTH)}
-            savedSchool={savedSchool}
-            userName={studentName || user?.displayName}
-          />
-        );
-
-      case AppView.INSTRUCTOR_LOGIN:
-        return (
-          <InstructorLoginView
-            onLogin={() => navigateTo(AppView.INSTRUCTOR_DASHBOARD)}
-            onBack={returnToLanding}
-          />
-        );
-
-      case AppView.ADMIN_PANEL:
-        return (
-          <AdminPanelView
-            currentUserEmail={user?.email}
-            onBack={() => navigateTo(AppView.INSTRUCTOR_DASHBOARD)}
-          />
-        );
-
-      case AppView.INSTRUCTOR_DASHBOARD:
-        // Check if user is admin - supports both Supabase auth and localStorage
-        const storedUser = localStorage.getItem('speakwise_user');
-        const storedEmail = storedUser ? JSON.parse(storedUser)?.email : null;
-        const currentEmail = user?.email || storedEmail;
-        const isAdmin = currentEmail?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
-        return (
-          <ManagerDashboardView
-            courses={courses}
-            onAddCourse={handleAddCourse}
-            onUpdateCourse={updateCourse}
-            onDeleteCourse={deleteCourse}
-            onDeleteSubmission={deleteSubmission}
-            onSelectSubmission={setSelectedSubmission}
-            onBack={returnToLanding}
-            currentUserEmail={currentEmail}
-            onAdminPanel={isAdmin ? () => navigateTo(AppView.ADMIN_PANEL) : undefined}
-          />
-        );
-
-      case AppView.STUDENT_COURSES:
-        return (
-          <StudentCoursesView
-            courses={courses}
-            onSelectCourse={(course) => {
-              setActiveCourse(course);
-              navigateTo(AppView.STUDENT_LOGIN);
-            }}
-            onViewHistory={() => navigateTo(AppView.STUDENT_HISTORY)}
-            onBack={returnToLanding}
-          />
-        );
-
-      case AppView.STUDENT_LOGIN:
-        return (
-          <StudentLoginView
-            courses={courses}
-            selectedCourse={activeCourse}
-            onLogin={handleStudentLogin}
-            onViewHistory={() => navigateTo(AppView.STUDENT_HISTORY)}
-            onManagerAccess={() => navigateTo(AppView.MANAGER_DASHBOARD)}
-            onBack={() => {
-              setActiveCourse(null);
-              navigateTo(AppView.STUDENT_COURSES);
-            }}
-          />
-        );
-
-      case AppView.STUDENT_HISTORY:
-        return (
-          <StudentHistoryView
-            submissions={history}
-            onSelectSubmission={setSelectedSubmission}
-            onBack={returnToLanding}
-          />
-        );
-
-      case AppView.STUDENT_INTERVIEW:
-        if (!activeCourse) return null;
-        return (
-          <InterviewSessionView
-            course={activeCourse}
-            studentName={studentName}
-            onComplete={handleInterviewComplete}
-            onBack={returnToLanding}
-          />
-        );
-
-      case AppView.MANAGER_DASHBOARD:
-        const storedUserMgr = localStorage.getItem('speakwise_user');
-        const storedEmailMgr = storedUserMgr ? JSON.parse(storedUserMgr)?.email : null;
-        const currentEmailMgr = user?.email || storedEmailMgr;
-        const isAdminMgr = currentEmailMgr?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
-        return (
-          <ManagerDashboardView
-            courses={courses}
-            onAddCourse={handleAddCourse}
-            onUpdateCourse={updateCourse}
-            onDeleteCourse={deleteCourse}
-            onDeleteSubmission={deleteSubmission}
-            onSelectSubmission={setSelectedSubmission}
-            onBack={returnToLanding}
-            currentUserEmail={currentEmailMgr}
-            onAdminPanel={isAdminMgr ? () => navigateTo(AppView.ADMIN_PANEL) : undefined}
-          />
-        );
-
-      default:
-        return null;
-    }
+    return (
+      <AppRouter
+        view={view}
+        isLoading={isLoading}
+        isSupabaseConfigured={isSupabaseConfigured}
+        user={user}
+        userRole={userRole}
+        studentName={studentName}
+        savedSchool={savedSchool}
+        courses={courses}
+        history={history}
+        activeCourse={activeCourse}
+        returnToLanding={returnToLanding}
+        navigateTo={navigateTo}
+        handleAuthSuccess={handleAuthSuccess}
+        handleSchoolSelect={handleSchoolSelect}
+        handleStudentLogin={handleStudentLogin}
+        handleInitStudentSession={handleInitStudentSession}
+        handleInterviewComplete={handleInterviewComplete}
+        handleAddCourse={handleAddCourse}
+        updateCourse={updateCourse}
+        deleteCourse={deleteCourse}
+        deleteSubmission={deleteSubmission}
+        setSelectedSubmission={setSelectedSubmission}
+        setActiveCourse={setActiveCourse}
+      />
+    );
   };
 
   // ─────────────────────────────────────────────────────────────────────────
