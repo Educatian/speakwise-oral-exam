@@ -285,6 +285,16 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                         const sc = message.serverContent;
                         const hasAudio = !!sc?.modelTurn?.parts?.[0]?.inlineData?.data;
 
+                        // ── Diagnostics: trace every message type ──
+                        const msgTypes: string[] = [];
+                        if (hasAudio) msgTypes.push('AUDIO');
+                        if (sc?.inputTranscription) msgTypes.push(`INPUT_TRANSCRIPT: "${sc.inputTranscription.text?.substring(0, 40)}"`);
+                        if (sc?.outputTranscription) msgTypes.push(`OUTPUT_TRANSCRIPT: "${sc.outputTranscription.text?.substring(0, 40)}"`);
+                        if (sc?.turnComplete) msgTypes.push('TURN_COMPLETE');
+                        if (msgTypes.length > 0) {
+                            console.log(`[GeminiLive] Message: ${msgTypes.join(' | ')}`);
+                        }
+
                         // Handle audio output
                         const base64Audio = message.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
                         if (base64Audio) {
