@@ -1,11 +1,11 @@
 import React, { useEffect, useRef, useMemo, useState, useCallback } from 'react';
-import { GoogleGenAI, Type } from '@google/genai';
 import { Course, InterviewStatus, Submission, TranscriptionItem, RubricBreakdown } from '../../types';
 import { useGeminiLive } from '../../hooks';
-import { createInterviewerPrompt, createFeedbackPrompt } from '../../lib/prompts/interviewerSystem';
+import { createInterviewerPrompt } from '../../lib/prompts/interviewerSystem';
 import { AudioVisualizer } from '../AudioVisualizer';
 import { Button, MicTest } from '../ui';
 import { sanitizeTranscript } from '../../lib/security/sanitize';
+import { EvaluationService } from '../../lib/services/EvaluationService';
 
 interface InterviewSessionViewProps {
     course: Course;
@@ -110,90 +110,16 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({
         const finalTranscripts = endSession();
 
         try {
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-            const transcriptStr = finalTranscripts
-                .map((t: TranscriptionItem) => `${t.speaker}: ${sanitizeTranscript(t.text)}`)
-                .join('\n');
-
-            const feedbackPrompt = createFeedbackPrompt(course.name, transcriptStr);
-
-            const res = await ai.models.generateContent({
-                model: 'gemini-3-flash-preview',
-                contents: feedbackPrompt,
-                config: {
-                    responseMimeType: 'application/json',
-                    responseSchema: {
-                        type: Type.OBJECT,
-                        properties: {
-                            score: { type: Type.NUMBER },
-                            feedback: { type: Type.STRING },
-                            confidenceScore: { type: Type.NUMBER },
-                            confidenceRationale: { type: Type.STRING },
-                            rubricBreakdown: {
-                                type: Type.OBJECT,
-                                properties: {
-                                    conceptualUnderstanding: {
-                                        type: Type.OBJECT,
-                                        properties: {
-                                            score: { type: Type.NUMBER },
-                                            evidence: { type: Type.ARRAY, items: { type: Type.STRING } }
-                                        }
-                                    },
-                                    communicationClarity: {
-                                        type: Type.OBJECT,
-                                        properties: {
-                                            score: { type: Type.NUMBER },
-                                            evidence: { type: Type.ARRAY, items: { type: Type.STRING } }
-                                        }
-                                    },
-                                    criticalThinking: {
-                                        type: Type.OBJECT,
-                                        properties: {
-                                            score: { type: Type.NUMBER },
-                                            evidence: { type: Type.ARRAY, items: { type: Type.STRING } }
-                                        }
-                                    },
-                                    engagement: {
-                                        type: Type.OBJECT,
-                                        properties: {
-                                            score: { type: Type.NUMBER },
-                                            evidence: { type: Type.ARRAY, items: { type: Type.STRING } }
-                                        }
-                                    }
-                                }
-                            }
-                        },
-                        required: ['score', 'feedback']
-                    }
-                }
-            });
-
-            const analysis = JSON.parse(res.text || '{}');
-
-            // Build extended submission with LA data
-            const submission: Submission = {
-                id: Math.random().toString(36).substr(2, 9),
-                studentName,
+            const submission = await EvaluationService.evaluateTranscripts({
                 courseName: course.name,
-                timestamp: Date.now(),
-                transcript: transcriptions,
-                score: Math.min(100, Math.max(0, Math.round(analysis.score || 0))),
-                feedback: analysis.feedback || 'No feedback generated.',
-
-                // Learning Analytics
-                latencyMetrics: latencyMetrics,
-                bargeInEvents: bargeInEvents,
-
-                // Advanced Reasoning Analytics
-                dialogueMetrics: dialogueMetrics,
-                argumentGraph: argumentGraph,
-                reasoningRubric: getReasoningRubric(),
-
-                // AI Confidence & Rubric
-                confidenceScore: analysis.confidenceScore,
-                confidenceRationale: analysis.confidenceRationale,
-                rubricBreakdown: analysis.rubricBreakdown as RubricBreakdown
-            };
+                studentName,
+                transcriptions: finalTranscripts,
+                latencyMetrics,
+                bargeInEvents,
+                dialogueMetrics,
+                argumentGraph,
+                reasoningRubric: getReasoningRubric()
+            });
 
             onComplete(submission);
         } catch (e) {
@@ -205,7 +131,7 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({
                 studentName,
                 courseName: course.name,
                 timestamp: Date.now(),
-                transcript: transcriptions,
+                transcript: finalTranscripts,
                 score: 0,
                 feedback: 'Feedback generation failed. Please contact your instructor.',
                 latencyMetrics: latencyMetrics,
@@ -216,10 +142,6 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({
                 argumentGraph: argumentGraph,
                 reasoningRubric: getReasoningRubric()
             };
-
-            // Log for debugging
-            console.log('[Analytics] ArgumentGraph:', JSON.stringify(argumentGraph, null, 2));
-            console.log('[Analytics] DialogueMetrics:', JSON.stringify(dialogueMetrics, null, 2));
 
             onComplete(submission);
         }
