@@ -284,10 +284,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                                 setTimeout(() => {
                                     try {
                                         s.sendClientContent({
-                                            turns: [{
-                                                role: 'user',
-                                                parts: [{ text: "Hello! I am ready. Please introduce yourself and begin the interview." }]
-                                            }],
+                                            turns: "Hello! I am ready. Please introduce yourself and begin the interview.",
                                             turnComplete: true
                                         });
                                         console.log('[GeminiLive] Sent init ping (sendClientContent) to trigger AI introduction');
