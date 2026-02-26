@@ -270,12 +270,21 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                         const sc = message.serverContent;
                         const hasAudio = !!sc?.modelTurn?.parts?.[0]?.inlineData?.data;
 
+                        // ── VERBOSE DEBUG: dump every message we get ──
+                        const allKeys = Object.keys(message).filter(k => (message as any)[k] != null);
+                        if (allKeys.length > 0 && !hasAudio) {
+                            console.log(`[GeminiLive] RAW keys: ${allKeys.join(', ')}`,
+                                sc ? `| serverContent keys: ${Object.keys(sc).filter(k => (sc as any)[k] != null).join(', ')}` : '');
+                        }
+
                         // ── Diagnostics: trace every message type ──
                         const msgTypes: string[] = [];
                         if (hasAudio) msgTypes.push('AUDIO');
                         if (sc?.inputTranscription) msgTypes.push(`INPUT_TRANSCRIPT: "${sc.inputTranscription.text?.substring(0, 40)}"`);
                         if (sc?.outputTranscription) msgTypes.push(`OUTPUT_TRANSCRIPT: "${sc.outputTranscription.text?.substring(0, 40)}"`);
                         if (sc?.turnComplete) msgTypes.push('TURN_COMPLETE');
+                        if (message.setupComplete) msgTypes.push('SETUP_COMPLETE');
+                        if ((message as any).voiceActivity) msgTypes.push(`VOICE_ACTIVITY: ${JSON.stringify((message as any).voiceActivity)}`);
                         if (msgTypes.length > 0) {
                             console.log(`[GeminiLive] Message: ${msgTypes.join(' | ')}`);
                         }
