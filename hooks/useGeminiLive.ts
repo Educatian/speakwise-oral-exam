@@ -264,14 +264,14 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                         // Force the AI to start speaking by acting as the initializing turn
                         sessionPromise.then(s => {
                             if (s) {
-                                // Add a short delay to ensure the server is ready to receive input
+                                // Add a delay to ensure the server is fully ready and authenticated to receive input
                                 setTimeout(() => {
                                     try {
                                         (s as any).send({
                                             clientContent: {
                                                 turns: [{
                                                     role: 'user',
-                                                    parts: [{ text: "Hello, I have joined the room. Please begin the interview and introduce yourself." }]
+                                                    parts: [{ text: "I have just joined the room. Please begin the interview by introducing yourself as instructed." }]
                                                 }],
                                                 turnComplete: true
                                             }
@@ -280,7 +280,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                                     } catch (e) {
                                         console.error('Failed to send initial ping to AI', e);
                                     }
-                                }, 500);
+                                }, 2500);
                             }
                         });
                     },

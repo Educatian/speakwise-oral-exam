@@ -25,6 +25,15 @@ class AudioProcessor extends AudioWorkletProcessor {
         // VAD smoothing state
         this.speakingHangover = 0;
         this.isSpeaking = false;
+
+        // Audio buffering (send 2048 samples = ~128ms chunks instead of 128 samples)
+        this.outBufferSize = 2048;
+        this.outBuffer = new Int16Array(this.outBufferSize);
+        this.outBufferIndex = 0;
+
+        // Peak VAD tracking during chunk
+        this.chunkMaxLevel = 0;
+        this.chunkIsSpeaking = false;
     }
 
     /**
@@ -114,17 +123,36 @@ class AudioProcessor extends AudioWorkletProcessor {
             this.isSpeaking = false;
         }
 
+        // Track the highest level and speaking status for this chunk
+        this.chunkMaxLevel = Math.max(this.chunkMaxLevel, normalizedLevel);
+        this.chunkIsSpeaking = this.chunkIsSpeaking || this.isSpeaking;
+
         // Resample using linear interpolation
         const resampled = this.resampleLinear(channelData);
         const pcmInt16 = this.float32ToInt16(resampled);
 
-        // Send data to main thread
-        this.port.postMessage({
-            type: 'audio',
-            audioLevel: normalizedLevel,
-            isSpeaking: this.isSpeaking,
-            pcmData: pcmInt16.buffer
-        }, [pcmInt16.buffer]); // Transfer buffer ownership
+        // Copy up to length to outBuffer. If it hits size, send event.
+        for (let i = 0; i < pcmInt16.length; i++) {
+            this.outBuffer[this.outBufferIndex++] = pcmInt16[i];
+
+            if (this.outBufferIndex >= this.outBufferSize) {
+                // Buffer full, send to main thread!
+                // Create a clone to transfer ownership so we can reuse `outBuffer`
+                const bufferToTransfer = new Int16Array(this.outBuffer);
+
+                this.port.postMessage({
+                    type: 'audio',
+                    audioLevel: this.chunkMaxLevel,
+                    isSpeaking: this.chunkIsSpeaking,
+                    pcmData: bufferToTransfer.buffer
+                }, [bufferToTransfer.buffer]);
+
+                // Reset chunk vars
+                this.outBufferIndex = 0;
+                this.chunkMaxLevel = 0;
+                this.chunkIsSpeaking = false;
+            }
+        }
 
         return true;
     }
