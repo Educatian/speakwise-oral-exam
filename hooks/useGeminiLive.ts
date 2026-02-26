@@ -264,24 +264,6 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                                 }
                             }
                         );
-
-                        // Force the AI to start speaking by acting as the initializing turn
-                        sessionPromise.then(s => {
-                            if (s) {
-                                // Add a delay to ensure the server is fully ready and authenticated to receive input
-                                setTimeout(() => {
-                                    try {
-                                        s.sendClientContent({
-                                            turns: "Hello! I am ready. Please introduce yourself and begin the interview.",
-                                            turnComplete: true
-                                        });
-                                        console.log('[GeminiLive] Sent init ping (sendClientContent) to trigger AI introduction');
-                                    } catch (e) {
-                                        console.error('Failed to send initial ping to AI', e);
-                                    }
-                                }, 2500);
-                            }
-                        });
                     },
 
                     onmessage: async (message: LiveServerMessage) => {
@@ -529,6 +511,24 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
             } as any);
 
             sessionRef.current = await sessionPromise;
+
+            // ── Auto-greet: make the AI speak first ──
+            // Session is now fully connected and ready.
+            // Send a short delay, then trigger the AI to introduce itself.
+            setTimeout(() => {
+                if (sessionRef.current) {
+                    try {
+                        console.log('[GeminiLive] Sending init ping to trigger AI greeting...');
+                        sessionRef.current.sendClientContent({
+                            turns: "Hello! I'm ready for the interview. Please introduce yourself and start.",
+                            turnComplete: true
+                        });
+                        console.log('[GeminiLive] Init ping sent successfully');
+                    } catch (e) {
+                        console.error('[GeminiLive] Failed to send init ping:', e);
+                    }
+                }
+            }, 1000);
 
         } catch (err: any) {
             console.error('Failed to start session:', err);
