@@ -267,16 +267,14 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                                 // Add a delay to ensure the server is fully ready and authenticated to receive input
                                 setTimeout(() => {
                                     try {
-                                        (s as any).send({
-                                            clientContent: {
-                                                turns: [{
-                                                    role: 'user',
-                                                    parts: [{ text: "I have just joined the room. Please begin the interview by introducing yourself as instructed." }]
-                                                }],
-                                                turnComplete: true
-                                            }
+                                        s.sendClientContent({
+                                            turns: [{
+                                                role: 'user',
+                                                parts: [{ text: "Hello! I am ready. Please introduce yourself and begin the interview." }]
+                                            }],
+                                            turnComplete: true
                                         });
-                                        console.log('[GeminiLive] Sent init ping to trigger AI introduction');
+                                        console.log('[GeminiLive] Sent init ping (sendClientContent) to trigger AI introduction');
                                     } catch (e) {
                                         console.error('Failed to send initial ping to AI', e);
                                     }
