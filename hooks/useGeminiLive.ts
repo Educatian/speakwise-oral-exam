@@ -75,6 +75,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
     const previousUserTextRef = useRef<string>('');
     const lastSpeakerRef = useRef<'user' | 'ai' | null>(null); // Track who was speaking last
     const audioEndTimerRef = useRef<NodeJS.Timeout | null>(null); // Debounced safety for AI speaking state
+    const isInterviewerSpeakingRef = useRef(false); // Ref mirror for stale-closure-safe access
 
     // Cleanup function
     const cleanup = useCallback(() => {
@@ -115,10 +116,15 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
         );
     }, []);
 
-    // Detect and log barge-in events
+    // Sync ref mirror whenever state changes
+    useEffect(() => {
+        isInterviewerSpeakingRef.current = isInterviewerSpeaking;
+    }, [isInterviewerSpeaking]);
+
+    // Detect and log barge-in events (uses ref to avoid stale closure)
     const processBargeIn = useCallback((userText: string) => {
         const event = detectBargeInEvent(
-            isInterviewerSpeaking,
+            isInterviewerSpeakingRef.current,
             currentInterviewerTextRef.current,
             userText
         );
@@ -127,7 +133,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
             return true;
         }
         return false;
-    }, [isInterviewerSpeaking]);
+    }, []);
 
     // Start a new session
     const startSession = useCallback(async () => {
@@ -423,7 +429,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
             setStatus(InterviewStatus.IDLE);
             cleanup();
         }
-    }, [systemInstruction, voiceName, cleanup, onTranscriptionComplete, transcriptions, processBargeIn, updateLatencyMetrics, isInterviewerSpeaking]);
+    }, [systemInstruction, voiceName, cleanup, onTranscriptionComplete, processBargeIn, updateLatencyMetrics]);
 
     // End the current session
     const endSession = useCallback(() => {

@@ -79,13 +79,23 @@ export class AudioStreamService {
     }
 
     /**
-     * Gapless audio playback with pre-scheduling and crossfade
+     * Gapless audio playback with micro-fade at chunk boundaries
      */
     async playAudioChunk(base64Data: string): Promise<void> {
         if (!this.outputCtx || !this.outputGain) return;
 
         try {
             const audioData = await decodeAudioData(decode(base64Data), this.outputCtx, 24000, 1);
+
+            // Apply micro fade-in/fade-out (2ms) to raw samples to smooth chunk boundaries
+            const channelData = audioData.getChannelData(0);
+            const fadeSamples = Math.min(48, Math.floor(channelData.length / 4)); // 2ms at 24kHz = 48 samples
+            for (let i = 0; i < fadeSamples; i++) {
+                const gain = i / fadeSamples;
+                channelData[i] *= gain;                                    // fade-in
+                channelData[channelData.length - 1 - i] *= gain;           // fade-out
+            }
+
             const source = this.outputCtx.createBufferSource();
             source.buffer = audioData;
 
@@ -98,14 +108,11 @@ export class AudioStreamService {
                 source.disconnect();
             };
 
-            // Pre-schedule for gapless playback
+            // Schedule back-to-back (no overlap, no gap)
             const currentTime = this.outputCtx.currentTime;
             this.nextStartTime = Math.max(currentTime, this.nextStartTime);
             source.start(this.nextStartTime);
-
-            // Tiny overlap (5ms) to prevent click/pop artifacts between chunks
-            // Do NOT use 30ms+ — it accumulates over 100+ chunks and speeds up speech
-            this.nextStartTime += Math.max(0, audioData.duration - 0.005);
+            this.nextStartTime += audioData.duration;
         } catch (err) {
             console.error('[AudioStreamService] Error decoding or playing audio data', err);
         }
