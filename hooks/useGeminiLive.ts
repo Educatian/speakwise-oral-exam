@@ -486,12 +486,16 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
         setLatencyMetrics(updateLatencyMetrics());
         setArgumentGraph(argumentGraphBuilderRef.current.getGraph());
 
+        // CRITICAL: save transcriptions BEFORE cleanup (cleanup clears them!)
+        const finalTranscripts = [...transcriptionsRef.current];
+
         cleanup();
         setStatus(InterviewStatus.ENDED);
         setTurnPhase('idle');
         setIsInterviewerSpeaking(false);
 
-        return transcriptionsRef.current;
+        console.log('[TurnBased] Session ended with', finalTranscripts.length, 'transcriptions');
+        return finalTranscripts;
     }, [cleanup, updateLatencyMetrics, addTranscription]);
 
     // Calculate reasoning rubric
