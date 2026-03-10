@@ -59,10 +59,8 @@ export class GeminiWebsocketClient {
     sendAudio(mimeType: string, data: string): void {
         if (!this.session) return;
         try {
-            this.session.send({
-                realtimeInput: {
-                    mediaChunks: [{ mimeType, data }]
-                }
+            this.session.sendRealtimeInput({
+                audio: { data, mimeType }
             });
         } catch (error) {
             console.error('[GeminiWebsocketClient] Error sending audio:', error);
@@ -72,14 +70,12 @@ export class GeminiWebsocketClient {
     sendText(text: string): void {
         if (!this.session) return;
         try {
-            this.session.send({
-                clientContent: {
-                    turns: [{
-                        role: 'user',
-                        parts: [{ text }]
-                    }],
-                    turnComplete: true
-                }
+            this.session.sendClientContent({
+                turns: [{
+                    role: 'user',
+                    parts: [{ text }]
+                }],
+                turnComplete: true
             });
         } catch (error) {
             console.error('[GeminiWebsocketClient] Error sending text:', error);
