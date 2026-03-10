@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { GoogleGenAI } from '@google/genai';
+import mammoth from 'mammoth';
 import { Course, Submission } from '../../types';
 import { Button, Input, Textarea, Modal, PinVerifyModal } from '../ui';
 import { createCoursePromptGenerator } from '../../lib/prompts/interviewerSystem';
@@ -159,7 +160,13 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
                     if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
                         return { name: file.name, text: await file.text() };
                     }
-                    // For PDF/DOCX, send as inline data
+                    // DOCX → extract text via mammoth (Gemini doesn't support DOCX MIME)
+                    if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || file.name.endsWith('.docx')) {
+                        const arrayBuffer = await file.arrayBuffer();
+                        const result = await mammoth.extractRawText({ arrayBuffer });
+                        return { name: file.name, text: result.value };
+                    }
+                    // For PDF, send as inline data (Gemini supports PDF natively)
                     const arrayBuffer = await file.arrayBuffer();
                     const base64 = btoa(
                         new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
