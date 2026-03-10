@@ -323,7 +323,7 @@ export interface UseGeminiLiveReturn {
 
   // Session control
   startSession: () => Promise<void>;
-  endSession: () => TranscriptionItem[];
+  endSession: () => Promise<TranscriptionItem[]>;
   stopRecording: () => void;      // Manually stop recording (user presses "Done")
 }
 

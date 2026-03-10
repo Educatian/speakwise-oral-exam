@@ -446,10 +446,35 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
         }
     }, [systemInstruction, voiceName, cleanup, onTranscriptionComplete, updateLatencyMetrics, addTranscription, startRecordingPhase, stopRecording]);
 
-    // End session
-    const endSession = useCallback(() => {
-        // Flush pending AI text
+    // End session — transcribe any pending audio first
+    const endSession = useCallback(async () => {
         const now = Date.now();
+
+        // If we're recording, transcribe pending audio before cleanup
+        if (turnPhaseRef.current === 'recording' || turnPhaseRef.current === 'idle') {
+            if (transcriptionServiceRef.current) {
+                transcriptionServiceRef.current.stopAccumulating();
+                if (transcriptionServiceRef.current.hasAudio()) {
+                    console.log('[TurnBased] End session: transcribing pending audio...');
+                    setTurnPhase('transcribing');
+                    try {
+                        const text = await transcriptionServiceRef.current.transcribe();
+                        if (text && text.trim()) {
+                            addTranscription({
+                                speaker: 'user',
+                                text: text.trim(),
+                                timestamp: now
+                            });
+                            console.log('[TurnBased] Pending audio transcribed:', text.trim().substring(0, 60));
+                        }
+                    } catch (e) {
+                        console.error('[TurnBased] Failed to transcribe pending audio:', e);
+                    }
+                }
+            }
+        }
+
+        // Flush pending AI text
         if (aiTextBufferRef.current.trim()) {
             addTranscription({
                 speaker: 'interviewer',

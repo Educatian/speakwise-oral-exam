@@ -109,7 +109,7 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({
 
     // Generate feedback and submit when session ends
     const handleEndAndSubmit = async () => {
-        const finalTranscripts = endSession();
+        const finalTranscripts = await endSession();
 
         try {
             const submission = await EvaluationService.evaluateTranscripts({
