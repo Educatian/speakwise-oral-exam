@@ -159,12 +159,30 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                 onOpen: async () => {
                     setStatus(InterviewStatus.LIVE);
 
+                    // Track VAD state with hangover for audio gating
+                    const isUserSpeakingRef = { current: false };
+                    let vadHangoverTimer: NodeJS.Timeout | null = null;
+                    const VAD_HANGOVER_MS = 500; // Keep sending 500ms after speech ends
+
                     audioServiceRef.current = new AudioStreamService();
                     await audioServiceRef.current.initialize({
                         onAudioLevel: (level) => setAudioLevel(level),
-                        onVoiceActivity: (isSpeaking) => setIsUserSpeaking(isSpeaking),
+                        onVoiceActivity: (isSpeaking) => {
+                            setIsUserSpeaking(isSpeaking);
+                            if (isSpeaking) {
+                                isUserSpeakingRef.current = true;
+                                if (vadHangoverTimer) clearTimeout(vadHangoverTimer);
+                            } else {
+                                // Keep sending for VAD_HANGOVER_MS after speech ends
+                                vadHangoverTimer = setTimeout(() => {
+                                    isUserSpeakingRef.current = false;
+                                }, VAD_HANGOVER_MS);
+                            }
+                        },
                         onPCMData: (pcmBlob) => {
-                            if (sessionRef.current) {
+                            // Only send audio when user is speaking (VAD-gated)
+                            // This prevents WebSocket congestion from continuous silent audio
+                            if (sessionRef.current && isUserSpeakingRef.current) {
                                 sessionRef.current.sendAudio(pcmBlob.mimeType, pcmBlob.data);
                             }
                         },
