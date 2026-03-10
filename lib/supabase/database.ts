@@ -49,7 +49,17 @@ export async function getAllCourses(): Promise<Course[]> {
                     timestamp: s.timestamp,
                     transcript: s.transcript || [],
                     score: s.score,
-                    feedback: s.feedback
+                    feedback: s.feedback,
+                    // Learning Analytics
+                    latencyMetrics: s.latency_metrics,
+                    bargeInEvents: s.barge_in_events,
+                    // Advanced Reasoning Analytics
+                    dialogueMetrics: s.dialogue_metrics,
+                    argumentGraph: s.argument_graph,
+                    reasoningRubric: s.reasoning_rubric,
+                    // AI Confidence
+                    confidenceScore: s.confidence_score,
+                    rubricBreakdown: s.rubric_breakdown
                 }))
         }));
     } catch (error) {
@@ -246,7 +256,17 @@ export async function getStudentHistory(): Promise<Submission[]> {
             timestamp: s.timestamp,
             transcript: s.transcript || [],
             score: s.score,
-            feedback: s.feedback
+            feedback: s.feedback,
+            // Learning Analytics
+            latencyMetrics: s.latency_metrics,
+            bargeInEvents: s.barge_in_events,
+            // Advanced Reasoning Analytics
+            dialogueMetrics: s.dialogue_metrics,
+            argumentGraph: s.argument_graph,
+            reasoningRubric: s.reasoning_rubric,
+            // AI Confidence
+            confidenceScore: s.confidence_score,
+            rubricBreakdown: s.rubric_breakdown
         }));
     } catch (error) {
         console.error('Error fetching student history from Supabase:', error);
@@ -273,7 +293,17 @@ export async function addToStudentHistory(submission: Submission): Promise<void>
             timestamp: submission.timestamp,
             transcript: submission.transcript,
             score: submission.score,
-            feedback: submission.feedback
+            feedback: submission.feedback,
+            // Learning Analytics
+            latency_metrics: submission.latencyMetrics,
+            barge_in_events: submission.bargeInEvents,
+            // Advanced Reasoning Analytics
+            dialogue_metrics: submission.dialogueMetrics,
+            argument_graph: submission.argumentGraph,
+            reasoning_rubric: submission.reasoningRubric,
+            // AI Confidence
+            confidence_score: submission.confidenceScore,
+            rubric_breakdown: submission.rubricBreakdown
         });
 
         if (error) throw error;
