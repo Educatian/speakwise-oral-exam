@@ -11,6 +11,7 @@ import {
 } from '../types';
 import { GeminiWebsocketClient } from '../lib/services/GeminiWebsocketClient';
 import { AudioStreamService } from '../lib/services/AudioStreamService';
+import { TranscriptionService } from '../lib/services/TranscriptionService';
 import {
     analyzeReasoningPatterns,
     calculateReasoningScores,
@@ -76,6 +77,8 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
     const lastSpeakerRef = useRef<'user' | 'ai' | null>(null); // Track who was speaking last
     const audioEndTimerRef = useRef<NodeJS.Timeout | null>(null); // Debounced safety for AI speaking state
     const isInterviewerSpeakingRef = useRef(false); // Ref mirror for stale-closure-safe access
+    const transcriptionServiceRef = useRef<TranscriptionService | null>(null); // Post-hoc transcription
+    const isAccumulatingUserAudioRef = useRef(false); // Track if we're collecting user audio
 
     // Cleanup function
     const cleanup = useCallback(() => {
@@ -165,15 +168,29 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                         onVoiceActivity: (isSpeaking) => setIsUserSpeaking(isSpeaking),
                         onPCMData: (pcmBlob) => {
                             // Send all audio continuously — Gemini has its own internal VAD
-                            // and needs continuous audio stream for proper conversation flow
                             if (sessionRef.current) {
                                 sessionRef.current.sendAudio(pcmBlob.mimeType, pcmBlob.data);
+                            }
+                            // Also accumulate for post-hoc transcription
+                            if (transcriptionServiceRef.current && isAccumulatingUserAudioRef.current) {
+                                // Decode base64 back to ArrayBuffer for accumulation
+                                const binaryString = atob(pcmBlob.data);
+                                const bytes = new Uint8Array(binaryString.length);
+                                for (let i = 0; i < binaryString.length; i++) {
+                                    bytes[i] = binaryString.charCodeAt(i);
+                                }
+                                transcriptionServiceRef.current.addChunk(bytes.buffer);
                             }
                         },
                         onCalibration: (noiseFloor, threshold) => {
                             console.log(`[Audio] Calibrated - Noise floor: ${noiseFloor.toFixed(4)}, Threshold: ${threshold.toFixed(4)}`);
                         }
                     });
+
+                    // Initialize post-hoc transcription service
+                    transcriptionServiceRef.current = new TranscriptionService(process.env.API_KEY as string);
+                    transcriptionServiceRef.current.startAccumulating();
+                    isAccumulatingUserAudioRef.current = true;
                 },
                 onMessage: async (message: LiveServerMessage) => {
                     const sc = message.serverContent;
@@ -210,6 +227,51 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                         audioEndTimerRef.current = setTimeout(() => {
                             setIsInterviewerSpeaking(false);
                         }, 2000);
+
+                        // Post-hoc transcription: AI started speaking → transcribe user's accumulated audio
+                        if (isAccumulatingUserAudioRef.current && transcriptionServiceRef.current) {
+                            isAccumulatingUserAudioRef.current = false;
+                            transcriptionServiceRef.current.stopAccumulating();
+
+                            if (transcriptionServiceRef.current.hasAudio()) {
+                                transcriptionServiceRef.current.transcribe().then((text) => {
+                                    if (text && text.trim()) {
+                                        const now = Date.now();
+                                        transcriptBufferRef.current.user = text.trim();
+                                        setPendingUserText(text.trim());
+
+                                        // Auto-commit user turn
+                                        const latency = lastTurnEndTimeRef.current > 0
+                                            ? now - lastTurnEndTimeRef.current : 0;
+                                        if (latency > 0 && latency < 60000) {
+                                            latencyListRef.current.push(latency);
+                                        }
+
+                                        addTranscription({
+                                            speaker: 'user',
+                                            text: text.trim(),
+                                            timestamp: now,
+                                            latency: latency > 0 ? latency : undefined
+                                        });
+
+                                        // Process for argument graph
+                                        try {
+                                            argumentGraphBuilderRef.current.processUserUtterance(
+                                                text.trim(), now, lastQuestionIdRef.current || undefined
+                                            );
+                                            setArgumentGraph(argumentGraphBuilderRef.current.getGraph());
+                                        } catch (e) {
+                                            console.error('Argument graph error:', e);
+                                        }
+
+                                        previousUserTextRef.current = text.trim();
+                                        setPendingUserText('');
+                                        transcriptBufferRef.current.user = '';
+                                        setLatencyMetrics(updateLatencyMetrics());
+                                    }
+                                });
+                            }
+                        }
                     }
 
                     // Handle transcriptions - with detailed tracking
@@ -381,6 +443,12 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
 
                         // Update last turn end time
                         lastTurnEndTimeRef.current = now;
+
+                        // Restart user audio accumulation for next turn
+                        if (transcriptionServiceRef.current) {
+                            transcriptionServiceRef.current.startAccumulating();
+                            isAccumulatingUserAudioRef.current = true;
+                        }
 
                         // Update latency metrics
                         setLatencyMetrics(updateLatencyMetrics());
