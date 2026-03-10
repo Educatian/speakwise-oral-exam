@@ -12,7 +12,8 @@ import {
     ManagerDashboardView,
     StudentLoginView,
     StudentHistoryView,
-    InterviewSessionView
+    InterviewSessionView,
+    StudentResultsView
 } from './views';
 
 interface AppRouterProps {
@@ -38,6 +39,7 @@ interface AppRouterProps {
     deleteSubmission: (courseId: string, submissionId: string) => void;
     setSelectedSubmission: (submission: Submission | null) => void;
     setActiveCourse: (course: Course | null) => void;
+    lastSubmission: Submission | null;
 }
 
 export const AppRouter: React.FC<AppRouterProps> = ({
@@ -62,7 +64,8 @@ export const AppRouter: React.FC<AppRouterProps> = ({
     deleteCourse,
     deleteSubmission,
     setSelectedSubmission,
-    setActiveCourse
+    setActiveCourse,
+    lastSubmission
 }) => {
     // Show loading state while Supabase data loads
     if (isLoading) {
@@ -186,6 +189,15 @@ export const AppRouter: React.FC<AppRouterProps> = ({
                     course={activeCourse}
                     studentName={studentName}
                     onComplete={handleInterviewComplete}
+                    onBack={returnToLanding}
+                />
+            );
+
+        case AppView.STUDENT_RESULTS:
+            if (!lastSubmission) return null;
+            return (
+                <StudentResultsView
+                    submission={lastSubmission}
                     onBack={returnToLanding}
                 />
             );

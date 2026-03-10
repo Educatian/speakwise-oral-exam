@@ -42,6 +42,7 @@ const App: React.FC = () => {
   const [activeCourse, setActiveCourse] = useState<Course | null>(null);
   const [studentName, setStudentName] = useState('');
   const [selectedSubmission, setSelectedSubmission] = useState<Submission | null>(null);
+  const [lastSubmission, setLastSubmission] = useState<Submission | null>(null);
   const [userRole, setUserRole] = useState<'student' | 'instructor'>('student');
 
   // Auth hook
@@ -70,6 +71,9 @@ const App: React.FC = () => {
     }
     // Save to student history
     addToHistory(submission);
+    // Store and navigate to results
+    setLastSubmission(submission);
+    navigateTo(AppView.STUDENT_RESULTS);
   };
 
   const handleAddCourse = (courseData: Omit<Course, 'id' | 'submissions'>) => {
@@ -203,6 +207,7 @@ const App: React.FC = () => {
         deleteSubmission={deleteSubmission}
         setSelectedSubmission={setSelectedSubmission}
         setActiveCourse={setActiveCourse}
+        lastSubmission={lastSubmission}
       />
     );
   };
