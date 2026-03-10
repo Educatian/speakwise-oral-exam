@@ -298,6 +298,9 @@ export interface StudentHistoryProps {
 // Hook Return Types
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Turn phase for turn-based interview flow */
+export type TurnPhase = 'ai_speaking' | 'recording' | 'transcribing' | 'idle';
+
 export interface UseGeminiLiveReturn {
   status: InterviewStatus;
   transcriptions: TranscriptionItem[];
@@ -307,6 +310,7 @@ export interface UseGeminiLiveReturn {
   pendingUserText: string;        // Real-time partial user transcription
   pendingAIText: string;          // Real-time partial AI transcription
   error: string | null;
+  turnPhase: TurnPhase;           // Current turn phase
 
   // Learning Analytics (Basic)
   latencyMetrics: LatencyMetrics;
@@ -320,6 +324,7 @@ export interface UseGeminiLiveReturn {
   // Session control
   startSession: () => Promise<void>;
   endSession: () => TranscriptionItem[];
+  stopRecording: () => void;      // Manually stop recording (user presses "Done")
 }
 
 export interface UseCourseStorageReturn {

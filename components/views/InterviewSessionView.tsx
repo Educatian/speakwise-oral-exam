@@ -49,6 +49,7 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({
         pendingUserText,
         pendingAIText,
         error,
+        turnPhase,
         latencyMetrics,
         bargeInEvents,
         // Advanced Analytics
@@ -56,7 +57,8 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({
         argumentGraph,
         getReasoningRubric,
         startSession,
-        endSession
+        endSession,
+        stopRecording
     } = useGeminiLive({
         systemInstruction,
         voiceName: 'Kore'
@@ -152,7 +154,12 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({
             case InterviewStatus.CONNECTING:
                 return 'Connecting to interviewer...';
             case InterviewStatus.LIVE:
-                return isInterviewerSpeaking ? 'AI is speaking...' : 'Listening to you...';
+                switch (turnPhase) {
+                    case 'ai_speaking': return '🔊 AI is speaking...';
+                    case 'recording': return '🔴 Recording your answer...';
+                    case 'transcribing': return '⏳ Transcribing...';
+                    default: return 'Preparing...';
+                }
             case InterviewStatus.ENDED:
                 return 'Interview completed';
             case InterviewStatus.ERROR:
@@ -249,16 +256,33 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({
                 <div className="glass-panel p-6 rounded-3xl flex flex-col items-center justify-center min-h-[160px]">
                     <AudioVisualizer
                         isLive={status === InterviewStatus.LIVE}
-                        isActive={status === InterviewStatus.LIVE && !isInterviewerSpeaking}
-                        color={isInterviewerSpeaking ? 'accent' : 'primary'}
+                        isActive={turnPhase === 'recording'}
+                        color={turnPhase === 'ai_speaking' ? 'accent' : 'primary'}
                     />
                     <p
-                        className="text-[10px] text-slate-600 mt-4 uppercase font-bold tracking-[0.2em] text-center"
+                        className={`text-[10px] mt-4 uppercase font-bold tracking-[0.2em] text-center ${
+                            turnPhase === 'recording' ? 'text-red-400' :
+                            turnPhase === 'ai_speaking' ? 'text-purple-400' :
+                            turnPhase === 'transcribing' ? 'text-amber-400' :
+                            'text-slate-600'
+                        }`}
                         role="status"
                         aria-live="polite"
                     >
                         {getStatusLabel()}
                     </p>
+
+                    {/* Done Button — visible during recording phase */}
+                    {status === InterviewStatus.LIVE && turnPhase === 'recording' && (
+                        <Button
+                            onClick={stopRecording}
+                            variant="primary"
+                            size="md"
+                            className="mt-4 w-full"
+                        >
+                            ✅ Done Speaking
+                        </Button>
+                    )}
                 </div>
 
                 {/* Voice Activity Indicator - Shows when user is speaking */}
@@ -422,11 +446,11 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({
                             </div>
                         )}
 
-                        {/* Real-time Voice Detection Indicator — shows IMMEDIATELY from local VAD */}
-                        {status === InterviewStatus.LIVE && isUserSpeaking && !pendingUserText && (
+                        {/* Turn Phase Indicators */}
+                        {status === InterviewStatus.LIVE && turnPhase === 'recording' && isUserSpeaking && !pendingUserText && (
                             <div className="flex flex-col items-end animate-fade-in">
-                                <div className="chat-bubble chat-bubble-user opacity-60 border border-dashed border-emerald-500/30 flex items-center gap-3 py-3 px-4">
-                                    {/* Animated waveform bars */}
+                                <div className="chat-bubble chat-bubble-user opacity-60 border border-dashed border-red-500/40 flex items-center gap-3 py-3 px-4">
+                                    <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
                                     <div className="flex items-center gap-[3px] h-5">
                                         {[1, 2, 3, 4, 5].map((i) => (
                                             <div
@@ -440,13 +464,21 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({
                                             />
                                         ))}
                                     </div>
-                                    <span className="text-emerald-300 text-sm font-medium">
-                                        Listening...
+                                    <span className="text-red-300 text-sm font-medium">
+                                        Recording...
                                     </span>
                                 </div>
-                                <span className="text-[9px] text-emerald-400/70 font-bold uppercase tracking-tight mt-1">
-                                    🎤 Voice detected — transcribing...
-                                </span>
+                            </div>
+                        )}
+
+                        {status === InterviewStatus.LIVE && turnPhase === 'transcribing' && (
+                            <div className="flex flex-col items-center py-4 animate-fade-in">
+                                <div className="glass-panel rounded-2xl px-6 py-4 border border-amber-500/30 bg-amber-500/5">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-5 h-5 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+                                        <span className="text-amber-400 font-medium">Transcribing your answer...</span>
+                                    </div>
+                                </div>
                             </div>
                         )}
 

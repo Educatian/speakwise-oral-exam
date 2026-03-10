@@ -1,4 +1,4 @@
-import { GoogleGenAI, Modality, StartSensitivity, EndSensitivity, ActivityHandling } from '@google/genai';
+import { GoogleGenAI, Modality } from '@google/genai';
 
 export interface GeminiLiveClientOptions {
     apiKey: string;
@@ -10,6 +10,13 @@ export interface GeminiLiveClientOptions {
     onMessage: (data: any) => void;
 }
 
+/**
+ * Gemini Live WebSocket Client - Turn-Based Mode
+ * 
+ * No audio is sent TO Gemini — only text via sendText().
+ * Gemini responds with audio (TTS) which we play locally.
+ * Automatic activity detection is DISABLED (we manage turns ourselves).
+ */
 export class GeminiWebsocketClient {
     private session: any = null;
     private options: GeminiLiveClientOptions;
@@ -30,21 +37,17 @@ export class GeminiWebsocketClient {
                 speechConfig: {
                     voiceConfig: { prebuiltVoiceConfig: { voiceName: this.options.voiceName || 'Kore' } }
                 },
-                // Enable transcription 
+                // Enable transcription of AI's audio output
                 outputAudioTranscription: {},
-                inputAudioTranscription: {},
                 systemInstruction: {
                     parts: [{ text: this.options.systemInstruction }]
                 },
+                // Turn-based: disable automatic activity detection entirely
+                // We send text only — no audio goes to Gemini
                 realtimeInputConfig: {
                     automaticActivityDetection: {
-                        disabled: false,
-                        startOfSpeechSensitivity: StartSensitivity.START_SENSITIVITY_HIGH,
-                        endOfSpeechSensitivity: EndSensitivity.END_SENSITIVITY_HIGH,
-                        prefixPaddingMs: 800,
-                        silenceDurationMs: 1500
-                    },
-                    activityHandling: ActivityHandling.START_OF_ACTIVITY_INTERRUPTS
+                        disabled: true
+                    }
                 }
             },
             callbacks: {
@@ -54,17 +57,6 @@ export class GeminiWebsocketClient {
                 onmessage: (data: any) => this.options.onMessage(data)
             }
         });
-    }
-
-    sendAudio(mimeType: string, data: string): void {
-        if (!this.session) return;
-        try {
-            this.session.sendRealtimeInput({
-                audio: { data, mimeType }
-            });
-        } catch (error) {
-            console.error('[GeminiWebsocketClient] Error sending audio:', error);
-        }
     }
 
     sendText(text: string): void {
