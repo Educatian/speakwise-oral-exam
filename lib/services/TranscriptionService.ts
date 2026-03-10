@@ -118,7 +118,7 @@ export class TranscriptionService {
             console.log(`[Transcription] Sending ${durationSec.toFixed(1)}s of audio for transcription`);
 
             const response = await this.ai.models.generateContent({
-                model: 'gemini-2.0-flash',
+                model: 'gemini-2.5-flash',
                 contents: [{
                     role: 'user',
                     parts: [

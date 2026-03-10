@@ -129,8 +129,12 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
 
     // ─── Stop Recording & Transcribe ───────────────────────────────────────
     const stopRecording = useCallback(() => {
-        // Only stop if we're actually recording
-        if (turnPhaseRef.current !== 'recording') return;
+        console.log('[TurnBased] stopRecording called, current phase:', turnPhaseRef.current);
+        // Only stop if we're in recording (or idle, for safety)
+        if (turnPhaseRef.current !== 'recording' && turnPhaseRef.current !== 'idle') {
+            console.log('[TurnBased] Not in recording phase, ignoring stop');
+            return;
+        }
 
         console.log('[TurnBased] Stopping recording, starting transcription...');
         setTurnPhase('transcribing');
