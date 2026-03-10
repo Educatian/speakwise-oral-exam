@@ -97,6 +97,169 @@ export const REPHRASING_PATTERNS: RegExp[] = [
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Toulmin Model Patterns (6 Components)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Warrant patterns — WHY the data supports the claim */
+export const WARRANT_PATTERNS: RegExp[] = [
+    /this is important because/gi,
+    /the reason this matters/gi,
+    /this (means|implies|suggests) that/gi,
+    /which (shows|tells us|indicates) that/gi,
+    /so we can (see|conclude|infer) that/gi,
+    /in other words,? this/gi,
+    /the (logic|principle|reasoning) here is/gi,
+    // Korean
+    /이것이 중요한 이유는/g,
+    /이는 .*을 의미/g,
+    /즉,? 이것은/g,
+];
+
+/** Backing patterns — external authority/support for warrants */
+export const BACKING_PATTERNS: RegExp[] = [
+    /studies have shown/gi,
+    /research (has demonstrated|confirms|supports)/gi,
+    /historically/gi,
+    /experts (agree|suggest|argue)/gi,
+    /it is (well-?known|established|accepted) that/gi,
+    /in the (literature|field|discipline)/gi,
+    /as (noted|described|explained) by/gi,
+    /according to (the|recent) (research|data|findings)/gi,
+    // Korean
+    /연구에 따르면/g,
+    /학자들은.*주장/g,
+    /전문가들의 의견에 의하면/g,
+    /이론적으로/g,
+];
+
+/** Qualifier patterns — degree of certainty/hedging */
+export const QUALIFIER_PATTERNS: RegExp[] = [
+    /probably/gi,
+    /in most cases/gi,
+    /it seems (likely|probable)/gi,
+    /there is a (good|strong|fair) chance/gi,
+    /generally/gi,
+    /presumably/gi,
+    /as far as I know/gi,
+    /to my (knowledge|understanding)/gi,
+    /it appears that/gi,
+    /tends? to/gi,
+    // Korean
+    /아마도/g,
+    /대체로/g,
+    /보통.*경우/g,
+    /.*것 같습니다/g,
+    /.*일 수 있/g,
+];
+
+/** Rebuttal patterns — conditions that defeat the claim */
+export const REBUTTAL_PATTERNS: RegExp[] = [
+    /unless/gi,
+    /except (when|if|in)/gi,
+    /this (wouldn't|doesn't|won't) apply (if|when)/gi,
+    /a (?:key |notable )?(?:limitation|exception|caveat) is/gi,
+    /the (counter-?argument|objection|criticism) (?:is|would be)/gi,
+    /one could argue that/gi,
+    /it is worth noting that/gi,
+    /the (weakness|flaw|problem) with this is/gi,
+    // Korean
+    /단,? .*경우/g,
+    /예외적으로/g,
+    /제한점은/g,
+    /반박할.*있는.*점은/g,
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Toulmin Analysis Interface & Function
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ToulminComponent {
+    detected: boolean;
+    count: number;
+    examples: string[];
+}
+
+export interface ToulminAnalysis {
+    claim: ToulminComponent;       // Default: every utterance
+    data: ToulminComponent;        // Maps to JUSTIFICATION_PATTERNS
+    warrant: ToulminComponent;     // WARRANT_PATTERNS
+    backing: ToulminComponent;     // BACKING_PATTERNS
+    qualifier: ToulminComponent;   // QUALIFIER_PATTERNS
+    rebuttal: ToulminComponent;    // REBUTTAL_PATTERNS + COUNTER_ARGUMENT_PATTERNS
+    /** 0-100: How complete is the argument structure? */
+    completenessScore: number;
+    /** Which components are missing? */
+    missingComponents: string[];
+}
+
+function analyzeToulminComponent(text: string, patterns: RegExp[]): ToulminComponent {
+    const match = findMatches(text, patterns);
+    return {
+        detected: match.count > 0,
+        count: match.count,
+        examples: match.examples
+    };
+}
+
+/**
+ * Analyze text for Toulmin argument model completeness.
+ * Maps the 6 Toulmin components to NLP patterns and returns
+ * a structured assessment of argument quality.
+ */
+export function analyzeToulminComponents(text: string): ToulminAnalysis {
+    const claim: ToulminComponent = {
+        detected: text.trim().length > 0,
+        count: 1, // Each utterance is at minimum a claim
+        examples: [text.substring(0, 80)]
+    };
+
+    const data = analyzeToulminComponent(text, JUSTIFICATION_PATTERNS);
+    const warrant = analyzeToulminComponent(text, WARRANT_PATTERNS);
+    const backing = analyzeToulminComponent(text, BACKING_PATTERNS);
+    const qualifier = analyzeToulminComponent(text, QUALIFIER_PATTERNS);
+    const rebuttal = analyzeToulminComponent(text,
+        [...REBUTTAL_PATTERNS, ...COUNTER_ARGUMENT_PATTERNS]
+    );
+
+    // Calculate completeness (weighted)
+    const weights = {
+        claim: 0.10,      // Always present
+        data: 0.25,       // Most important after claim
+        warrant: 0.25,    // Critical for logical connection
+        backing: 0.15,    // External support
+        qualifier: 0.10,  // Epistemic sophistication
+        rebuttal: 0.15    // Counter-consideration
+    };
+
+    const completenessScore = Math.round(
+        (claim.detected ? weights.claim : 0) +
+        (data.detected ? weights.data : 0) +
+        (warrant.detected ? weights.warrant : 0) +
+        (backing.detected ? weights.backing : 0) +
+        (qualifier.detected ? weights.qualifier : 0) +
+        (rebuttal.detected ? weights.rebuttal : 0)
+    ) * 100;
+
+    const missingComponents: string[] = [];
+    if (!data.detected) missingComponents.push('Data/Evidence');
+    if (!warrant.detected) missingComponents.push('Warrant (logical bridge)');
+    if (!backing.detected) missingComponents.push('Backing (external support)');
+    if (!qualifier.detected) missingComponents.push('Qualifier (certainty degree)');
+    if (!rebuttal.detected) missingComponents.push('Rebuttal (counter-consideration)');
+
+    return {
+        claim,
+        data,
+        warrant,
+        backing,
+        qualifier,
+        rebuttal,
+        completenessScore,
+        missingComponents
+    };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Analysis Functions
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -157,11 +320,12 @@ export function analyzeReasoningPatterns(text: string): ReasoningPatternResult {
 /**
  * Calculate reasoning rubric scores from pattern analysis
  */
-export function calculateReasoningScores(patterns: ReasoningPatternResult): {
+export function calculateReasoningScores(patterns: ReasoningPatternResult, fullText?: string): {
     explicitJustification: { score: number; count: number; examples: string[] };
     causalExplanation: { score: number; patterns: string[] };
     counterArgumentHandling: { score: number; attempts: number };
     abstractionGeneralization: { score: number; instances: string[] };
+    toulminAnalysis?: ToulminAnalysis;
     overallReasoningScore: number;
 } {
     // Score calculation (0-5 scale for each dimension)
@@ -170,10 +334,13 @@ export function calculateReasoningScores(patterns: ReasoningPatternResult): {
     const counterScore = Math.min(5, patterns.counterArgument.count * 2); // Weight counter-arguments more
     const abstractScore = Math.min(5, patterns.generalization.count);
 
-    // Overall score (0-100)
-    const overallScore = Math.min(100, Math.round(
-        ((justScore + causalScore + counterScore + abstractScore) / 20) * 100
-    ));
+    // Toulmin analysis (if full text is provided)
+    const toulmin = fullText ? analyzeToulminComponents(fullText) : undefined;
+
+    // Overall score (0-100) — now includes Toulmin completeness
+    const baseScore = ((justScore + causalScore + counterScore + abstractScore) / 20) * 100;
+    const toulminBonus = toulmin ? (toulmin.completenessScore * 0.2) : 0;
+    const overallScore = Math.min(100, Math.round(baseScore + toulminBonus));
 
     return {
         explicitJustification: {
@@ -193,6 +360,7 @@ export function calculateReasoningScores(patterns: ReasoningPatternResult): {
             score: abstractScore,
             instances: patterns.generalization.examples
         },
+        toulminAnalysis: toulmin,
         overallReasoningScore: overallScore
     };
 }
@@ -251,6 +419,7 @@ export function detectTurnInitiative(userText: string, aiQuestion: string): bool
 export default {
     analyzeReasoningPatterns,
     calculateReasoningScores,
+    analyzeToulminComponents,
     detectRephrasing,
     detectTurnInitiative
 };

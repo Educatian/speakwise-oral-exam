@@ -74,6 +74,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
     const lastQuestionIdRef = useRef<string>('');
     const previousUserTextRef = useRef<string>('');
     const lastSpeakerRef = useRef<'user' | 'ai' | null>(null); // Track who was speaking last
+    const audioEndTimerRef = useRef<NodeJS.Timeout | null>(null); // Debounced safety for AI speaking state
 
     // Cleanup function
     const cleanup = useCallback(() => {
@@ -194,15 +195,13 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                     if (base64Audio) {
                         setIsInterviewerSpeaking(true);
                         if (audioServiceRef.current) {
-                            audioServiceRef.current.playAudioChunk(base64Audio)
-                                .finally(() => {
-                                    // TODO: We need to figure out when all audio effectively ends.
-                                    // For now, this rough approximation works well enough.
-                                    setTimeout(() => {
-                                        setIsInterviewerSpeaking(false);
-                                    }, 500);
-                                });
+                            audioServiceRef.current.playAudioChunk(base64Audio);
                         }
+                        // Debounced safety: if no new chunk arrives within 2s, clear speaking state
+                        if (audioEndTimerRef.current) clearTimeout(audioEndTimerRef.current);
+                        audioEndTimerRef.current = setTimeout(() => {
+                            setIsInterviewerSpeaking(false);
+                        }, 2000);
                     }
 
                     // Handle transcriptions - with detailed tracking
@@ -365,6 +364,8 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                         transcriptBufferRef.current.interviewer = '';
                         currentInterviewerTextRef.current = '';
                         setPendingAIText('');
+                        // Clear debounced safety timer and set speaking state
+                        if (audioEndTimerRef.current) clearTimeout(audioEndTimerRef.current);
                         setIsInterviewerSpeaking(false);
 
                         // It's technically the user's turn now
@@ -472,7 +473,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
             .join(' ');
 
         const patterns = analyzeReasoningPatterns(userText);
-        return calculateReasoningScores(patterns);
+        return calculateReasoningScores(patterns, userText);
     }, [transcriptions]);
 
     // Cleanup on unmount

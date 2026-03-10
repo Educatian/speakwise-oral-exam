@@ -157,10 +157,40 @@ ${transcript}
 ## Your Task:
 Analyze this interview and provide comprehensive feedback with confidence assessment.
 
+## ⚠️ CRITICAL: Evidence-First Assessment Protocol
+You MUST follow this exact reasoning order for EACH criterion:
+1. **First**: Identify and quote specific evidence from the transcript
+2. **Then**: Classify each piece of evidence (claim, justification, counterargument, evidence)
+3. **Finally**: Assign a score based ONLY on the evidence you identified
+
+Do NOT assign scores first and then find evidence to justify them.
+
+## 🛡️ Bias Mitigation Guidelines
+
+### Verbosity Bias Defense
+- The LENGTH of a response must NOT influence the score.
+- A short but logically structured argument MUST score higher than a long but repetitive response.
+- Count the number of UNIQUE ideas, not total words.
+
+### Fluency Bias Defense  
+- Distinguish between FLUENT SPEECH and LOGICALLY STRUCTURED ARGUMENTATION.
+- A student who speaks fluently but provides no supporting evidence should score LOW on Critical Thinking.
+- A student who pauses but provides well-reasoned justifications should score HIGH despite disfluencies.
+- Oral disfluencies (fillers, self-corrections, hesitations) are NORMAL in spoken discourse and must NOT be penalized.
+
+### Self-Preference Bias Warning
+- Evaluate the STRUCTURE of the argument, not the student's vocabulary or stylistic choices.
+- Respect diverse expression styles — academic jargon is NOT a prerequisite for high scores.
+- A colloquial but logically rigorous explanation is EQUAL TO a formally phrased one.
+
+### Word Count Normalization
+- Consider argumentation DENSITY (logical structures per utterance), not total output volume.
+- A student who provides 3 well-warranted claims in 5 sentences > a student who provides 1 vague claim across 20 sentences.
+
 ## Evaluation Criteria:
 1. **Conceptual Understanding** (0-25 points): Depth and accuracy of knowledge
 2. **Communication Clarity** (0-25 points): Articulation and organization of ideas
-3. **Critical Thinking** (0-25 points): Analysis, synthesis, and evaluation skills
+3. **Critical Thinking** (0-25 points): Analysis, synthesis, and evaluation skills — REQUIRES evidence of reasoning patterns (because, therefore, however, for example)
 4. **Engagement & Responsiveness** (0-25 points): Interaction quality and follow-up handling
 
 ## Output Requirements:
@@ -199,6 +229,19 @@ Provide a JSON response with the following structure:
 - **0.5-0.7**: Some unclear or very brief responses. Moderate confidence.
 - **0.3-0.5**: Many unclear responses. Low confidence - recommend instructor review.
 - **0.0-0.3**: Very short/unclear transcript. Unable to assess reliably.
+
+## 📐 Toulmin Argumentation Analysis (2nd Pass)
+For each STUDENT utterance in the transcript, classify which Toulmin components are present.
+Report the results as aggregate counts and representative examples:
+
+- **Claim**: Assertions or positions stated by the student
+- **Data**: Evidence, examples, or facts cited to support claims (e.g., "for example", "research shows")
+- **Warrant**: Logical bridges explaining WHY the data supports the claim (e.g., "this means that", "the reason this matters")
+- **Backing**: External authority or established knowledge (e.g., "studies have shown", "historically")
+- **Qualifier**: Hedging or certainty markers (e.g., "probably", "in most cases")
+- **Rebuttal**: Counter-considerations or limitations acknowledged (e.g., "unless", "however", "a limitation is")
+
+Include a "toulminClassification" field in your JSON response with counts and 1-2 example quotes per component.
 
 Be constructive, specific, and encouraging in your feedback.`;
 }

@@ -103,8 +103,9 @@ export class AudioStreamService {
             this.nextStartTime = Math.max(currentTime, this.nextStartTime);
             source.start(this.nextStartTime);
 
-            // Overlap by 30ms for seamless crossfade (prevents clicks/pops)
-            this.nextStartTime += Math.max(0, audioData.duration - 0.03);
+            // Tiny overlap (5ms) to prevent click/pop artifacts between chunks
+            // Do NOT use 30ms+ — it accumulates over 100+ chunks and speeds up speech
+            this.nextStartTime += Math.max(0, audioData.duration - 0.005);
         } catch (err) {
             console.error('[AudioStreamService] Error decoding or playing audio data', err);
         }

@@ -1,9 +1,21 @@
 /**
  * Causal/Argument Graph Builder
- * Extracts keywords and identifies causal relationships from speech
+ * Extracts keywords and identifies causal relationships from speech.
+ * 
+ * Enhanced with:
+ * - Real utterance classification (claim/evidence/counterargument/justification)
+ * - Speech normalization preprocessing for spoken discourse
+ * - Toulmin-aware node typing
  */
 
 import { ArgumentNode, ArgumentEdge, ArgumentGraph } from '../../types';
+import {
+    CAUSAL_PATTERNS as REASONING_CAUSAL_PATTERNS,
+    JUSTIFICATION_PATTERNS,
+    COUNTER_ARGUMENT_PATTERNS,
+    GENERALIZATION_PATTERNS
+} from './patterns';
+import { normalizeSpeech } from './speechNormalizer';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Causal Relationship Patterns (English & Korean)
@@ -62,12 +74,6 @@ const STOPWORDS = new Set([
 // Keyword Extraction
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface ExtractedKeyword {
-    word: string;
-    count: number;
-    firstMention: number;
-}
-
 function extractKeywords(text: string): string[] {
     // Tokenize and clean
     const words = text
@@ -86,6 +92,56 @@ function extractKeywords(text: string): string[] {
         .sort((a, b) => b[1] - a[1])
         .slice(0, 10)
         .map(([word]) => word);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Utterance Classification (Real NLP — replaces stub)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Classify a spoken utterance into argumentation types using
+ * pattern matching from the reasoning pattern library.
+ * 
+ * Priority order (highest to lowest):
+ * 1. Counterargument — "however", "on the other hand", "but", "하지만"
+ * 2. Evidence/Justification — "for example", "because", "evidence shows", "왜냐하면"
+ * 3. Justification (causal) — "therefore", "consequently", "그래서"
+ * 4. Claim — default (no argumentation markers detected)
+ */
+export function classifyUtterance(text: string): 'claim' | 'evidence' | 'counterargument' | 'justification' {
+    if (!text || text.trim().length === 0) return 'claim';
+
+    const lowerText = text.toLowerCase();
+
+    // 1. Check for counterargument patterns (strongest signal)
+    for (const pattern of COUNTER_ARGUMENT_PATTERNS) {
+        pattern.lastIndex = 0;
+        if (pattern.test(lowerText)) {
+            pattern.lastIndex = 0; // Reset for future use
+            return 'counterargument';
+        }
+    }
+
+    // 2. Check for evidence/justification patterns
+    for (const pattern of JUSTIFICATION_PATTERNS) {
+        pattern.lastIndex = 0;
+        if (pattern.test(lowerText)) {
+            pattern.lastIndex = 0;
+            return 'evidence';
+        }
+    }
+
+    // 3. Check for causal reasoning patterns (justification)
+    for (const pattern of REASONING_CAUSAL_PATTERNS) {
+        pattern.lastIndex = 0;
+        if (pattern.test(lowerText)) {
+            pattern.lastIndex = 0;
+            return 'justification';
+        }
+    }
+
+    // 4. Default: claim
+    return 'claim';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -143,9 +199,9 @@ export class ArgumentGraphBuilder {
     }
 
     /**
-     * Get or create a keyword node
+     * Get or create a keyword node with proper type classification
      */
-    private getOrCreateKeywordNode(keyword: string, timestamp: number): string {
+    private getOrCreateKeywordNode(keyword: string, timestamp: number, type: ArgumentNode['type'] = 'claim'): string {
         const normalizedKeyword = keyword.toLowerCase().trim();
 
         if (this.keywordNodes.has(normalizedKeyword)) {
@@ -155,7 +211,7 @@ export class ArgumentGraphBuilder {
         const id = this.generateId();
         this.nodes.push({
             id,
-            type: 'claim', // Using 'claim' type for keywords
+            type,
             content: normalizedKeyword,
             speaker: 'user',
             timestamp
@@ -187,15 +243,23 @@ export class ArgumentGraphBuilder {
 
     /**
      * Process user utterance - extract keywords and causal relations
+     * Now includes: speech normalization + utterance classification
      */
     processUserUtterance(text: string, timestamp: number, lastQuestionId?: string): string {
-        // Extract causal relationships
-        const causalRelations = extractCausalRelations(text);
+        // ── Step 0: Normalize spoken discourse ──
+        const { normalized } = normalizeSpeech(text);
+        const analysisText = normalized || text; // Fallback to original if normalization empties it
 
-        // Add causal relations to graph
+        // ── Step 1: Classify the utterance type ──
+        const utteranceType = classifyUtterance(analysisText);
+
+        // ── Step 2: Extract causal relationships ──
+        const causalRelations = extractCausalRelations(analysisText);
+
+        // Add causal relations to graph with proper type
         for (const rel of causalRelations) {
-            const fromId = this.getOrCreateKeywordNode(rel.from, timestamp);
-            const toId = this.getOrCreateKeywordNode(rel.to, timestamp);
+            const fromId = this.getOrCreateKeywordNode(rel.from, timestamp, utteranceType);
+            const toId = this.getOrCreateKeywordNode(rel.to, timestamp, utteranceType);
 
             // Avoid duplicate edges
             const existingEdge = this.edges.find(e =>
@@ -213,8 +277,8 @@ export class ArgumentGraphBuilder {
 
         // If no causal relations found, extract standalone keywords
         if (causalRelations.length === 0) {
-            const keywords = extractKeywords(text);
-            keywords.forEach(kw => this.getOrCreateKeywordNode(kw, timestamp));
+            const keywords = extractKeywords(analysisText);
+            keywords.forEach(kw => this.getOrCreateKeywordNode(kw, timestamp, utteranceType));
         }
 
         // Return a virtual node ID (for compatibility)
@@ -228,7 +292,7 @@ export class ArgumentGraphBuilder {
         if (this.nodes.length === 0) return 0;
 
         const connectedNodes = new Set(this.edges.flatMap(e => [e.from, e.to]));
-        const keywordNodes = this.nodes.filter(n => n.type === 'claim').length;
+        const keywordNodes = this.nodes.filter(n => n.type !== 'question').length;
 
         if (keywordNodes === 0) return 0;
 
@@ -260,11 +324,6 @@ export class ArgumentGraphBuilder {
         this.nodeCounter = 0;
         this.keywordNodes.clear();
     }
-}
-
-// Legacy classification (for backward compatibility)
-export function classifyUtterance(text: string): 'claim' | 'evidence' | 'counterargument' | 'justification' {
-    return 'claim';
 }
 
 export const argumentGraphBuilder = new ArgumentGraphBuilder();

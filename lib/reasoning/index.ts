@@ -4,3 +4,4 @@
 
 export * from './patterns';
 export * from './argumentGraph';
+export * from './speechNormalizer';

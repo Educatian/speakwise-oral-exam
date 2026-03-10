@@ -112,7 +112,7 @@ export interface ScaffoldingEvent {
 // Reasoning Analytics Types (Advanced)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Reasoning Rubric - 4 Dimension Assessment */
+/** Reasoning Rubric - 4 Dimension Assessment + Toulmin Model */
 export interface ReasoningRubric {
   /** 근거/사실 기반 설명 */
   explicitJustification: {
@@ -134,6 +134,17 @@ export interface ReasoningRubric {
   abstractionGeneralization: {
     score: number;
     instances: string[];     // 일반화 시도 문장
+  };
+  /** Toulmin 모델 분석 (Claim/Data/Warrant/Backing/Qualifier/Rebuttal) */
+  toulminAnalysis?: {
+    claim: { detected: boolean; count: number; examples: string[] };
+    data: { detected: boolean; count: number; examples: string[] };
+    warrant: { detected: boolean; count: number; examples: string[] };
+    backing: { detected: boolean; count: number; examples: string[] };
+    qualifier: { detected: boolean; count: number; examples: string[] };
+    rebuttal: { detected: boolean; count: number; examples: string[] };
+    completenessScore: number;
+    missingComponents: string[];
   };
   /** 종합 점수 */
   overallReasoningScore: number; // 0-100
