@@ -1,7 +1,8 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Submission, ArgumentGraph } from '../../types';
 import { Modal, Button, ArgumentMapView } from '../ui';
 import { ArgumentGraphBuilder } from '../../lib/reasoning';
+import { generateConceptNetwork } from '../../lib/reasoning/conceptNetwork';
 import { GroupKnowledgeService } from '../../lib/services/GroupKnowledgeService';
 import { getMasteryLevel } from '../../lib/utils/scoreDisplay';
 
@@ -20,36 +21,48 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
     peerSubmissions,
     onClose
 }) => {
-    // Generate argument graph from transcript if not already present
-    const argumentGraph = useMemo<ArgumentGraph | null>(() => {
-        if (!submission) return null;
+    // AI-generated concept network (async)
+    const [argumentGraph, setArgumentGraph] = useState<ArgumentGraph | null>(null);
+    const [graphLoading, setGraphLoading] = useState(false);
 
-        // Use existing argumentGraph if available AND has edges (a graph with 0 edges is broken)
+    useEffect(() => {
+        if (!submission) {
+            setArgumentGraph(null);
+            return;
+        }
+
+        // Use existing argumentGraph if it has edges and metadata (AI-generated)
         if (submission.argumentGraph && submission.argumentGraph.nodes.length > 0 && submission.argumentGraph.edges.length > 0) {
-            return submission.argumentGraph;
+            setArgumentGraph(submission.argumentGraph);
+            return;
         }
 
-        // Generate from transcript for legacy submissions
+        // Generate from transcript using AI
         if (submission.transcript && submission.transcript.length > 0) {
-            const builder = new ArgumentGraphBuilder();
-            let lastQuestionId: string | undefined;
-
-            submission.transcript.forEach(item => {
-                if (item.speaker === 'interviewer') {
-                    // AI questions
-                    if (item.text.includes('?')) {
-                        lastQuestionId = builder.addQuestion(item.text, item.timestamp);
-                    }
-                } else {
-                    // User responses - process for argument classification
-                    builder.processUserUtterance(item.text, item.timestamp, lastQuestionId);
-                }
-            });
-
-            return builder.getGraph();
+            setGraphLoading(true);
+            generateConceptNetwork(submission.transcript)
+                .then(graph => {
+                    setArgumentGraph(graph);
+                    setGraphLoading(false);
+                })
+                .catch(err => {
+                    console.error('[SubmissionDetail] Concept network generation failed:', err);
+                    // Fallback to basic builder
+                    const builder = new ArgumentGraphBuilder();
+                    let lastQuestionId: string | undefined;
+                    submission.transcript.forEach(item => {
+                        if (item.speaker === 'interviewer') {
+                            if (item.text.includes('?')) {
+                                lastQuestionId = builder.addQuestion(item.text, item.timestamp);
+                            }
+                        } else {
+                            builder.processUserUtterance(item.text, item.timestamp, lastQuestionId);
+                        }
+                    });
+                    setArgumentGraph(builder.getGraph());
+                    setGraphLoading(false);
+                });
         }
-
-        return null;
     }, [submission]);
 
     if (!submission) return null;
@@ -107,17 +120,23 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                     </p>
                 </div>
 
-                {/* Argument Map - Always visible with fallback */}
+                {/* Concept Network - AI generated */}
                 <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
-                    {argumentGraph && argumentGraph.nodes.length > 0 ? (
+                    {graphLoading ? (
+                        <div className="text-center py-10">
+                            <div className="w-8 h-8 border-2 border-indigo-500/30 border-t-indigo-400 rounded-full animate-spin mx-auto mb-3" />
+                            <p className="text-slate-400 text-sm font-medium">Analyzing concept network...</p>
+                            <p className="text-xs text-slate-600 mt-1">AI is extracting semantic relationships</p>
+                        </div>
+                    ) : argumentGraph && argumentGraph.nodes.length > 0 ? (
                         <ArgumentMapView graph={argumentGraph} />
                     ) : (
                         <div className="text-center py-6 text-slate-500">
                             <span className="text-3xl mb-2 block">🗺️</span>
-                            <h4 className="text-slate-400 font-bold text-sm mb-1">Argument Structure Map</h4>
-                            <p className="text-xs">No argument data available for this session.</p>
+                            <h4 className="text-slate-400 font-bold text-sm mb-1">Concept Network</h4>
+                            <p className="text-xs">No concept data available for this session.</p>
                             <p className="text-xs mt-1 text-slate-600">
-                                (Transcript too short or no recognizable argument patterns)
+                                (Transcript too short or no recognizable concepts)
                             </p>
                         </div>
                     )}

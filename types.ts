@@ -168,13 +168,15 @@ export interface ArgumentNode {
   content: string;
   speaker: 'user' | 'interviewer';
   timestamp: number;
+  metadata?: { conceptType?: string; [key: string]: any };
 }
 
 /** Argument Graph Edge */
 export interface ArgumentEdge {
   from: string;
   to: string;
-  relation: 'supports' | 'refutes' | 'extends' | 'responds_to';
+  relation: string;
+  type?: string;
 }
 
 /** Argument Structure Graph */

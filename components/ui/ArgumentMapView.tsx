@@ -122,18 +122,22 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({ graph }) => {
         }));
     }, [keywordNodes, validEdges]);
 
-    // Relationship styling
+    // Relationship styling for semantic edges
     const getRelationStyle = (relation: string) => {
         const rel = relation.toLowerCase();
-        if (rel === 'relates') return { color: '#94a3b8', bg: 'bg-slate-500/20', label: '' };
-        if (rel === 'responds') return { color: '#818cf8', bg: 'bg-indigo-500/20', label: '' };
-        if (rel.includes('cause') || rel.includes('leads') || rel.includes('result')) return { color: '#f43f5e', bg: 'bg-rose-500/20', label: relation };
-        if (rel.includes('affect') || rel.includes('influence') || rel.includes('impact')) return { color: '#f59e0b', bg: 'bg-amber-500/20', label: relation };
-        if (rel.includes('depend') || rel.includes('require') || rel.includes('need')) return { color: '#8b5cf6', bg: 'bg-purple-500/20', label: relation };
-        if (rel.includes('related') || rel.includes('connect') || rel.includes('associate')) return { color: '#06b6d4', bg: 'bg-cyan-500/20', label: relation };
-        if (rel.includes('contrast') || rel.includes('although') || rel.includes('but')) return { color: '#64748b', bg: 'bg-slate-500/20', label: relation };
-        if (rel.includes('because') || rel.includes('if-then')) return { color: '#10b981', bg: 'bg-emerald-500/20', label: relation };
-        return { color: '#3b82f6', bg: 'bg-blue-500/20', label: relation };
+        // AI concept network relations
+        if (rel === 'defines') return { color: '#f43f5e', label: 'defines' };
+        if (rel === 'enables') return { color: '#10b981', label: 'enables' };
+        if (rel === 'exemplifies') return { color: '#06b6d4', label: 'exemplifies' };
+        if (rel === 'located_in') return { color: '#f59e0b', label: 'in' };
+        if (rel === 'requires') return { color: '#8b5cf6', label: 'requires' };
+        if (rel === 'supports') return { color: '#3b82f6', label: 'supports' };
+        if (rel === 'contrasts') return { color: '#64748b', label: 'contrasts' };
+        // Legacy fallbacks
+        if (rel === 'relates') return { color: '#94a3b8', label: '' };
+        if (rel === 'responds') return { color: '#818cf8', label: '' };
+        if (rel.includes('cause')) return { color: '#f43f5e', label: relation };
+        return { color: '#94a3b8', label: relation };
     };
 
     if (keywordNodes.length === 0) {
@@ -265,7 +269,15 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({ graph }) => {
                 {/* 2. HTML Overlay for Nodes */}
                 <div className="absolute inset-0 w-full h-full pointer-events-none">
                     {nodePositions.map((pos, i) => {
-                        const typeStyle = {
+                        // Determine style from metadata.conceptType (AI) or legacy node.type
+                        const conceptType = pos.node.metadata?.conceptType || '';
+                        const typeStyle = conceptType ? {
+                            'CORE': { bg: 'bg-rose-950/80', border: 'border-rose-400/80', shadow: 'shadow-rose-900/50', text: 'text-rose-100', dot: 'bg-rose-400' },
+                            'EXAMPLE': { bg: 'bg-cyan-950/80', border: 'border-cyan-400/80', shadow: 'shadow-cyan-900/50', text: 'text-cyan-100', dot: 'bg-cyan-400' },
+                            'CONTEXT': { bg: 'bg-amber-950/80', border: 'border-amber-400/80', shadow: 'shadow-amber-900/50', text: 'text-amber-100', dot: 'bg-amber-400' },
+                            'ATTRIBUTE': { bg: 'bg-violet-950/80', border: 'border-violet-400/80', shadow: 'shadow-violet-900/50', text: 'text-violet-100', dot: 'bg-violet-400' },
+                        }[conceptType] || { bg: 'bg-slate-800/80', border: 'border-slate-600', shadow: 'shadow-slate-900/50', text: 'text-slate-200', dot: 'bg-slate-400' }
+                        : {
                             claim: { bg: 'bg-blue-900/60', border: 'border-blue-400/80', shadow: 'shadow-blue-900/50', text: 'text-blue-100', dot: 'bg-blue-400' },
                             evidence: { bg: 'bg-emerald-900/60', border: 'border-emerald-400/80', shadow: 'shadow-emerald-900/50', text: 'text-emerald-100', dot: 'bg-emerald-400' },
                             counterargument: { bg: 'bg-rose-900/60', border: 'border-rose-400/80', shadow: 'shadow-rose-900/50', text: 'text-rose-100', dot: 'bg-rose-400' },
@@ -297,11 +309,11 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({ graph }) => {
 
             {/* Legend */}
             <div className="flex flex-wrap gap-x-4 gap-y-2 text-[10px] text-slate-400 pt-3 border-t border-slate-800/50 px-2">
-                <span className="flex items-center gap-1.5 font-medium"><span className="w-2.5 h-2.5 bg-rose-500 rounded-sm" /> Causal</span>
-                <span className="flex items-center gap-1.5 font-medium"><span className="w-2.5 h-2.5 bg-amber-500 rounded-sm" /> Influence</span>
-                <span className="flex items-center gap-1.5 font-medium"><span className="w-2.5 h-2.5 bg-purple-500 rounded-sm" /> Dependency</span>
-                <span className="flex items-center gap-1.5 font-medium"><span className="w-2.5 h-2.5 bg-cyan-500 rounded-sm" /> Correlation</span>
-                <span className="flex items-center gap-1.5 font-medium"><span className="w-2.5 h-2.5 bg-emerald-500 rounded-sm" /> Reasoning</span>
+                <span className="text-slate-600 mr-1">Nodes:</span>
+                <span className="flex items-center gap-1.5 font-medium"><span className="w-2.5 h-2.5 bg-rose-400 rounded-full" /> Core</span>
+                <span className="flex items-center gap-1.5 font-medium"><span className="w-2.5 h-2.5 bg-cyan-400 rounded-full" /> Example</span>
+                <span className="flex items-center gap-1.5 font-medium"><span className="w-2.5 h-2.5 bg-amber-400 rounded-full" /> Context</span>
+                <span className="flex items-center gap-1.5 font-medium"><span className="w-2.5 h-2.5 bg-violet-400 rounded-full" /> Attribute</span>
             </div>
 
             {/* Outline list */}
