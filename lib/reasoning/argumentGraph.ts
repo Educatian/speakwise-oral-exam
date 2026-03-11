@@ -275,10 +275,47 @@ export class ArgumentGraphBuilder {
             }
         }
 
-        // If no causal relations found, extract standalone keywords
+        // If no causal relations found, extract standalone keywords and link them
         if (causalRelations.length === 0) {
             const keywords = extractKeywords(analysisText);
-            keywords.forEach(kw => this.getOrCreateKeywordNode(kw, timestamp, utteranceType));
+            const kwNodeIds: string[] = [];
+            keywords.forEach(kw => {
+                kwNodeIds.push(this.getOrCreateKeywordNode(kw, timestamp, utteranceType));
+            });
+
+            // Chain keywords together so they form a connected subgraph
+            for (let i = 0; i < kwNodeIds.length - 1; i++) {
+                if (kwNodeIds[i] !== kwNodeIds[i + 1]) {
+                    const alreadyExists = this.edges.find(e =>
+                        (e.from === kwNodeIds[i] && e.to === kwNodeIds[i + 1]) ||
+                        (e.from === kwNodeIds[i + 1] && e.to === kwNodeIds[i])
+                    );
+                    if (!alreadyExists) {
+                        this.edges.push({ from: kwNodeIds[i], to: kwNodeIds[i + 1], relation: 'relates' as any });
+                    }
+                }
+            }
+
+            // Connect first keyword to the question node
+            if (lastQuestionId && kwNodeIds.length > 0 && kwNodeIds[0] !== lastQuestionId) {
+                const alreadyExists = this.edges.find(e =>
+                    e.from === lastQuestionId && e.to === kwNodeIds[0]
+                );
+                if (!alreadyExists) {
+                    this.edges.push({ from: lastQuestionId, to: kwNodeIds[0], relation: 'responds' as any });
+                }
+            }
+        } else if (lastQuestionId) {
+            // Even with causal relations, connect them to the question
+            const firstCausalNode = this.keywordNodes.get(causalRelations[0].from.toLowerCase().trim());
+            if (firstCausalNode && firstCausalNode !== lastQuestionId) {
+                const alreadyExists = this.edges.find(e =>
+                    e.from === lastQuestionId && e.to === firstCausalNode
+                );
+                if (!alreadyExists) {
+                    this.edges.push({ from: lastQuestionId, to: firstCausalNode, relation: 'responds' as any });
+                }
+            }
         }
 
         // Return a virtual node ID (for compatibility)
