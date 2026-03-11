@@ -2,10 +2,12 @@ import React, { useMemo } from 'react';
 import { Submission, ArgumentGraph } from '../../types';
 import { Modal, Button, ArgumentMapView } from '../ui';
 import { ArgumentGraphBuilder } from '../../lib/reasoning';
+import { GroupKnowledgeService } from '../../lib/services/GroupKnowledgeService';
 import { getMasteryLevel } from '../../lib/utils/scoreDisplay';
 
 interface SubmissionDetailModalProps {
     submission: Submission | null;
+    peerSubmissions?: Submission[];
     onClose: () => void;
 }
 
@@ -15,6 +17,7 @@ interface SubmissionDetailModalProps {
  */
 export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
     submission,
+    peerSubmissions,
     onClose
 }) => {
     // Generate argument graph from transcript if not already present
@@ -153,6 +156,53 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                         ))}
                     </div>
                 </div>
+
+                {/* Peer Perspectives */}
+                {(() => {
+                    if (!peerSubmissions || peerSubmissions.length === 0) return null;
+                    const allSubs = [submission, ...peerSubmissions];
+                    const peerData = GroupKnowledgeService.getPeerClaims(allSubs, submission.studentName);
+                    if (!peerData) return (
+                        <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-2xl text-center">
+                            <p className="text-slate-600 text-sm">👥 Peer perspectives will appear when 3+ classmates complete this interview.</p>
+                        </div>
+                    );
+                    if (peerData.shared.length === 0 && peerData.unique.length === 0) return null;
+                    return (
+                        <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
+                            <h4 className="text-slate-400 font-bold text-xs uppercase tracking-widest mb-3 flex items-center gap-2">
+                                👥 Peer Perspectives
+                                <span className="text-slate-600 normal-case font-normal">• {peerData.totalPeers} anonymous peers</span>
+                            </h4>
+                            {peerData.shared.length > 0 && (
+                                <div className="mb-3">
+                                    <p className="text-xs text-emerald-500 font-medium mb-2">🤝 Shared Ideas</p>
+                                    <div className="space-y-1.5">
+                                        {peerData.shared.map((item, i) => (
+                                            <div key={i} className="flex items-start gap-2 text-sm">
+                                                <span className="flex-shrink-0 px-1.5 py-0.5 bg-emerald-500/20 rounded text-xs text-emerald-400">{item.count+1}</span>
+                                                <span className="text-slate-400">"{item.claim}"</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            {peerData.unique.length > 0 && (
+                                <div>
+                                    <p className="text-xs text-indigo-500 font-medium mb-2">💡 Different Perspectives</p>
+                                    <div className="space-y-1.5">
+                                        {peerData.unique.map((item, i) => (
+                                            <div key={i} className="flex items-start gap-2 text-sm">
+                                                <span className="flex-shrink-0 px-1.5 py-0.5 bg-indigo-500/20 rounded text-xs text-indigo-400">{item.count}</span>
+                                                <span className="text-slate-400">"{item.claim}"</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    );
+                })()}
 
                 {/* Actions */}
                 <div className="flex justify-end pt-4 border-t border-slate-800">

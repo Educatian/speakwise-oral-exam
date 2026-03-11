@@ -286,10 +286,22 @@ const App: React.FC = () => {
       </main>
 
       {/* Submission Detail Modal */}
-      <SubmissionDetailModal
-        submission={selectedSubmission}
-        onClose={() => setSelectedSubmission(null)}
-      />
+      {selectedSubmission && (() => {
+        const peerCourse = courses.find(c =>
+          c.name === selectedSubmission.courseName ||
+          c.submissions.some(s => s.id === selectedSubmission.id)
+        );
+        const peers = peerCourse
+          ? peerCourse.submissions.filter(s => s.id !== selectedSubmission.id)
+          : [];
+        return (
+          <SubmissionDetailModal
+            submission={selectedSubmission}
+            peerSubmissions={peers}
+            onClose={() => setSelectedSubmission(null)}
+          />
+        );
+      })()}
 
       {/* Footer */}
       <footer className="mt-auto pt-12 pb-6 text-center">
