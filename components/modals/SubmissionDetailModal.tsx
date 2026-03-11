@@ -126,39 +126,68 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                 {/* Toulmin Reasoning Rubric */}
                 {submission.reasoningRubric && (
                     <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
-                        <h4 className="text-slate-400 font-bold text-xs uppercase tracking-widest mb-4 flex items-center gap-2">
-                            🧠 Argumentative Reasoning Analysis
-                        </h4>
+                        <div className="flex items-center justify-between mb-4">
+                            <h4 className="text-slate-400 font-bold text-xs uppercase tracking-widest flex items-center gap-2">
+                                🧠 Argumentative Reasoning Analysis
+                            </h4>
+                            {(submission.reasoningRubric as any).overallReasoningScore != null && (
+                                <span className="text-lg font-black text-indigo-400">
+                                    {(submission.reasoningRubric as any).overallReasoningScore}%
+                                </span>
+                            )}
+                        </div>
                         <div className="grid grid-cols-2 gap-3">
                             {[
-                                { key: 'claim', label: 'Claim', emoji: '💬', color: 'blue' },
-                                { key: 'evidence', label: 'Evidence', emoji: '📊', color: 'emerald' },
-                                { key: 'counterargument', label: 'Counter', emoji: '⚖️', color: 'rose' },
-                                { key: 'justification', label: 'Justification', emoji: '🔗', color: 'amber' }
-                            ].map(({ key, label, emoji, color }) => {
+                                { key: 'explicitJustification', label: 'Justification', emoji: '🔗', color: 'amber', scoreKey: 'score' },
+                                { key: 'causalExplanation', label: 'Causal Reasoning', emoji: '⚡', color: 'emerald', scoreKey: 'score' },
+                                { key: 'counterArgumentHandling', label: 'Counter-Argument', emoji: '⚖️', color: 'rose', scoreKey: 'score' },
+                                { key: 'abstractionGeneralization', label: 'Abstraction', emoji: '🔭', color: 'blue', scoreKey: 'score' }
+                            ].map(({ key, label, emoji, color, scoreKey }) => {
                                 const item = (submission.reasoningRubric as any)?.[key];
                                 if (!item) return null;
-                                const score = typeof item === 'object' ? item.score : item;
-                                const scoreNum = typeof score === 'number' ? score : 0;
+                                const scoreNum = typeof item === 'object' ? (item[scoreKey] ?? 0) : (typeof item === 'number' ? item : 0);
                                 return (
                                     <div key={key} className="bg-slate-800/50 rounded-xl p-3 border border-slate-700/50">
                                         <div className="flex items-center justify-between mb-2">
                                             <span className="text-xs font-bold text-slate-300">{emoji} {label}</span>
-                                            <span className={`text-sm font-black text-${color}-400`}>{scoreNum}/5</span>
+                                            <span className={`text-sm font-black`} style={{ color: `var(--${color}, #94a3b8)` }}>{scoreNum}/5</span>
                                         </div>
                                         <div className="w-full bg-slate-700 rounded-full h-1.5">
                                             <div
-                                                className={`bg-${color}-500 h-1.5 rounded-full transition-all duration-500`}
-                                                style={{ width: `${(scoreNum / 5) * 100}%` }}
+                                                className="h-1.5 rounded-full transition-all duration-500"
+                                                style={{
+                                                    width: `${(scoreNum / 5) * 100}%`,
+                                                    backgroundColor: color === 'amber' ? '#f59e0b' : color === 'emerald' ? '#10b981' : color === 'rose' ? '#f43f5e' : '#3b82f6'
+                                                }}
                                             />
                                         </div>
-                                        {typeof item === 'object' && item.note && (
-                                            <p className="text-[10px] text-slate-500 mt-1.5 leading-tight">{item.note}</p>
+                                        {item.count != null && (
+                                            <p className="text-[10px] text-slate-500 mt-1.5">{item.count || item.attempts || 0} instances detected</p>
                                         )}
                                     </div>
                                 );
                             })}
                         </div>
+
+                        {/* Toulmin Analysis */}
+                        {(submission.reasoningRubric as any).toulminAnalysis && (
+                            <div className="mt-3 p-3 bg-slate-800/30 rounded-xl border border-slate-700/30">
+                                <p className="text-[10px] text-slate-500 uppercase font-bold mb-2">Toulmin Components</p>
+                                <div className="flex flex-wrap gap-2">
+                                    {['claim', 'data', 'warrant', 'backing', 'qualifier', 'rebuttal'].map(comp => {
+                                        const t = (submission.reasoningRubric as any).toulminAnalysis;
+                                        const found = t?.components?.[comp] || t?.[comp];
+                                        return (
+                                            <span key={comp} className={`text-[10px] px-2 py-1 rounded-full border ${
+                                                found ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400' : 'bg-slate-800 border-slate-700 text-slate-600'
+                                            }`}>
+                                                {found ? '✓' : '○'} {comp}
+                                            </span>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
 
                         {/* Dialogue Metrics Summary */}
                         {submission.dialogueMetrics && (
