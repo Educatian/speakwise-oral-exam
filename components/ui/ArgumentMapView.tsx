@@ -12,11 +12,8 @@ interface ArgumentMapViewProps {
 export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({ graph }) => {
     const { nodes, edges } = graph;
 
-    // Show all argument nodes (exclude question nodes for cleaner map)
-    const keywordNodes = useMemo(() =>
-        nodes.filter(n => n.type !== 'question'),
-        [nodes]
-    );
+    // Show all nodes including questions (questions form the hub of the network)
+    const keywordNodes = useMemo(() => nodes, [nodes]);
 
     // Filter edges to only include those between visible nodes
     const validEdges = useMemo(() => {
@@ -128,6 +125,8 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({ graph }) => {
     // Relationship styling
     const getRelationStyle = (relation: string) => {
         const rel = relation.toLowerCase();
+        if (rel === 'relates') return { color: '#94a3b8', bg: 'bg-slate-500/20', label: '' };
+        if (rel === 'responds') return { color: '#818cf8', bg: 'bg-indigo-500/20', label: '' };
         if (rel.includes('cause') || rel.includes('leads') || rel.includes('result')) return { color: '#f43f5e', bg: 'bg-rose-500/20', label: relation };
         if (rel.includes('affect') || rel.includes('influence') || rel.includes('impact')) return { color: '#f59e0b', bg: 'bg-amber-500/20', label: relation };
         if (rel.includes('depend') || rel.includes('require') || rel.includes('need')) return { color: '#8b5cf6', bg: 'bg-purple-500/20', label: relation };
@@ -175,7 +174,7 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({ graph }) => {
                     className="absolute inset-0 w-full h-full pointer-events-none"
                 >
                     <defs>
-                        {['f43f5e', 'f59e0b', '8b5cf6', '06b6d4', '10b981', '3b82f6', '64748b'].map(color => (
+                        {['f43f5e', 'f59e0b', '8b5cf6', '06b6d4', '10b981', '3b82f6', '64748b', '94a3b8', '818cf8'].map(color => (
                             <marker
                                 key={color}
                                 id={`arr-${color}`}
@@ -227,33 +226,37 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({ graph }) => {
                                     stroke={style.color}
                                     strokeWidth="1.5"
                                     strokeDasharray={edge.type === 'implicit' ? "4,4" : "none"}
-                                    opacity="0.4"
+                                    opacity="0.5"
                                     markerEnd={`url(#arr-${cHex})`}
                                     className="transition-all duration-700"
                                 />
-                                {/* Relationship Badge */}
-                                <rect
-                                    x={midX - 35}
-                                    y={midY - 10}
-                                    width="70"
-                                    height="20"
-                                    rx="10"
-                                    fill="#0f172a"
-                                    stroke={style.color}
-                                    strokeWidth="1"
-                                    opacity="0.9"
-                                />
-                                <text
-                                    x={midX}
-                                    y={midY + 3.5}
-                                    fill={style.color}
-                                    fontSize="9.5"
-                                    fontWeight="600"
-                                    textAnchor="middle"
-                                    className="pointer-events-auto cursor-default"
-                                >
-                                    {style.label.length > 12 ? style.label.substring(0, 10) + '..' : style.label}
-                                </text>
+                                {/* Relationship Badge — only show if label is non-empty */}
+                                {style.label && (
+                                    <>
+                                        <rect
+                                            x={midX - 35}
+                                            y={midY - 10}
+                                            width="70"
+                                            height="20"
+                                            rx="10"
+                                            fill="#0f172a"
+                                            stroke={style.color}
+                                            strokeWidth="1"
+                                            opacity="0.9"
+                                        />
+                                        <text
+                                            x={midX}
+                                            y={midY + 3.5}
+                                            fill={style.color}
+                                            fontSize="9.5"
+                                            fontWeight="600"
+                                            textAnchor="middle"
+                                            className="pointer-events-auto cursor-default"
+                                        >
+                                            {style.label.length > 12 ? style.label.substring(0, 10) + '..' : style.label}
+                                        </text>
+                                    </>
+                                )}
                             </g>
                         );
                     })}
@@ -267,6 +270,7 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({ graph }) => {
                             evidence: { bg: 'bg-emerald-900/60', border: 'border-emerald-400/80', shadow: 'shadow-emerald-900/50', text: 'text-emerald-100', dot: 'bg-emerald-400' },
                             counterargument: { bg: 'bg-rose-900/60', border: 'border-rose-400/80', shadow: 'shadow-rose-900/50', text: 'text-rose-100', dot: 'bg-rose-400' },
                             justification: { bg: 'bg-amber-900/60', border: 'border-amber-400/80', shadow: 'shadow-amber-900/50', text: 'text-amber-100', dot: 'bg-amber-400' },
+                            question: { bg: 'bg-indigo-950/80', border: 'border-indigo-500/50', shadow: 'shadow-indigo-900/50', text: 'text-indigo-300', dot: 'bg-indigo-500' },
                         }[pos.node.type] || { bg: 'bg-slate-800/80', border: 'border-slate-600', shadow: 'shadow-slate-900/50', text: 'text-slate-200', dot: 'bg-slate-400' };
 
                         return (
