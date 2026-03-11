@@ -116,7 +116,11 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({
     }, [isUserSpeaking, isInterviewerSpeaking, pendingUserText, pendingAIText]);
 
     // Generate feedback and submit when session ends
+    const hasSubmittedRef = useRef(false);
     const handleEndAndSubmit = async () => {
+        if (hasSubmittedRef.current) return; // Guard against double-submit
+        hasSubmittedRef.current = true;
+
         const finalTranscripts = await endSession();
 
         try {
@@ -156,6 +160,14 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({
             onComplete(submission);
         }
     };
+
+    // Auto-trigger save when AI signals interview end
+    useEffect(() => {
+        if (status === InterviewStatus.ENDED && !hasSubmittedRef.current) {
+            console.log('[InterviewSession] Auto-triggering save on AI end signal');
+            handleEndAndSubmit();
+        }
+    }, [status]);
 
     const getStatusLabel = () => {
         switch (status) {

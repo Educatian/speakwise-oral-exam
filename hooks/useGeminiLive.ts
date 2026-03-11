@@ -352,9 +352,11 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                         // Check for interview end
                         if (aiTextBufferRef.current.includes('[END_INTERVIEW]')) {
                             console.log('[TurnBased] AI signaled interview end');
+                            // DON'T call cleanup() here — it wipes transcriptions!
+                            // Just signal ENDED status; InterviewSessionView will call
+                            // endSession() which properly preserves transcripts.
                             setTimeout(() => {
                                 setStatus(InterviewStatus.ENDED);
-                                cleanup();
                             }, 5000);
                         }
                     }
