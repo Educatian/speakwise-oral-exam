@@ -6,6 +6,7 @@ import { AudioVisualizer } from '../AudioVisualizer';
 import { Button, MicTest } from '../ui';
 import { sanitizeTranscript } from '../../lib/security/sanitize';
 import { EvaluationService } from '../../lib/services/EvaluationService';
+import { usePresence } from '../../hooks/usePresence';
 
 interface InterviewSessionViewProps {
     course: Course;
@@ -63,6 +64,13 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({
         systemInstruction,
         voiceName: 'Kore'
     });
+
+    // Real-time presence tracking
+    const { peerCount } = usePresence(
+        course.id,
+        studentName,
+        status === InterviewStatus.LIVE
+    );
 
     // Auto-scroll to latest message
     useEffect(() => {
@@ -195,6 +203,19 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({
                         <p className="text-xs text-slate-500 uppercase tracking-widest mt-1">
                             Course: {course.name}
                         </p>
+
+                        {/* Live Presence Indicator */}
+                        {peerCount > 0 && (
+                            <div className="flex items-center justify-center gap-1.5 mt-2 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full">
+                                <span className="relative flex h-2 w-2">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                </span>
+                                <span className="text-xs text-emerald-400">
+                                    {peerCount} other{peerCount > 1 ? 's' : ''} in session now
+                                </span>
+                            </div>
+                        )}
                     </div>
 
                     {status === InterviewStatus.IDLE ? (
