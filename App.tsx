@@ -64,13 +64,36 @@ const App: React.FC = () => {
     setView(AppView.STUDENT_INTERVIEW);
   };
 
-  const handleInterviewComplete = (submission: Submission) => {
+  const handleInterviewComplete = async (submission: Submission) => {
+    console.log('[App] handleInterviewComplete called:', {
+      hasTranscript: submission.transcript?.length,
+      studentName: submission.studentName,
+      courseName: submission.courseName,
+      score: submission.score,
+      hasFeedback: !!submission.feedback,
+      hasArgumentGraph: !!submission.argumentGraph
+    });
+
     // Save to course submissions
     if (activeCourse) {
-      addSubmission(activeCourse.id, submission);
+      try {
+        await addSubmission(activeCourse.id, submission);
+        console.log('[App] Submission saved to course:', activeCourse.id);
+      } catch (e) {
+        console.error('[App] Failed to save submission to course:', e);
+      }
+    } else {
+      console.warn('[App] No activeCourse — submission not saved to course!');
     }
+
     // Save to student history
-    addToHistory(submission);
+    try {
+      await addToHistory(submission);
+      console.log('[App] Submission saved to student history');
+    } catch (e) {
+      console.error('[App] Failed to save to history:', e);
+    }
+
     // Store and navigate to results
     setLastSubmission(submission);
     navigateTo(AppView.STUDENT_RESULTS);
