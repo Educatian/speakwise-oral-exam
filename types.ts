@@ -341,3 +341,38 @@ export interface UseStudentHistoryReturn {
   addToHistory: (submission: Submission) => void;
   clearHistory: () => void;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Group Knowledge Network Types
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Aggregated concept node from multiple students */
+export interface GroupNode {
+  id: string;
+  label: string;
+  type: 'claim' | 'evidence' | 'counterargument' | 'justification';
+  frequency: number;          // how many students mentioned it
+  studentCount: number;       // total students in group
+}
+
+/** Aggregated relationship edge */
+export interface GroupEdge {
+  from: string;
+  to: string;
+  weight: number;
+  relation: string;
+}
+
+/** Fused group knowledge network */
+export interface GroupNetwork {
+  nodes: GroupNode[];
+  edges: GroupEdge[];
+  totalStudents: number;
+}
+
+/** Anonymous peer claim for comparison */
+export interface PeerClaimGroup {
+  claim: string;
+  count: number;             // how many peers share this claim
+  isShared: boolean;         // shared with current student?
+}

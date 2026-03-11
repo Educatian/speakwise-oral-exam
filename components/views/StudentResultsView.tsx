@@ -1,9 +1,11 @@
 import React, { useMemo } from 'react';
 import { Submission, ArgumentNode } from '../../types';
+import { GroupKnowledgeService } from '../../lib/services/GroupKnowledgeService';
 import { Button } from '../ui';
 
 interface StudentResultsViewProps {
     submission: Submission;
+    peerSubmissions?: Submission[];  // Other submissions from same course
     onBack: () => void;
 }
 
@@ -28,10 +30,11 @@ const NODE_COLORS: Record<string, { bg: string; text: string; label: string }> =
 
 /**
  * Student Results View
- * Shows Toulmin element counts and turn-by-turn argumentation tagging
+ * Shows Toulmin element counts, turn-by-turn argumentation tagging, and peer perspectives
  */
 export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
     submission,
+    peerSubmissions,
     onBack
 }) => {
     const toulmin = submission.reasoningRubric?.toulminAnalysis;
@@ -70,6 +73,14 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
     }, [toulmin]);
 
     const maxCount = Math.max(...toulminComponents.map(c => c.count), 1);
+
+    // ─── Peer Perspectives (anonymous) ──────────────────────────────
+    const peerData = useMemo(() => {
+        if (!peerSubmissions || peerSubmissions.length === 0) return null;
+        // Include current submission in the pool for analysis
+        const allSubs = [submission, ...peerSubmissions];
+        return GroupKnowledgeService.getPeerClaims(allSubs, submission.studentName);
+    }, [peerSubmissions, submission]);
 
     return (
         <div className="w-full max-w-5xl space-y-6 animate-fade-in">
@@ -226,6 +237,83 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
                         </div>
                     )}
                 </div>
+            </div>
+
+            {/* ─── Peer Perspectives ─── */}
+            <div className="glass-panel p-6 rounded-3xl">
+                <h3 className="text-lg font-bold text-white mb-1">
+                    👥 Peer Perspectives
+                </h3>
+                <p className="text-xs text-slate-500 mb-4">
+                    Anonymous comparison with classmates who took the same interview
+                </p>
+
+                {peerData ? (
+                    <div className="space-y-4">
+                        {/* Shared Perspectives */}
+                        {peerData.shared.length > 0 && (
+                            <div>
+                                <div className="flex items-center gap-2 mb-2">
+                                    <span className="text-emerald-400 text-sm">🤝</span>
+                                    <span className="text-sm font-medium text-emerald-400">Shared Ideas</span>
+                                    <span className="text-xs text-slate-600">You and your peers agreed on these points</span>
+                                </div>
+                                <div className="space-y-2">
+                                    {peerData.shared.map((item, i) => (
+                                        <div key={i} className="flex items-start gap-3 p-3 bg-emerald-500/5 border border-emerald-500/15 rounded-xl">
+                                            <div className="flex-shrink-0 px-2 py-0.5 bg-emerald-500/20 rounded-full text-xs font-bold text-emerald-400">
+                                                {item.count + 1} students
+                                            </div>
+                                            <p className="text-sm text-slate-300 leading-relaxed">
+                                                "{item.claim}"
+                                            </p>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Different Perspectives */}
+                        {peerData.unique.length > 0 && (
+                            <div>
+                                <div className="flex items-center gap-2 mb-2">
+                                    <span className="text-indigo-400 text-sm">💡</span>
+                                    <span className="text-sm font-medium text-indigo-400">Different Perspectives</span>
+                                    <span className="text-xs text-slate-600">Your peers explored these ideas</span>
+                                </div>
+                                <div className="space-y-2">
+                                    {peerData.unique.map((item, i) => (
+                                        <div key={i} className="flex items-start gap-3 p-3 bg-indigo-500/5 border border-indigo-500/15 rounded-xl">
+                                            <div className="flex-shrink-0 px-2 py-0.5 bg-indigo-500/20 rounded-full text-xs font-bold text-indigo-400">
+                                                {item.count} peers
+                                            </div>
+                                            <p className="text-sm text-slate-300 leading-relaxed">
+                                                "{item.claim}"
+                                            </p>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {peerData.shared.length === 0 && peerData.unique.length === 0 && (
+                            <div className="text-center py-6 text-slate-600">
+                                <p className="text-sm">Not enough overlapping concepts to compare yet.</p>
+                            </div>
+                        )}
+
+                        <p className="text-xs text-slate-600 text-center mt-2">
+                            Based on {peerData.totalPeers} anonymous peer{peerData.totalPeers !== 1 ? 's' : ''}
+                        </p>
+                    </div>
+                ) : (
+                    <div className="text-center py-6 text-slate-600">
+                        <svg className="w-10 h-10 mx-auto mb-2 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        <p className="text-sm">Peer perspectives will appear when 3+ classmates complete this interview.</p>
+                    </div>
+                )}
             </div>
 
             {/* ─── Turn-by-Turn Argumentation Tagging (2-2) ─── */}

@@ -195,9 +195,18 @@ export const AppRouter: React.FC<AppRouterProps> = ({
 
         case AppView.STUDENT_RESULTS:
             if (!lastSubmission) return null;
+            // Find peer submissions from the same course
+            const matchingCourse = courses.find(c =>
+                c.name === lastSubmission.courseName ||
+                c.submissions.some(s => s.id === lastSubmission.id)
+            );
+            const peerSubs = matchingCourse
+                ? matchingCourse.submissions.filter(s => s.id !== lastSubmission.id)
+                : [];
             return (
                 <StudentResultsView
                     submission={lastSubmission}
+                    peerSubmissions={peerSubs}
                     onBack={returnToLanding}
                 />
             );

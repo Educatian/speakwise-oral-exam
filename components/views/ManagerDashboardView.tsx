@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import mammoth from 'mammoth';
 import { Course, Submission } from '../../types';
+import { GroupKnowledgeService } from '../../lib/services/GroupKnowledgeService';
 import { Button, Input, Textarea, Modal, PinVerifyModal } from '../ui';
 import { createCoursePromptGenerator } from '../../lib/prompts/interviewerSystem';
 
@@ -808,6 +809,61 @@ Only output valid JSON, nothing else.`
                                         </div>
                                     </div>
                                 ))}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Group Knowledge Network */}
+                    <div>
+                        <h4 className="text-xs font-semibold text-slate-500 uppercase mb-2">👥 Group Knowledge Network</h4>
+                        {viewingCourse && GroupKnowledgeService.hasEnoughData(viewingCourse.submissions || []) ? (() => {
+                            const network = GroupKnowledgeService.buildGroupNetwork(viewingCourse.submissions || []);
+                            if (!network || network.nodes.length === 0) {
+                                return <p className="text-slate-600 text-sm italic">Not enough concept data to build network.</p>;
+                            }
+                            const maxFreq = Math.max(...network.nodes.map(n => n.frequency), 1);
+                            const typeColors: Record<string, string> = {
+                                claim: 'bg-blue-500/30 text-blue-400',
+                                evidence: 'bg-emerald-500/30 text-emerald-400',
+                                counterargument: 'bg-red-500/30 text-red-400',
+                                justification: 'bg-amber-500/30 text-amber-400'
+                            };
+                            return (
+                                <div className="space-y-2">
+                                    <p className="text-xs text-slate-500 mb-3">
+                                        Aggregated from {network.totalStudents} students • {network.nodes.length} concepts
+                                    </p>
+                                    {network.nodes.slice(0, 12).map(node => (
+                                        <div key={node.id} className="flex items-center gap-3 p-2 bg-slate-900/50 rounded-lg">
+                                            <span className={`flex-shrink-0 px-2 py-0.5 rounded-full text-xs font-medium ${
+                                                typeColors[node.type] || 'bg-slate-500/30 text-slate-400'
+                                            }`}>
+                                                {node.type}
+                                            </span>
+                                            <span className="text-sm text-slate-300 flex-1 truncate">{node.label}</span>
+                                            <div className="flex items-center gap-2 flex-shrink-0">
+                                                <div className="w-20 bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                                                    <div
+                                                        className="h-full bg-indigo-500/60 rounded-full"
+                                                        style={{ width: `${(node.frequency / maxFreq) * 100}%` }}
+                                                    />
+                                                </div>
+                                                <span className="text-xs text-slate-500 font-mono w-16 text-right">
+                                                    {node.frequency}/{node.studentCount}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            );
+                        })() : (
+                            <div className="text-center py-4">
+                                <p className="text-slate-600 text-sm">
+                                    Group network requires 3+ submissions with argument data.
+                                </p>
+                                <p className="text-slate-700 text-xs mt-1">
+                                    {viewingCourse?.submissions?.length || 0} submissions so far
+                                </p>
                             </div>
                         )}
                     </div>
