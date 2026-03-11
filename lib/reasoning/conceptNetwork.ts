@@ -1,8 +1,11 @@
 /**
- * AI-Powered Concept Network Generator
- * Uses Gemini to extract meaningful semantic concept networks from interview transcripts.
- * Produces structured graphs with typed nodes (CORE, EXAMPLE, CONTEXT, ATTRIBUTE)
- * and directed relationship links (defines, enables, exemplifies, etc.)
+ * AI-Powered Hierarchical Concept Network Generator
+ * Uses Gemini to extract 3-level hierarchical concept networks from interview transcripts.
+ * 
+ * Structure:
+ *   Level 0 (ROOT): 1 node — the main theoretical concept being assessed
+ *   Level 1 (PILLARS): 2-4 nodes — core sub-concepts/principles
+ *   Level 2 (EVIDENCE): 3-8 nodes — concrete examples, applications, tools
  */
 
 import { GoogleGenAI } from '@google/genai';
@@ -12,68 +15,71 @@ import { ArgumentGraph, ArgumentNode, ArgumentEdge } from '../../types';
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface ConceptNode {
+export interface HierarchicalNode {
     id: string;
     label: string;
-    type: 'CORE' | 'EXAMPLE' | 'CONTEXT' | 'ATTRIBUTE';
+    level: 0 | 1 | 2;
+    type: 'THEORY' | 'PRINCIPLE' | 'EXAMPLE' | 'DOMAIN' | 'TOOL';
 }
 
-interface ConceptLink {
+export interface HierarchicalLink {
     source: string;
     target: string;
-    relation: string;
+    relation: 'defines' | 'requires' | 'exemplifies' | 'enables' | 'located_in';
 }
 
-interface ConceptNetworkResult {
-    nodes: ConceptNode[];
-    links: ConceptLink[];
+export interface HierarchicalNetwork {
+    root: string;
+    nodes: HierarchicalNode[];
+    links: HierarchicalLink[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Prompt Template
 // ─────────────────────────────────────────────────────────────────────────────
 
-const CONCEPT_NETWORK_PROMPT = `You are an expert learning analyst. Analyze the following interview transcript and extract a concept network that captures the student's understanding.
+const CONCEPT_NETWORK_PROMPT = `You are a knowledge graph architect for educational assessment.
+
+Analyze the student's oral response and build a HIERARCHICAL concept network.
+
+## STRUCTURE RULES
+The graph must have exactly 3 levels:
+- Level 0 (ROOT): 1 node — the main theoretical concept being assessed
+  (e.g., "situated learning")
+- Level 1 (PILLARS): 2-4 nodes — core sub-concepts or principles that 
+  directly define/support the root
+  (e.g., "authenticity", "social interaction", "context")
+- Level 2 (EVIDENCE): 3-8 nodes — concrete examples, applications, 
+  or tools the student mentioned
+  (e.g., "VR", "digital platform", "museum exhibit")
 
 ## NODE RULES
-1. Extract only MEANINGFUL CONCEPTS (nouns/noun phrases), not filler words or full sentences
-2. Classify each node into ONE category:
-   - CORE: Central theoretical concepts (e.g., "situated learning", "Lave & Wenger")
-   - EXAMPLE: Concrete examples given (e.g., "VR", "digital platform")
-   - CONTEXT: Contextual domains mentioned (e.g., "library", "museum")
-   - ATTRIBUTE: Descriptive qualities (e.g., "authenticity", "social interaction")
-3. Keep node labels SHORT (1-3 words max)
-4. Limit to 8-15 most important nodes
+- Label: 1-3 words MAX, noun/concept only (no verbs, no sentences)
+- Assign level: 0, 1, or 2
+- Assign type: THEORY | PRINCIPLE | EXAMPLE | DOMAIN | TOOL
 
 ## LINK RULES
-1. Use SPECIFIC relationship types only:
-   - defines: A defines B
-   - enables: A enables B
-   - exemplifies: A exemplifies B
-   - located_in: A located in B
-   - requires: A requires B
-   - supports: A supports B
-   - contrasts: A contrasts B
-2. Every link must have a clear directional meaning
-3. Avoid generic "relates" — always choose the most precise type
+Links must flow from higher level to lower level (parent → child).
+Use ONLY these relation types:
+- "defines" (root → pillar)
+- "requires" (pillar → pillar)  
+- "exemplifies" (evidence → pillar)
+- "enables" (tool → principle)
+- "located_in" (example → domain)
 
-## OUTPUT FORMAT (strict JSON only, no markdown)
+## OUTPUT (strict JSON only, no explanation, no markdown)
 {
+  "root": "situated learning",
   "nodes": [
-    {"id": "n1", "label": "situated learning", "type": "CORE"},
-    {"id": "n2", "label": "authenticity", "type": "ATTRIBUTE"}
+    {"id": "n0", "label": "situated learning", "level": 0, "type": "THEORY"},
+    {"id": "n1", "label": "authenticity", "level": 1, "type": "PRINCIPLE"},
+    {"id": "n2", "label": "VR simulation", "level": 2, "type": "TOOL"}
   ],
   "links": [
-    {"source": "n1", "target": "n2", "relation": "requires"},
-    {"source": "n3", "target": "n1", "relation": "exemplifies"}
+    {"source": "n0", "target": "n1", "relation": "defines"},
+    {"source": "n2", "target": "n1", "relation": "exemplifies"}
   ]
 }
-
-## QUALITY CHECK before output:
-- Are all node labels ≤ 3 words? ✓
-- Is every link type specific (not "relates")? ✓
-- Do the links form a meaningful semantic structure, not just a chain? ✓
-- Are core academic concepts clearly distinguished from examples? ✓
 
 ## TRANSCRIPT:
 `;
@@ -83,8 +89,8 @@ const CONCEPT_NETWORK_PROMPT = `You are an expert learning analyst. Analyze the 
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Generate a concept network from transcript using Gemini AI.
- * Returns an ArgumentGraph compatible with the existing visualization system.
+ * Generate a hierarchical concept network from transcript using Gemini AI.
+ * Returns an ArgumentGraph compatible with the visualization system.
  */
 export async function generateConceptNetwork(
     transcript: Array<{ speaker: string; text: string; timestamp: number }>
@@ -112,46 +118,50 @@ export async function generateConceptNetwork(
         const text = response.text?.trim();
         if (!text) throw new Error('Empty response from Gemini');
 
-        const result: ConceptNetworkResult = JSON.parse(text);
+        const result: HierarchicalNetwork = JSON.parse(text);
 
-        // Validate & convert to ArgumentGraph format
+        // Validate structure
+        if (!result.nodes || !Array.isArray(result.nodes) || result.nodes.length === 0) {
+            throw new Error('Invalid network structure: no nodes');
+        }
+
         return convertToArgumentGraph(result);
     } catch (err) {
-        console.error('[ConceptNetwork] AI generation failed, falling back to basic extraction:', err);
+        console.error('[ConceptNetwork] AI generation failed, falling back:', err);
         return fallbackExtraction(transcript);
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Conversion
+// Conversion to ArgumentGraph
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Map concept node types to ArgumentNode types */
-const NODE_TYPE_MAP: Record<string, ArgumentNode['type']> = {
-    'CORE': 'claim',
-    'EXAMPLE': 'evidence',
-    'CONTEXT': 'justification',
-    'ATTRIBUTE': 'counterargument'
-};
-
-function convertToArgumentGraph(result: ConceptNetworkResult): ArgumentGraph {
-    if (!result.nodes || !Array.isArray(result.nodes)) {
-        return { nodes: [], edges: [], coherenceScore: 0, complexity: 0 };
-    }
-
+function convertToArgumentGraph(result: HierarchicalNetwork): ArgumentGraph {
     const nodeIdMap = new Map<string, string>();
 
     const nodes: ArgumentNode[] = result.nodes.map((n, i) => {
-        const nodeId = `concept_${i}_${Date.now()}`;
+        const nodeId = `cn_${i}_${Date.now()}`;
         nodeIdMap.set(n.id, nodeId);
+
+        // Map hierarchical type to ArgumentNode type for backwards compatibility
+        const typeMap: Record<string, ArgumentNode['type']> = {
+            'THEORY': 'claim',
+            'PRINCIPLE': 'justification',
+            'EXAMPLE': 'evidence',
+            'DOMAIN': 'counterargument',
+            'TOOL': 'evidence'
+        };
+
         return {
             id: nodeId,
-            type: NODE_TYPE_MAP[n.type] || 'claim',
+            type: typeMap[n.type] || 'claim',
             content: n.label,
             speaker: 'user' as const,
             timestamp: Date.now(),
-            // Store original concept type as metadata
-            metadata: { conceptType: n.type }
+            metadata: {
+                conceptType: n.type,
+                level: n.level
+            }
         };
     });
 
@@ -163,7 +173,7 @@ function convertToArgumentGraph(result: ConceptNetworkResult): ArgumentGraph {
             relation: l.relation
         }));
 
-    // Calculate coherence
+    // Calculate coherence based on connectivity
     const connectedNodes = new Set(edges.flatMap(e => [e.from, e.to]));
     const coherence = nodes.length > 0
         ? Math.round((connectedNodes.size / nodes.length) * 100)
@@ -178,13 +188,12 @@ function convertToArgumentGraph(result: ConceptNetworkResult): ArgumentGraph {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Fallback (if API fails)
+// Fallback
 // ─────────────────────────────────────────────────────────────────────────────
 
 function fallbackExtraction(
     transcript: Array<{ speaker: string; text: string; timestamp: number }>
 ): ArgumentGraph {
-    // Simple keyword extraction fallback
     const { ArgumentGraphBuilder } = require('./argumentGraph');
     const builder = new ArgumentGraphBuilder();
     let lastQuestionId: string | undefined;

@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect, useState, useRef } from 'react';
+import React, { useMemo } from 'react';
 import { ArgumentGraph, ArgumentNode, ArgumentEdge } from '../../types';
 
 interface ArgumentMapViewProps {
@@ -6,148 +6,160 @@ interface ArgumentMapViewProps {
 }
 
 /**
- * Dynamic Knowledge Graph Visualization
- * Uses a basic force-directed algorithm for layout and HTML overlays for readable nodes.
+ * Hierarchical Concept Network Visualization
+ * 3-level radial layout:
+ *   Level 0 (ROOT): Center — main theory
+ *   Level 1 (PILLARS): Inner ring — core principles
+ *   Level 2 (EVIDENCE): Outer ring — examples, tools, domains
  */
 export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({ graph }) => {
     const { nodes, edges } = graph;
 
-    // Show all nodes including questions (questions form the hub of the network)
-    const keywordNodes = useMemo(() => nodes, [nodes]);
-
-    // Filter edges to only include those between visible nodes
-    const validEdges = useMemo(() => {
-        const nodeIds = new Set(keywordNodes.map(n => n.id));
-        return edges.filter(e => nodeIds.has(e.from) && nodeIds.has(e.to));
-    }, [edges, keywordNodes]);
-
     // Dimensions
     const viewW = 600;
-    const viewH = 450;
-    const centerX = viewW / 2;
-    const centerY = viewH / 2;
+    const viewH = 500;
+    const cx = viewW / 2;
+    const cy = viewH / 2;
 
-    // Run simple physics simulation for layout
-    const nodePositions = useMemo(() => {
-        if (keywordNodes.length === 0) return [];
-        if (keywordNodes.length === 1) {
-            return [{ node: keywordNodes[0], x: centerX, y: centerY }];
-        }
+    // Radii for each level
+    const radii = { 0: 0, 1: 130, 2: 220 };
 
-        const positions: Record<string, { x: number, y: number, vx: number, vy: number }> = {};
+    // Group nodes by level (from metadata)
+    const { level0, level1, level2, nodePositions, posMap } = useMemo(() => {
+        const l0: ArgumentNode[] = [];
+        const l1: ArgumentNode[] = [];
+        const l2: ArgumentNode[] = [];
 
-        // Initialize with spiral to distribute them initially
-        keywordNodes.forEach((node, i) => {
-            const angle = i * Math.PI * 2 * 0.618; // golden ratio
-            const r = 40 + i * 15;
-            positions[node.id] = {
-                x: centerX + Math.cos(angle) * r,
-                y: centerY + Math.sin(angle) * r,
-                vx: 0, vy: 0
-            };
+        nodes.forEach(n => {
+            const level = n.metadata?.level;
+            if (level === 0) l0.push(n);
+            else if (level === 1) l1.push(n);
+            else if (level === 2) l2.push(n);
+            else {
+                // Fallback: first node is root, rest distribute
+                if (l0.length === 0) l0.push(n);
+                else if (l1.length < 4) l1.push(n);
+                else l2.push(n);
+            }
         });
 
-        const iterations = 150;
-        const k = Math.sqrt((viewW * viewH) / keywordNodes.length) * 0.6; // optimal distance parameter
+        const pm = new Map<string, { x: number; y: number; angle: number }>();
+        const positions: Array<{ node: ArgumentNode; x: number; y: number }> = [];
 
-        for (let iter = 0; iter < iterations; iter++) {
-            const temp = 20 * (1 - iter / iterations);
+        // Level 0: center
+        l0.forEach(n => {
+            pm.set(n.id, { x: cx, y: cy, angle: 0 });
+            positions.push({ node: n, x: cx, y: cy });
+        });
 
-            // 1. Repulsion
-            for (let i = 0; i < keywordNodes.length; i++) {
-                for (let j = i + 1; j < keywordNodes.length; j++) {
-                    const id1 = keywordNodes[i].id;
-                    const id2 = keywordNodes[j].id;
-                    const p1 = positions[id1];
-                    const p2 = positions[id2];
-                    const dx = p1.x - p2.x;
-                    const dy = p1.y - p2.y;
-                    const distSq = dx * dx + dy * dy || 1;
-                    const dist = Math.sqrt(distSq);
+        // Level 1: evenly distributed on inner ring
+        l1.forEach((n, i) => {
+            const angle = (2 * Math.PI * i) / Math.max(l1.length, 1) - Math.PI / 2;
+            const x = cx + radii[1] * Math.cos(angle);
+            const y = cy + radii[1] * Math.sin(angle);
+            pm.set(n.id, { x, y, angle });
+            positions.push({ node: n, x, y });
+        });
 
-                    // Repel stronger if too close
-                    const force = (k * k) / dist;
-                    const fx = (dx / dist) * force;
-                    const fy = (dy / dist) * force;
+        // Level 2: clustered near parent node direction
+        // Find parent for each level 2 node through edges
+        l2.forEach((n, i) => {
+            let parentAngle = (2 * Math.PI * i) / Math.max(l2.length, 1);
+            let parentFound = false;
 
-                    p1.vx += fx; p1.vy += fy;
-                    p2.vx -= fx; p2.vy -= fy;
+            // Find a connected level 1 parent
+            for (const edge of edges) {
+                const isSource = edge.from === n.id;
+                const isTarget = edge.to === n.id;
+                const partnerId = isSource ? edge.to : edge.from;
+                const partnerPos = pm.get(partnerId);
+
+                if ((isSource || isTarget) && partnerPos) {
+                    const partnerNode = nodes.find(nd => nd.id === partnerId);
+                    if (partnerNode && partnerNode.metadata?.level === 1) {
+                        parentAngle = partnerPos.angle;
+                        parentFound = true;
+                        break;
+                    }
                 }
             }
 
-            // 2. Attraction along edges
-            validEdges.forEach(edge => {
-                const p1 = positions[edge.from];
-                const p2 = positions[edge.to];
-                if (!p1 || !p2) return;
-
-                const dx = p1.x - p2.x;
-                const dy = p1.y - p2.y;
-                const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-                const force = (dist * dist) / k;
-                const fx = (dx / dist) * force;
-                const fy = (dy / dist) * force;
-
-                p1.vx -= fx; p1.vy -= fy;
-                p2.vx += fx; p2.vy += fy;
+            // Spread level 2 nodes around parent angle
+            const siblings = l2.filter((n2, j) => {
+                if (j >= i) return false;
+                for (const edge of edges) {
+                    const isConn = (edge.from === n.id || edge.to === n.id);
+                    const isConn2 = (edge.from === n2.id || edge.to === n2.id);
+                    if (isConn && isConn2) return true;
+                }
+                return false;
             });
+            const spreadOffset = (siblings.length - 0.5) * (Math.PI / 8);
 
-            // 3. Gravity towards center to keep things in view
-            Object.values(positions).forEach(p => {
-                const dx = centerX - p.x;
-                const dy = centerY - p.y;
-                const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-                p.vx += (dx / dist) * (dist * 0.05);
-                p.vy += (dy / dist) * (dist * 0.05);
-            });
+            const finalAngle = parentAngle + spreadOffset;
+            const x = cx + radii[2] * Math.cos(finalAngle);
+            const y = cy + radii[2] * Math.sin(finalAngle);
+            pm.set(n.id, { x, y, angle: finalAngle });
+            positions.push({ node: n, x, y });
+        });
 
-            // 4. Update positions & apply friction
-            Object.values(positions).forEach(p => {
-                const len = Math.sqrt(p.vx * p.vx + p.vy * p.vy) || 1;
-                const cap = Math.min(len, temp);
-                p.x += (p.vx / len) * cap;
-                p.y += (p.vy / len) * cap;
-                p.vx *= 0.6; // strong friction
-                p.vy *= 0.6;
-                // keep boundaries
-                p.x = Math.max(60, Math.min(viewW - 60, p.x));
-                p.y = Math.max(40, Math.min(viewH - 40, p.y));
-            });
+        return { level0: l0, level1: l1, level2: l2, nodePositions: positions, posMap: pm };
+    }, [nodes, edges]);
+
+    // Node styling by concept type
+    const getNodeStyle = (node: ArgumentNode) => {
+        const ct = node.metadata?.conceptType || '';
+        switch (ct) {
+            case 'THEORY':
+                return {
+                    bg: '#1e1b4b', border: '#818cf8', text: '#c7d2fe', dot: '#818cf8',
+                    size: 'text-sm font-black', padding: 'px-5 py-2.5', ring: true
+                };
+            case 'PRINCIPLE':
+                return {
+                    bg: '#1c1917', border: '#f97316', text: '#fed7aa', dot: '#f97316',
+                    size: 'text-xs font-bold', padding: 'px-3 py-1.5', ring: false
+                };
+            case 'EXAMPLE':
+                return {
+                    bg: '#042f2e', border: '#2dd4bf', text: '#99f6e4', dot: '#2dd4bf',
+                    size: 'text-[11px] font-semibold', padding: 'px-2.5 py-1', ring: false
+                };
+            case 'DOMAIN':
+                return {
+                    bg: '#1a1a2e', border: '#a78bfa', text: '#c4b5fd', dot: '#a78bfa',
+                    size: 'text-[11px] font-semibold', padding: 'px-2.5 py-1', ring: false
+                };
+            case 'TOOL':
+                return {
+                    bg: '#0c1a1a', border: '#22d3ee', text: '#a5f3fc', dot: '#22d3ee',
+                    size: 'text-[11px] font-semibold', padding: 'px-2.5 py-1', ring: false
+                };
+            default:
+                return {
+                    bg: '#1e293b', border: '#64748b', text: '#cbd5e1', dot: '#94a3b8',
+                    size: 'text-xs font-semibold', padding: 'px-3 py-1.5', ring: false
+                };
         }
-
-        return keywordNodes.map(node => ({
-            node,
-            x: positions[node.id].x,
-            y: positions[node.id].y
-        }));
-    }, [keywordNodes, validEdges]);
-
-    // Relationship styling for semantic edges
-    const getRelationStyle = (relation: string) => {
-        const rel = relation.toLowerCase();
-        // AI concept network relations
-        if (rel === 'defines') return { color: '#f43f5e', label: 'defines' };
-        if (rel === 'enables') return { color: '#10b981', label: 'enables' };
-        if (rel === 'exemplifies') return { color: '#06b6d4', label: 'exemplifies' };
-        if (rel === 'located_in') return { color: '#f59e0b', label: 'in' };
-        if (rel === 'requires') return { color: '#8b5cf6', label: 'requires' };
-        if (rel === 'supports') return { color: '#3b82f6', label: 'supports' };
-        if (rel === 'contrasts') return { color: '#64748b', label: 'contrasts' };
-        // Legacy fallbacks
-        if (rel === 'relates') return { color: '#94a3b8', label: '' };
-        if (rel === 'responds') return { color: '#818cf8', label: '' };
-        if (rel.includes('cause')) return { color: '#f43f5e', label: relation };
-        return { color: '#94a3b8', label: relation };
     };
 
-    if (keywordNodes.length === 0) {
+    // Edge styling by relation
+    const getEdgeStyle = (relation: string) => {
+        switch (relation) {
+            case 'defines': return { color: '#818cf8', label: 'defines', dash: '' };
+            case 'requires': return { color: '#f97316', label: 'requires', dash: '4,3' };
+            case 'exemplifies': return { color: '#2dd4bf', label: 'exemplifies', dash: '' };
+            case 'enables': return { color: '#22d3ee', label: 'enables', dash: '' };
+            case 'located_in': return { color: '#a78bfa', label: 'in', dash: '6,2' };
+            default: return { color: '#475569', label: relation, dash: '' };
+        }
+    };
+
+    if (nodes.length === 0) {
         return (
-            <div className="text-center py-10 bg-slate-900/50 rounded-xl border border-slate-800">
+            <div className="text-center py-10">
                 <span className="text-4xl mb-3 block opacity-50">🕸️</span>
                 <p className="text-slate-400 font-medium">Knowledge network is building...</p>
-                <p className="text-xs mt-2 text-slate-500 max-w-[250px] mx-auto">
-                    The AI is currently analyzing your conversation to map out conceptual relationships and core arguments.
-                </p>
             </div>
         );
     }
@@ -161,177 +173,158 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({ graph }) => {
                 </h4>
                 <div className="flex items-center gap-3 text-xs bg-slate-800/50 px-3 py-1 rounded-full border border-slate-700/50">
                     <span className="text-slate-400">
-                        Nodes: <span className="text-slate-200 font-bold ml-1">{keywordNodes.length}</span>
+                        Nodes: <span className="text-slate-200 font-bold ml-1">{nodes.length}</span>
                     </span>
                     <span className="text-slate-600">|</span>
                     <span className="text-slate-400">
-                        Links: <span className="text-slate-200 font-bold ml-1">{validEdges.length}</span>
+                        Links: <span className="text-slate-200 font-bold ml-1">{edges.length}</span>
                     </span>
+                    {graph.coherenceScore > 0 && (
+                        <>
+                            <span className="text-slate-600">|</span>
+                            <span className="text-slate-400">
+                                Coherence: <span className="text-indigo-400 font-bold ml-1">{graph.coherenceScore}%</span>
+                            </span>
+                        </>
+                    )}
                 </div>
             </div>
 
-            {/* Container mapping SVG and HTML overlay */}
-            <div className="relative bg-slate-900 rounded-xl border border-slate-700/50 overflow-hidden shadow-inner" style={{ aspectRatio: `${viewW}/${viewH}` }}>
-                {/* 1. Underlying SVG for Edges */}
-                <svg
-                    viewBox={`0 0 ${viewW} ${viewH}`}
-                    className="absolute inset-0 w-full h-full pointer-events-none"
-                >
-                    <defs>
-                        {['f43f5e', 'f59e0b', '8b5cf6', '06b6d4', '10b981', '3b82f6', '64748b', '94a3b8', '818cf8'].map(color => (
-                            <marker
-                                key={color}
-                                id={`arr-${color}`}
-                                markerWidth="12"
-                                markerHeight="10"
-                                refX="10"
-                                refY="5"
-                                orient="auto-start-reverse"
-                                markerUnits="userSpaceOnUse"
-                            >
-                                <polygon points="0 1, 10 5, 0 9" fill={`#${color}`} opacity="0.8" />
-                            </marker>
-                        ))}
-                    </defs>
+            {/* Radial Graph Container */}
+            <div className="relative bg-slate-950 rounded-xl border border-slate-700/50 overflow-hidden shadow-inner" style={{ aspectRatio: `${viewW}/${viewH}` }}>
 
-                    {validEdges.map((edge, idx) => {
-                        const fromPos = nodePositions.find(p => p.node.id === edge.from);
-                        const toPos = nodePositions.find(p => p.node.id === edge.to);
+                {/* Concentric reference rings */}
+                <svg viewBox={`0 0 ${viewW} ${viewH}`} className="absolute inset-0 w-full h-full pointer-events-none">
+                    <circle cx={cx} cy={cy} r={radii[1]} fill="none" stroke="#1e293b" strokeWidth="1" strokeDasharray="3,6" />
+                    <circle cx={cx} cy={cy} r={radii[2]} fill="none" stroke="#1e293b" strokeWidth="1" strokeDasharray="3,6" />
+                </svg>
+
+                {/* Edge SVG layer */}
+                <svg viewBox={`0 0 ${viewW} ${viewH}`} className="absolute inset-0 w-full h-full pointer-events-none">
+                    {edges.map((edge, idx) => {
+                        const fromPos = posMap.get(edge.from);
+                        const toPos = posMap.get(edge.to);
                         if (!fromPos || !toPos) return null;
 
-                        const style = getRelationStyle(edge.relation);
-                        const cHex = style.color.replace('#', '');
+                        const style = getEdgeStyle(edge.relation);
 
                         const dx = toPos.x - fromPos.x;
                         const dy = toPos.y - fromPos.y;
                         const dist = Math.sqrt(dx * dx + dy * dy);
-                        if (dist < 10) return null;
+                        if (dist < 5) return null;
 
-                        // Calculate curved path
                         const ux = dx / dist;
                         const uy = dy / dist;
+                        const pad = 30;
+                        const sx = fromPos.x + ux * pad;
+                        const sy = fromPos.y + uy * pad;
+                        const ex = toPos.x - ux * pad;
+                        const ey = toPos.y - uy * pad;
 
-                        // Shrink endpoints to not enter the HTML nodes (approx 40px radius assumption)
-                        const pad = 45;
-                        const startX = fromPos.x + ux * pad;
-                        const startY = fromPos.y + uy * pad;
-                        const endX = toPos.x - ux * (pad + 5);
-                        const endY = toPos.y - uy * (pad + 5);
+                        // Slight curve
+                        const curveAmt = 15 * (idx % 2 === 0 ? 1 : -1);
+                        const mx = (sx + ex) / 2 - uy * curveAmt;
+                        const my = (sy + ey) / 2 + ux * curveAmt;
 
-                        const curveOffset = 30 * (idx % 2 === 0 ? 1 : -1);
-                        const midX = (startX + endX) / 2 - uy * curveOffset;
-                        const midY = (startY + endY) / 2 + ux * curveOffset;
+                        // Label position
+                        const lx = mx;
+                        const ly = my;
 
                         return (
-                            <g key={`edge-${idx}`}>
+                            <g key={`e-${idx}`}>
                                 <path
-                                    d={`M ${startX} ${startY} Q ${midX} ${midY} ${endX} ${endY}`}
+                                    d={`M ${sx} ${sy} Q ${mx} ${my} ${ex} ${ey}`}
                                     fill="none"
                                     stroke={style.color}
                                     strokeWidth="1.5"
-                                    strokeDasharray={edge.type === 'implicit' ? "4,4" : "none"}
-                                    opacity="0.5"
-                                    markerEnd={`url(#arr-${cHex})`}
-                                    className="transition-all duration-700"
+                                    strokeDasharray={style.dash || 'none'}
+                                    opacity="0.6"
                                 />
-                                {/* Relationship Badge — only show if label is non-empty */}
+                                {/* Small directional dot at end */}
+                                <circle cx={ex} cy={ey} r="3" fill={style.color} opacity="0.7" />
+
+                                {/* Relation label */}
                                 {style.label && (
-                                    <>
-                                        <rect
-                                            x={midX - 35}
-                                            y={midY - 10}
-                                            width="70"
-                                            height="20"
-                                            rx="10"
-                                            fill="#0f172a"
-                                            stroke={style.color}
-                                            strokeWidth="1"
-                                            opacity="0.9"
-                                        />
-                                        <text
-                                            x={midX}
-                                            y={midY + 3.5}
-                                            fill={style.color}
-                                            fontSize="9.5"
-                                            fontWeight="600"
-                                            textAnchor="middle"
-                                            className="pointer-events-auto cursor-default"
-                                        >
-                                            {style.label.length > 12 ? style.label.substring(0, 10) + '..' : style.label}
-                                        </text>
-                                    </>
+                                    <text
+                                        x={lx}
+                                        y={ly - 5}
+                                        fill={style.color}
+                                        fontSize="8"
+                                        fontWeight="500"
+                                        fontStyle="italic"
+                                        textAnchor="middle"
+                                        opacity="0.7"
+                                    >
+                                        {style.label}
+                                    </text>
                                 )}
                             </g>
                         );
                     })}
                 </svg>
 
-                {/* 2. HTML Overlay for Nodes */}
+                {/* Node HTML overlay */}
                 <div className="absolute inset-0 w-full h-full pointer-events-none">
                     {nodePositions.map((pos, i) => {
-                        // Determine style from metadata.conceptType (AI) or legacy node.type
-                        const conceptType = pos.node.metadata?.conceptType || '';
-                        const typeStyle = conceptType ? {
-                            'CORE': { bg: 'bg-rose-950/80', border: 'border-rose-400/80', shadow: 'shadow-rose-900/50', text: 'text-rose-100', dot: 'bg-rose-400' },
-                            'EXAMPLE': { bg: 'bg-cyan-950/80', border: 'border-cyan-400/80', shadow: 'shadow-cyan-900/50', text: 'text-cyan-100', dot: 'bg-cyan-400' },
-                            'CONTEXT': { bg: 'bg-amber-950/80', border: 'border-amber-400/80', shadow: 'shadow-amber-900/50', text: 'text-amber-100', dot: 'bg-amber-400' },
-                            'ATTRIBUTE': { bg: 'bg-violet-950/80', border: 'border-violet-400/80', shadow: 'shadow-violet-900/50', text: 'text-violet-100', dot: 'bg-violet-400' },
-                        }[conceptType] || { bg: 'bg-slate-800/80', border: 'border-slate-600', shadow: 'shadow-slate-900/50', text: 'text-slate-200', dot: 'bg-slate-400' }
-                        : {
-                            claim: { bg: 'bg-blue-900/60', border: 'border-blue-400/80', shadow: 'shadow-blue-900/50', text: 'text-blue-100', dot: 'bg-blue-400' },
-                            evidence: { bg: 'bg-emerald-900/60', border: 'border-emerald-400/80', shadow: 'shadow-emerald-900/50', text: 'text-emerald-100', dot: 'bg-emerald-400' },
-                            counterargument: { bg: 'bg-rose-900/60', border: 'border-rose-400/80', shadow: 'shadow-rose-900/50', text: 'text-rose-100', dot: 'bg-rose-400' },
-                            justification: { bg: 'bg-amber-900/60', border: 'border-amber-400/80', shadow: 'shadow-amber-900/50', text: 'text-amber-100', dot: 'bg-amber-400' },
-                            question: { bg: 'bg-indigo-950/80', border: 'border-indigo-500/50', shadow: 'shadow-indigo-900/50', text: 'text-indigo-300', dot: 'bg-indigo-500' },
-                        }[pos.node.type] || { bg: 'bg-slate-800/80', border: 'border-slate-600', shadow: 'shadow-slate-900/50', text: 'text-slate-200', dot: 'bg-slate-400' };
-
+                        const style = getNodeStyle(pos.node);
                         return (
-                        <div
-                            key={pos.node.id}
-                            className="absolute flex flex-col items-center justify-center transform -translate-x-1/2 -translate-y-1/2 pointer-events-auto transition-all duration-700 ease-out"
-                            style={{
-                                left: `${(pos.x / viewW) * 100}%`,
-                                top: `${(pos.y / viewH) * 100}%`,
-                                zIndex: 10 + i
-                            }}
-                        >
-                            <div className={`px-3 py-1.5 rounded-xl border backdrop-blur-md shadow-lg flex items-center gap-2 max-w-[140px] ${typeStyle.bg} ${typeStyle.border} ${typeStyle.shadow}`}>
-                                <div className={`w-2 h-2 rounded-full shrink-0 ${typeStyle.dot}`} />
-                                <span className={`text-xs font-semibold leading-tight break-words text-center ${typeStyle.text}`}>
-                                    {pos.node.content}
-                                </span>
+                            <div
+                                key={pos.node.id}
+                                className="absolute transform -translate-x-1/2 -translate-y-1/2 pointer-events-auto"
+                                style={{
+                                    left: `${(pos.x / viewW) * 100}%`,
+                                    top: `${(pos.y / viewH) * 100}%`,
+                                    zIndex: pos.node.metadata?.level === 0 ? 30 : pos.node.metadata?.level === 1 ? 20 : 10
+                                }}
+                            >
+                                <div
+                                    className={`${style.padding} rounded-2xl border-2 backdrop-blur-sm flex items-center gap-1.5 max-w-[120px] transition-all duration-300 hover:scale-110 cursor-default`}
+                                    style={{
+                                        backgroundColor: style.bg,
+                                        borderColor: style.border,
+                                        boxShadow: style.ring
+                                            ? `0 0 20px ${style.border}40, 0 0 40px ${style.border}20`
+                                            : `0 0 8px ${style.border}30`
+                                    }}
+                                >
+                                    <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: style.dot }} />
+                                    <span className={`${style.size} leading-tight break-words text-center`} style={{ color: style.text }}>
+                                        {pos.node.content}
+                                    </span>
+                                </div>
                             </div>
-                        </div>
                         );
                     })}
                 </div>
             </div>
 
             {/* Legend */}
-            <div className="flex flex-wrap gap-x-4 gap-y-2 text-[10px] text-slate-400 pt-3 border-t border-slate-800/50 px-2">
-                <span className="text-slate-600 mr-1">Nodes:</span>
-                <span className="flex items-center gap-1.5 font-medium"><span className="w-2.5 h-2.5 bg-rose-400 rounded-full" /> Core</span>
-                <span className="flex items-center gap-1.5 font-medium"><span className="w-2.5 h-2.5 bg-cyan-400 rounded-full" /> Example</span>
-                <span className="flex items-center gap-1.5 font-medium"><span className="w-2.5 h-2.5 bg-amber-400 rounded-full" /> Context</span>
-                <span className="flex items-center gap-1.5 font-medium"><span className="w-2.5 h-2.5 bg-violet-400 rounded-full" /> Attribute</span>
+            <div className="flex flex-wrap gap-x-3 gap-y-1.5 text-[10px] text-slate-500 pt-2 border-t border-slate-800/50 px-1">
+                <span className="text-slate-600 font-medium mr-1">Nodes:</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: '#818cf8' }} /> Theory</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: '#f97316' }} /> Principle</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: '#2dd4bf' }} /> Example</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: '#a78bfa' }} /> Domain</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: '#22d3ee' }} /> Tool</span>
             </div>
 
-            {/* Outline list */}
-            {keywordNodes.length > 0 && (
-                <details className="group px-2">
+            {/* Edge list */}
+            {edges.length > 0 && (
+                <details className="group px-1">
                     <summary className="text-[10px] text-slate-500 uppercase cursor-pointer hover:text-slate-300 flex items-center gap-1.5 py-1">
                         <span className="group-open:rotate-90 transition-transform">▶</span>
-                        Text Summary
+                        Relationships ({edges.length})
                     </summary>
-                    <div className="mt-2 text-xs text-slate-400 space-y-1.5 pl-4 border-l-2 border-slate-800">
-                        {validEdges.map((e, idx) => {
-                            const from = keywordNodes.find(n => n.id === e.from)?.content;
-                            const to = keywordNodes.find(n => n.id === e.to)?.content;
+                    <div className="mt-2 text-xs text-slate-400 space-y-1 pl-4 border-l-2 border-slate-800">
+                        {edges.map((e, idx) => {
+                            const from = nodes.find(n => n.id === e.from)?.content;
+                            const to = nodes.find(n => n.id === e.to)?.content;
+                            const style = getEdgeStyle(e.relation);
                             return (
                                 <div key={idx} className="flex gap-2 items-center">
-                                    <span className="font-semibold text-slate-300">{from}</span>
-                                    <span className="text-[10px] bg-slate-800 px-1.5 rounded text-slate-400">{e.relation}</span>
-                                    <span className="font-semibold text-slate-300">{to}</span>
+                                    <span className="font-medium text-slate-300">{from}</span>
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded border" style={{ borderColor: style.color, color: style.color }}>{style.label}</span>
+                                    <span className="font-medium text-slate-300">{to}</span>
                                 </div>
                             );
                         })}
