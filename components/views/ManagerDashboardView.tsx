@@ -355,7 +355,7 @@ Only output valid JSON, nothing else.`
 
     // Get all submissions sorted by timestamp (only from visible courses)
     const allSubmissions = visibleCourses
-        .flatMap(c => c.submissions.map(s => ({ ...s, courseName: c.name })))
+        .flatMap(c => c.submissions.map(s => ({ ...s, courseName: c.name, _courseId: c.id })))
         .sort((a, b) => b.timestamp - a.timestamp);
 
     const totalSubmissions = allSubmissions.length;
@@ -667,29 +667,55 @@ Only output valid JSON, nothing else.`
                                 </div>
                             ) : (
                                 allSubmissions.map(sub => (
-                                    <button
+                                    <div
                                         key={sub.id}
-                                        className="w-full bg-slate-900/50 border border-slate-800 p-4 rounded-2xl hover:border-indigo-500/30 transition-all cursor-pointer text-left"
-                                        onClick={() => onSelectSubmission(sub)}
-                                        aria-label={`View submission from ${sub.studentName}`}
+                                        className="w-full bg-slate-900/50 border border-slate-800 p-4 rounded-2xl hover:border-indigo-500/30 transition-all group"
                                     >
                                         <div className="flex justify-between items-center">
-                                            <div>
-                                                <p className="text-white font-bold">{sub.studentName}</p>
-                                                <p className="text-xs text-slate-400">
-                                                    {sub.courseName} • {new Date(sub.timestamp).toLocaleDateString()}
-                                                </p>
-                                            </div>
-                                            <div className="text-right">
-                                                <div className={`text-xl font-bold ${getMasteryLevel(sub.score).color}`}>
-                                                    {getMasteryLevel(sub.score).emoji} {sub.score}%
+                                            <button
+                                                className="flex-1 text-left cursor-pointer"
+                                                onClick={() => onSelectSubmission(sub)}
+                                                aria-label={`View submission from ${sub.studentName}`}
+                                            >
+                                                <div>
+                                                    <p className="text-white font-bold">{sub.studentName}</p>
+                                                    <p className="text-xs text-slate-400">
+                                                        {sub.courseName} • {new Date(sub.timestamp).toLocaleDateString()}
+                                                    </p>
                                                 </div>
-                                                <p className={`text-[10px] uppercase ${getMasteryLevel(sub.score).color}`}>
-                                                    {getMasteryLevel(sub.score).label}
-                                                </p>
+                                            </button>
+                                            <div className="flex items-center gap-3">
+                                                <button
+                                                    className="flex-1 text-left cursor-pointer"
+                                                    onClick={() => onSelectSubmission(sub)}
+                                                >
+                                                    <div className="text-right">
+                                                        <div className={`text-xl font-bold ${getMasteryLevel(sub.score).color}`}>
+                                                            {getMasteryLevel(sub.score).emoji} {sub.score}%
+                                                        </div>
+                                                        <p className={`text-[10px] uppercase ${getMasteryLevel(sub.score).color}`}>
+                                                            {getMasteryLevel(sub.score).label}
+                                                        </p>
+                                                    </div>
+                                                </button>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        if (confirm(`Delete ${sub.studentName}'s submission?`)) {
+                                                            onDeleteSubmission(sub._courseId, sub.id);
+                                                        }
+                                                    }}
+                                                    className="p-1.5 text-slate-600 hover:text-red-400 hover:bg-red-950/30 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                                                    title="Delete submission"
+                                                    aria-label={`Delete submission from ${sub.studentName}`}
+                                                >
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                    </svg>
+                                                </button>
                                             </div>
                                         </div>
-                                    </button>
+                                    </div>
                                 ))
                             )}
                         </div>

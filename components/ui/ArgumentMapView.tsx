@@ -12,9 +12,9 @@ interface ArgumentMapViewProps {
 export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({ graph }) => {
     const { nodes, edges } = graph;
 
-    // Filter only keyword nodes (type 'claim' or 'evidence')
+    // Show all argument nodes (exclude question nodes for cleaner map)
     const keywordNodes = useMemo(() =>
-        nodes.filter(n => n.type === 'claim' || n.type === 'evidence'),
+        nodes.filter(n => n.type !== 'question'),
         [nodes]
     );
 
@@ -261,7 +261,15 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({ graph }) => {
 
                 {/* 2. HTML Overlay for Nodes */}
                 <div className="absolute inset-0 w-full h-full pointer-events-none">
-                    {nodePositions.map((pos, i) => (
+                    {nodePositions.map((pos, i) => {
+                        const typeStyle = {
+                            claim: { bg: 'bg-blue-900/60', border: 'border-blue-400/80', shadow: 'shadow-blue-900/50', text: 'text-blue-100', dot: 'bg-blue-400' },
+                            evidence: { bg: 'bg-emerald-900/60', border: 'border-emerald-400/80', shadow: 'shadow-emerald-900/50', text: 'text-emerald-100', dot: 'bg-emerald-400' },
+                            counterargument: { bg: 'bg-rose-900/60', border: 'border-rose-400/80', shadow: 'shadow-rose-900/50', text: 'text-rose-100', dot: 'bg-rose-400' },
+                            justification: { bg: 'bg-amber-900/60', border: 'border-amber-400/80', shadow: 'shadow-amber-900/50', text: 'text-amber-100', dot: 'bg-amber-400' },
+                        }[pos.node.type] || { bg: 'bg-slate-800/80', border: 'border-slate-600', shadow: 'shadow-slate-900/50', text: 'text-slate-200', dot: 'bg-slate-400' };
+
+                        return (
                         <div
                             key={pos.node.id}
                             className="absolute flex flex-col items-center justify-center transform -translate-x-1/2 -translate-y-1/2 pointer-events-auto transition-all duration-700 ease-out"
@@ -271,17 +279,15 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({ graph }) => {
                                 zIndex: 10 + i
                             }}
                         >
-                            <div className={`px-3 py-1.5 rounded-xl border backdrop-blur-md shadow-lg flex items-center gap-2 max-w-[140px] ${i === 0
-                                    ? 'bg-blue-900/60 border-blue-400/80 shadow-blue-900/50'
-                                    : 'bg-slate-800/80 border-slate-600 shadow-slate-900/50'
-                                }`}>
-                                <div className={`w-2 h-2 rounded-full shrink-0 ${i === 0 ? 'bg-blue-400 animate-pulse' : 'bg-slate-400'}`} />
-                                <span className={`text-xs font-semibold leading-tight break-words text-center ${i === 0 ? 'text-blue-100' : 'text-slate-200'}`}>
+                            <div className={`px-3 py-1.5 rounded-xl border backdrop-blur-md shadow-lg flex items-center gap-2 max-w-[140px] ${typeStyle.bg} ${typeStyle.border} ${typeStyle.shadow}`}>
+                                <div className={`w-2 h-2 rounded-full shrink-0 ${typeStyle.dot}`} />
+                                <span className={`text-xs font-semibold leading-tight break-words text-center ${typeStyle.text}`}>
                                     {pos.node.content}
                                 </span>
                             </div>
                         </div>
-                    ))}
+                        );
+                    })}
                 </div>
             </div>
 
