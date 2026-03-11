@@ -24,8 +24,8 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
     const argumentGraph = useMemo<ArgumentGraph | null>(() => {
         if (!submission) return null;
 
-        // Use existing argumentGraph if available
-        if (submission.argumentGraph && submission.argumentGraph.nodes.length > 0) {
+        // Use existing argumentGraph if available AND has edges (a graph with 0 edges is broken)
+        if (submission.argumentGraph && submission.argumentGraph.nodes.length > 0 && submission.argumentGraph.edges.length > 0) {
             return submission.argumentGraph;
         }
 
