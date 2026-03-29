@@ -212,6 +212,96 @@ button:focus-visible,
   border: 1px solid var(--glass-border);
 }
 
+.scientific-ambient-bg {
+  background:
+    radial-gradient(circle at 18% 20%, rgba(34, 211, 238, 0.08), transparent 28%),
+    radial-gradient(circle at 82% 24%, rgba(14, 165, 233, 0.08), transparent 24%),
+    radial-gradient(circle at 62% 72%, rgba(16, 185, 129, 0.07), transparent 30%),
+    linear-gradient(180deg, rgba(2, 6, 23, 0.96), rgba(15, 23, 42, 0.98));
+}
+
+.scientific-ambient-grid {
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.05) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: radial-gradient(circle at center, black 45%, transparent 95%);
+  opacity: 0.3;
+}
+
+.scientific-ambient-rings::before,
+.scientific-ambient-rings::after {
+  content: '';
+  position: absolute;
+  border-radius: 9999px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  inset: auto;
+}
+
+.scientific-ambient-rings::before {
+  width: 28rem;
+  height: 28rem;
+  top: 8%;
+  right: 12%;
+  animation: scientific-drift 18s ease-in-out infinite;
+}
+
+.scientific-ambient-rings::after {
+  width: 22rem;
+  height: 22rem;
+  bottom: 10%;
+  left: 9%;
+  animation: scientific-drift 22s ease-in-out infinite reverse;
+}
+
+.scientific-ambient-points::before,
+.scientific-ambient-points::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-repeat: no-repeat;
+  pointer-events: none;
+}
+
+.scientific-ambient-points::before {
+  background-image:
+    radial-gradient(circle, rgba(226, 232, 240, 0.55) 0 1px, transparent 1.5px),
+    radial-gradient(circle, rgba(125, 211, 252, 0.45) 0 1px, transparent 1.5px),
+    radial-gradient(circle, rgba(110, 231, 183, 0.4) 0 1px, transparent 1.5px),
+    linear-gradient(rgba(71, 85, 105, 0.22), rgba(71, 85, 105, 0.22)),
+    linear-gradient(rgba(71, 85, 105, 0.18), rgba(71, 85, 105, 0.18));
+  background-size:
+    4px 4px,
+    4px 4px,
+    4px 4px,
+    100px 1px,
+    84px 1px;
+  background-position:
+    14% 24%,
+    74% 31%,
+    44% 68%,
+    18% 28%,
+    52% 66%;
+  opacity: 0.38;
+}
+
+.scientific-ambient-points::after {
+  background-image:
+    radial-gradient(circle, rgba(148, 163, 184, 0.35) 0 1px, transparent 1.5px),
+    radial-gradient(circle, rgba(165, 243, 252, 0.3) 0 1px, transparent 1.5px),
+    linear-gradient(rgba(71, 85, 105, 0.16), rgba(71, 85, 105, 0.16));
+  background-size:
+    4px 4px,
+    4px 4px,
+    120px 1px;
+  background-position:
+    30% 54%,
+    70% 18%,
+    64% 20%;
+  opacity: 0.26;
+  animation: scientific-flicker 9s ease-in-out infinite;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
    Button Components
    ───────────────────────────────────────────────────────────────────────────── */
@@ -843,6 +933,30 @@ button:focus-visible,
 }
 
 /* Reduced motion */
+@keyframes scientific-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.74;
+  }
+
+  50% {
+    transform: translate3d(0, 10px, 0) scale(1.02);
+    opacity: 1;
+  }
+}
+
+@keyframes scientific-flicker {
+  0%,
+  100% {
+    opacity: 0.22;
+  }
+
+  50% {
+    opacity: 0.36;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
 
   *,

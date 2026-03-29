@@ -71,31 +71,43 @@ export const LandingView: React.FC<LandingViewProps> = ({ onNavigate }) => {
     return (
         <div className="relative min-h-screen flex flex-col items-center justify-center p-6 overflow-hidden">
             <div className="absolute inset-0 -z-10">
-                <div className="absolute top-1/4 -left-1/4 w-96 h-96 bg-indigo-600/20 rounded-full blur-[100px] animate-float-slow" />
-                <div className="absolute bottom-1/4 -right-1/4 w-96 h-96 bg-emerald-600/15 rounded-full blur-[100px] animate-float-slow-reverse" />
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-72 h-72 bg-cyan-600/10 rounded-full blur-[80px] animate-pulse-slow" />
-                <div className="absolute inset-0 bg-grid-pattern opacity-[0.02]" />
-                <div className="absolute inset-0 noise-overlay opacity-[0.015]" />
+                <div className="scientific-ambient-bg absolute inset-0" />
+                <div className="scientific-ambient-grid absolute inset-0" />
+                <div className="scientific-ambient-rings absolute inset-0" />
+                <div className="scientific-ambient-points absolute inset-0" />
+                <div className="absolute top-[18%] left-[10%] w-[28rem] h-[28rem] rounded-full bg-cyan-500/8 blur-[120px] animate-float-slow" />
+                <div className="absolute bottom-[12%] right-[8%] w-[30rem] h-[30rem] rounded-full bg-emerald-500/8 blur-[140px] animate-float-slow-reverse" />
+                <div className="absolute top-[52%] left-1/2 -translate-x-1/2 -translate-y-1/2 w-[22rem] h-[22rem] rounded-full border border-slate-800/70 opacity-70" />
+                <div className="absolute inset-0 noise-overlay opacity-[0.02]" />
             </div>
 
             <div className="text-center mb-10 animate-slide-in-up max-w-3xl">
-                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-slate-800 bg-slate-900/60 mb-6">
+                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-cyan-500/15 bg-slate-950/70 mb-6 shadow-[0_0_40px_-28px_rgba(34,211,238,0.8)]">
                     <span className="text-[10px] uppercase tracking-[0.3em] text-slate-500 font-bold">
-                        Institution-ready voice assessment
+                        Scientific oral assessment workspace
                     </span>
                 </div>
 
-                <div className="w-20 h-20 mx-auto mb-6 bg-gradient-to-br from-emerald-400 to-indigo-600 rounded-3xl flex items-center justify-center shadow-2xl shadow-emerald-500/25">
+                <div className="relative w-24 h-24 mx-auto mb-6 rounded-[2rem] flex items-center justify-center border border-cyan-400/20 bg-[radial-gradient(circle_at_30%_30%,rgba(56,189,248,0.26),rgba(15,23,42,0.85)_65%)] shadow-[0_0_70px_-32px_rgba(56,189,248,0.85)]">
+                    <div className="absolute inset-[10px] rounded-[1.4rem] border border-white/8" />
                     <span className="text-white text-3xl font-black italic">W</span>
                 </div>
 
-                <h1 className="text-4xl sm:text-5xl font-bold text-white mb-3 tracking-tight">
+                <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-white mb-4 tracking-tight">
                     SpeakWise
                 </h1>
-                <p className="text-slate-400 text-lg leading-relaxed">
-                    Launch oral interviews by institution, guide students through a calmer voice workflow,
-                    and give instructors a clearer review experience.
+                <p className="text-slate-300 text-lg leading-relaxed max-w-2xl mx-auto">
+                    A calmer voice-assessment platform for institutions that want measured AI interviews,
+                    structured reasoning review, and a more focused academic atmosphere.
                 </p>
+
+                <div className="mt-6 flex flex-wrap items-center justify-center gap-3 text-[11px] uppercase tracking-[0.24em] text-slate-500">
+                    <span>Low-noise motion</span>
+                    <span className="w-1 h-1 rounded-full bg-slate-700" />
+                    <span>Institution-ready workflows</span>
+                    <span className="w-1 h-1 rounded-full bg-slate-700" />
+                    <span>Ambient scientific UI</span>
+                </div>
 
                 {loggedInUser && (
                     <div className="mt-5 inline-flex items-center gap-2 px-4 py-2 bg-emerald-500/10 border border-emerald-500/30 rounded-full">
@@ -119,15 +131,15 @@ export const LandingView: React.FC<LandingViewProps> = ({ onNavigate }) => {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-4xl mb-8 animate-slide-in-up" style={{ animationDelay: '0.05s' }}>
-                <div className="glass-panel-light rounded-2xl p-4 text-left">
+                <div className="glass-panel-light rounded-2xl p-4 text-left border border-cyan-500/10">
                     <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600 font-bold mb-2">Institution control</p>
                     <p className="text-sm text-slate-300">Organize access by campus, program, or deployment workspace.</p>
                 </div>
-                <div className="glass-panel-light rounded-2xl p-4 text-left">
+                <div className="glass-panel-light rounded-2xl p-4 text-left border border-cyan-500/10">
                     <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600 font-bold mb-2">Live interviews</p>
                     <p className="text-sm text-slate-300">Run spoken assessments with transcript capture and AI scoring.</p>
                 </div>
-                <div className="glass-panel-light rounded-2xl p-4 text-left">
+                <div className="glass-panel-light rounded-2xl p-4 text-left border border-cyan-500/10">
                     <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600 font-bold mb-2">Review workflow</p>
                     <p className="text-sm text-slate-300">Give instructors a cleaner path from course setup to submission review.</p>
                 </div>
@@ -136,11 +148,11 @@ export const LandingView: React.FC<LandingViewProps> = ({ onNavigate }) => {
             <div className="flex flex-col sm:flex-row gap-6 w-full max-w-3xl animate-slide-in-up" style={{ animationDelay: '0.1s' }}>
                 <button
                     onClick={handleInstructorClick}
-                    className="role-card flex-1 glass-panel p-8 rounded-3xl text-left group hover:border-indigo-500/50 transition-all duration-300"
+                    className="role-card flex-1 glass-panel p-8 rounded-3xl text-left group hover:border-cyan-400/35 transition-all duration-300 bg-slate-950/55"
                     aria-label="Enter Instructor Workspace"
                 >
                     <div className="flex items-center gap-4 mb-4">
-                        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-cyan-500 flex items-center justify-center group-hover:scale-110 transition-transform">
+                        <div className="w-14 h-14 rounded-2xl bg-[linear-gradient(135deg,rgba(14,116,144,0.95),rgba(59,130,246,0.75))] flex items-center justify-center group-hover:scale-110 transition-transform shadow-[0_0_30px_-18px_rgba(56,189,248,0.9)]">
                             <span className="text-2xl">I</span>
                         </div>
                         <div>
@@ -163,11 +175,11 @@ export const LandingView: React.FC<LandingViewProps> = ({ onNavigate }) => {
 
                 <button
                     onClick={handleStudentClick}
-                    className="role-card flex-1 glass-panel p-8 rounded-3xl text-left group hover:border-emerald-500/50 transition-all duration-300"
+                    className="role-card flex-1 glass-panel p-8 rounded-3xl text-left group hover:border-emerald-400/35 transition-all duration-300 bg-slate-950/55"
                     aria-label="Enter Student Workspace"
                 >
                     <div className="flex items-center gap-4 mb-4">
-                        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center group-hover:scale-110 transition-transform">
+                        <div className="w-14 h-14 rounded-2xl bg-[linear-gradient(135deg,rgba(5,150,105,0.92),rgba(45,212,191,0.7))] flex items-center justify-center group-hover:scale-110 transition-transform shadow-[0_0_30px_-18px_rgba(16,185,129,0.9)]">
                             <span className="text-2xl">S</span>
                         </div>
                         <div>
