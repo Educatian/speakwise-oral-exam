@@ -138,6 +138,12 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
     ];
 
     const analyticsVisible = status === InterviewStatus.LIVE && showAnalytics;
+    const phaseCards = [
+        { label: 'Connect', active: status === InterviewStatus.CONNECTING || status === InterviewStatus.LIVE || status === InterviewStatus.ENDED, hint: 'Audio link and session setup' },
+        { label: 'Listen', active: turnPhase === 'ai_speaking', hint: 'Hear the full prompt first' },
+        { label: 'Respond', active: turnPhase === 'recording' || !!pendingUserText, hint: 'Speak at your own pace' },
+        { label: 'Review', active: turnPhase === 'transcribing' || status === InterviewStatus.ENDED, hint: 'Transcript and scoring prep' }
+    ];
 
     return (
         <div className="w-full max-w-6xl grid grid-cols-1 xl:grid-cols-12 gap-4 lg:gap-8 animate-fade-in">
@@ -169,6 +175,18 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
                                     ? 'The transcript updates automatically while the system listens and responds.'
                                     : 'Your work is being prepared for review.'}
                         </p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                        {phaseCards.map((phase) => (
+                            <div
+                                key={phase.label}
+                                className={`rounded-2xl border px-3 py-3 ${phase.active ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200' : 'border-slate-800 bg-slate-900/40 text-slate-500'}`}
+                            >
+                                <p className="text-[10px] uppercase tracking-[0.18em] font-bold">{phase.label}</p>
+                                <p className="text-[11px] mt-1">{phase.hint}</p>
+                            </div>
+                        ))}
                     </div>
 
                     {status === InterviewStatus.IDLE ? (
@@ -204,6 +222,9 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
                                 <li>Close other apps that may be using the microphone.</li>
                                 <li>Refresh the page and try again if the connection stalls.</li>
                             </ul>
+                            <div className="mt-3 rounded-xl border border-red-500/20 bg-slate-950/30 px-3 py-3 text-xs text-slate-400">
+                                If recovery does not work, end this attempt and re-enter with the same student name so the retry remains easy for your instructor to track.
+                            </div>
                         </div>
                     )}
                 </div>

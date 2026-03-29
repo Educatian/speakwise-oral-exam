@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import mammoth from 'mammoth';
-import { Course, Institution, Submission } from '../../types';
+import { Course, CourseTemplate, Institution, Submission } from '../../types';
 import { GroupKnowledgeService } from '../../lib/services/GroupKnowledgeService';
 import { Button, Input, Textarea, Modal, PinVerifyModal } from '../ui';
 import { createCoursePromptGenerator } from '../../lib/prompts/interviewerSystem';
+import { deleteCourseTemplate, getCourseTemplates, saveCourseTemplate } from '../../lib/supabase';
 
 import { hashPin, isValidPin } from '../../lib/utils/pinHash';
 import { getMasteryLevel } from '../../lib/utils/scoreDisplay';
@@ -59,6 +60,10 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
     const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false);
     const [formError, setFormError] = useState<string | null>(null);
     const [leftPanelMode, setLeftPanelMode] = useState<'create' | 'library'>('create');
+    const [courseTemplates, setCourseTemplates] = useState<CourseTemplate[]>([]);
+    const [templatesLoading, setTemplatesLoading] = useState(false);
+    const [templateError, setTemplateError] = useState<string | null>(null);
+    const [templateDraftName, setTemplateDraftName] = useState('');
 
     // Modal state
     const [viewingCourse, setViewingCourse] = useState<Course | null>(null);
@@ -116,6 +121,36 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
         setPinModalCourse(null);
         setPinModalAction(null);
     };
+
+    useEffect(() => {
+        let isMounted = true;
+
+        async function loadTemplates() {
+            setTemplatesLoading(true);
+            setTemplateError(null);
+            try {
+                const templates = await getCourseTemplates(currentInstitution?.schoolId || selectedInstitutionId || null);
+                if (isMounted) {
+                    setCourseTemplates(templates);
+                }
+            } catch (error) {
+                console.error('Failed to load course templates:', error);
+                if (isMounted) {
+                    setTemplateError('Unable to load course templates right now.');
+                }
+            } finally {
+                if (isMounted) {
+                    setTemplatesLoading(false);
+                }
+            }
+        }
+
+        loadTemplates();
+        return () => {
+            isMounted = false;
+        };
+    }, [currentInstitution?.schoolId, selectedInstitutionId]);
+
     // File upload state for Document-Driven Course Creation
     const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
     const [isDragging, setIsDragging] = useState(false);
@@ -262,6 +297,62 @@ Only output valid JSON, nothing else.`
     // Add a question
     const addQuestion = () => {
         setExtractedQuestions(prev => [...prev, '']);
+    };
+
+    const handleSaveTemplateFromForm = async () => {
+        if (!coursePrompt.trim()) {
+            setTemplateError('Add a prompt before saving a reusable template.');
+            return;
+        }
+
+        const institution = availableInstitutions.find((item) => item.id === selectedInstitutionId);
+        const template: CourseTemplate = {
+            id: `template_${Math.random().toString(36).slice(2, 9)}`,
+            name: (templateDraftName || courseName || 'Untitled Template').trim(),
+            prompt: coursePrompt.trim(),
+            instructorName: instructorName.trim() || 'Instructor',
+            institutionId: selectedInstitutionId || currentInstitution?.schoolId || '',
+            institutionName: institution?.name || currentInstitution?.schoolName || '',
+            createdByEmail: effectiveEmail || '',
+            createdAt: Date.now()
+        };
+
+        await saveCourseTemplate(template);
+        setCourseTemplates((current) => [template, ...current.filter((item) => item.id !== template.id)]);
+        setTemplateDraftName('');
+        setTemplateError(null);
+    };
+
+    const handleSaveCourseAsTemplate = async (course: Course) => {
+        const template: CourseTemplate = {
+            id: `template_${course.id}_${Date.now().toString(36)}`,
+            name: `${course.name} Template`,
+            prompt: course.prompt,
+            instructorName: course.instructorName,
+            institutionId: course.institutionId,
+            institutionName: course.institutionName,
+            sourceCourseId: course.id,
+            createdByEmail: effectiveEmail || course.ownerEmail || '',
+            createdAt: Date.now()
+        };
+
+        await saveCourseTemplate(template);
+        setCourseTemplates((current) => [template, ...current.filter((item) => item.id !== template.id)]);
+    };
+
+    const handleLoadTemplate = (template: CourseTemplate) => {
+        setCourseName(`${template.name.replace(/ Template$/i, '')} Copy`);
+        setInstructorName(template.instructorName);
+        setCoursePrompt(template.prompt);
+        setSelectedInstitutionId(template.institutionId || currentInstitution?.schoolId || '');
+        setTemplateDraftName(template.name);
+        setLeftPanelMode('create');
+        setFormError(null);
+    };
+
+    const handleDeleteTemplate = async (templateId: string) => {
+        await deleteCourseTemplate(templateId);
+        setCourseTemplates((current) => current.filter((template) => template.id !== templateId));
     };
 
     // Validate and add course
@@ -725,8 +816,73 @@ Only output valid JSON, nothing else.`
                             </button>
                         </div>
 
+                        <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4 space-y-4">
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                <div>
+                                    <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600 font-bold">Reusable templates</p>
+                                    <p className="text-xs text-slate-500 mt-1">Save the current draft so future institution rollouts start from a proven prompt.</p>
+                                </div>
+                                <span className="badge badge-accent">{courseTemplates.length}</span>
+                            </div>
+
+                            <div className="flex flex-col sm:flex-row gap-3">
+                                <Input
+                                    placeholder="Template name"
+                                    value={templateDraftName}
+                                    onChange={(e) => setTemplateDraftName(e.target.value)}
+                                    aria-label="Template name"
+                                />
+                                <Button onClick={handleSaveTemplateFromForm} variant="ghost" className="sm:w-auto">
+                                    Save Template
+                                </Button>
+                            </div>
+
+                            {templatesLoading ? (
+                                <p className="text-xs text-slate-500">Loading templates...</p>
+                            ) : courseTemplates.length === 0 ? (
+                                <p className="text-xs text-slate-600">No templates yet. Save this draft or a live course to seed your reusable library.</p>
+                            ) : (
+                                <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar pr-1">
+                                    {courseTemplates.slice(0, 4).map((template) => (
+                                        <div key={template.id} className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div className="min-w-0">
+                                                    <p className="text-sm font-medium text-white truncate">{template.name}</p>
+                                                    <p className="text-[11px] text-slate-500 mt-1">
+                                                        {template.institutionName || 'Shared template'} • {template.instructorName}
+                                                    </p>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleDeleteTemplate(template.id)}
+                                                    className="text-xs text-slate-500 hover:text-red-400"
+                                                >
+                                                    Delete
+                                                </button>
+                                            </div>
+                                            <div className="flex flex-wrap gap-2 mt-3">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleLoadTemplate(template)}
+                                                    className="px-3 py-1.5 rounded-full text-[11px] border border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                                                >
+                                                    Load into form
+                                                </button>
+                                                <span className="px-3 py-1.5 rounded-full text-[11px] border border-slate-800 bg-slate-900/60 text-slate-500">
+                                                    {template.prompt.length} chars
+                                                </span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
                         {formError && (
                             <p className="text-red-400 text-sm" role="alert">{formError}</p>
+                        )}
+                        {templateError && (
+                            <p className="text-amber-400 text-sm" role="status">{templateError}</p>
                         )}
 
                         <Button
@@ -774,6 +930,17 @@ Only output valid JSON, nothing else.`
                                             )}
                                         </div>
                                         <div className="flex items-center gap-2 flex-shrink-0">
+                                            <button
+                                                onClick={() => handleSaveCourseAsTemplate(c)}
+                                                className="p-1.5 bg-slate-800 hover:bg-emerald-950/40 text-slate-500 hover:text-emerald-300 rounded-lg transition-all"
+                                                title="Save as template"
+                                                aria-label={`Save ${c.name} as template`}
+                                            >
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5h14v14H5z" />
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 9h6v6H9z" />
+                                                </svg>
+                                            </button>
                                             {/* Verified indicator */}
                                             {verifiedCourses.has(c.id) && (
                                                 <span className="text-emerald-400 text-xs" title="Verified this session">

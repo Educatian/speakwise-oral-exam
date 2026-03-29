@@ -226,6 +226,44 @@ export interface InstructorReview {
   notes?: string;
 }
 
+export type SubmissionAnnotationCategory = 'strength' | 'concern' | 'evidence' | 'follow_up';
+
+export interface SubmissionAnnotation {
+  id: string;
+  submissionId: string;
+  transcriptIndex: number;
+  category: SubmissionAnnotationCategory;
+  note: string;
+  authorName: string;
+  authorEmail?: string;
+  createdAt: number;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  action: string;
+  description: string;
+  targetType: 'course' | 'submission' | 'review' | 'user' | 'template' | 'institution';
+  targetId: string;
+  actorName?: string;
+  actorEmail?: string;
+  institutionId?: string;
+  createdAt: number;
+  metadata?: Record<string, any>;
+}
+
+export interface CourseTemplate {
+  id: string;
+  name: string;
+  prompt: string;
+  instructorName: string;
+  institutionId?: string;
+  institutionName?: string;
+  sourceCourseId?: string;
+  createdByEmail?: string;
+  createdAt: number;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Core Data Types
 // ─────────────────────────────────────────────────────────────────────────────
@@ -250,6 +288,7 @@ export interface Submission {
   confidenceRationale?: string;     // Why AI is confident/uncertain
   rubricBreakdown?: RubricBreakdown;
   instructorReview?: InstructorReview;
+  annotations?: SubmissionAnnotation[];
 
   // Metacognition
   reflectionPrompt?: string;        // Question asked after interview
@@ -273,6 +312,7 @@ export interface Course {
   ownerEmail?: string;         // Owner's email for visibility control
   institutionId?: string;      // Institution workspace this course belongs to
   institutionName?: string;
+  templateId?: string;
 }
 
 export interface InterviewSummary {

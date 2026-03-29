@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArgumentGraph, InstructorReview, InstructorReviewStatus, Submission } from '../../types';
+import { ArgumentGraph, InstructorReview, InstructorReviewStatus, Submission, SubmissionAnnotation, SubmissionAnnotationCategory } from '../../types';
 import { Modal, Button, ArgumentMapView } from '../ui';
 import { ArgumentGraphBuilder } from '../../lib/reasoning';
 import { generateConceptNetwork } from '../../lib/reasoning/conceptNetwork';
 import { GroupKnowledgeService } from '../../lib/services/GroupKnowledgeService';
 import { getMasteryLevel } from '../../lib/utils/scoreDisplay';
+import { createSubmissionAnnotation, getSubmissionAnnotations } from '../../lib/supabase';
 
 interface SubmissionDetailModalProps {
     submission: Submission | null;
@@ -22,6 +23,13 @@ const REVIEW_STATUS_LABELS: Record<InstructorReviewStatus, string> = {
     overridden: 'Score overridden'
 };
 
+const ANNOTATION_COLORS: Record<SubmissionAnnotationCategory, string> = {
+    strength: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200',
+    concern: 'border-rose-500/30 bg-rose-500/10 text-rose-200',
+    evidence: 'border-indigo-500/30 bg-indigo-500/10 text-indigo-200',
+    follow_up: 'border-amber-500/30 bg-amber-500/10 text-amber-100'
+};
+
 export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
     submission,
     peerSubmissions,
@@ -37,6 +45,11 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
     const [isSavingReview, setIsSavingReview] = useState(false);
     const [activeTranscriptIndex, setActiveTranscriptIndex] = useState<number | null>(null);
     const [highlightedTranscriptIndices, setHighlightedTranscriptIndices] = useState<number[]>([]);
+    const [annotations, setAnnotations] = useState<SubmissionAnnotation[]>([]);
+    const [annotationDraft, setAnnotationDraft] = useState('');
+    const [annotationCategory, setAnnotationCategory] = useState<SubmissionAnnotationCategory>('evidence');
+    const [annotationTurnIndex, setAnnotationTurnIndex] = useState<number | null>(null);
+    const [isSavingAnnotation, setIsSavingAnnotation] = useState(false);
     const transcriptRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
     useEffect(() => {
@@ -79,6 +92,7 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
     useEffect(() => {
         if (!submission) {
             setReviewDraft(null);
+            setAnnotations([]);
             return;
         }
 
@@ -94,7 +108,32 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
         );
         setActiveTranscriptIndex(null);
         setHighlightedTranscriptIndices([]);
+        setAnnotationTurnIndex(null);
+        setAnnotationDraft('');
     }, [submission, currentReviewerEmail, currentReviewerName]);
+
+    useEffect(() => {
+        if (!submission) return;
+
+        let isMounted = true;
+
+        getSubmissionAnnotations(submission.id)
+            .then((loadedAnnotations) => {
+                if (isMounted) {
+                    setAnnotations(loadedAnnotations);
+                }
+            })
+            .catch((error) => {
+                console.error('Failed to load submission annotations:', error);
+                if (isMounted) {
+                    setAnnotations([]);
+                }
+            });
+
+        return () => {
+            isMounted = false;
+        };
+    }, [submission]);
 
     const peerData = useMemo(() => {
         if (!submission || !peerSubmissions || peerSubmissions.length === 0) {
@@ -143,6 +182,57 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
             await onUpdateReview(submission.id, normalizedReview);
         } finally {
             setIsSavingReview(false);
+        }
+    };
+
+    const evidenceTrail = useMemo(() => {
+        if (!submission) return [];
+
+        const evidencePool = [
+            ...(submission.rubricBreakdown?.conceptualUnderstanding.evidence || []),
+            ...(submission.rubricBreakdown?.communicationClarity.evidence || []),
+            ...(submission.rubricBreakdown?.criticalThinking.evidence || []),
+            ...(submission.rubricBreakdown?.engagement.evidence || []),
+            ...(submission.reasoningRubric?.explicitJustification.examples || []),
+            ...(submission.reasoningRubric?.abstractionGeneralization.instances || [])
+        ];
+
+        const uniqueEvidence = Array.from(new Set(evidencePool.map((item) => item.trim()).filter(Boolean))).slice(0, 8);
+        return uniqueEvidence.map((snippet) => {
+            const normalizedSnippet = snippet.toLowerCase();
+            const matchingTurnIndex = submission.transcript.findIndex((turn) =>
+                turn.text.toLowerCase().includes(normalizedSnippet) ||
+                normalizedSnippet.includes(turn.text.toLowerCase().slice(0, Math.min(turn.text.length, 48)))
+            );
+
+            return {
+                snippet,
+                matchingTurnIndex: matchingTurnIndex >= 0 ? matchingTurnIndex : null
+            };
+        });
+    }, [submission]);
+
+    const handleSaveAnnotation = async () => {
+        if (!submission || annotationTurnIndex == null || !annotationDraft.trim()) return;
+
+        const annotation: SubmissionAnnotation = {
+            id: `annotation_${Math.random().toString(36).slice(2, 9)}`,
+            submissionId: submission.id,
+            transcriptIndex: annotationTurnIndex,
+            category: annotationCategory,
+            note: annotationDraft.trim(),
+            authorName: currentReviewerName || 'Instructor',
+            authorEmail: currentReviewerEmail,
+            createdAt: Date.now()
+        };
+
+        setIsSavingAnnotation(true);
+        try {
+            await createSubmissionAnnotation(annotation);
+            setAnnotations((current) => [...current, annotation]);
+            setAnnotationDraft('');
+        } finally {
+            setIsSavingAnnotation(false);
         }
     };
 
@@ -309,6 +399,37 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                     </p>
                 </div>
 
+                {evidenceTrail.length > 0 && (
+                    <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
+                        <div className="flex items-center justify-between gap-3 mb-4">
+                            <div>
+                                <h4 className="text-slate-300 font-semibold">Evidence trail</h4>
+                                <p className="text-sm text-slate-500 mt-1">Quick links to transcript evidence that shaped the current scoring model.</p>
+                            </div>
+                            <span className="text-xs text-slate-600">{evidenceTrail.length} reference{evidenceTrail.length !== 1 ? 's' : ''}</span>
+                        </div>
+                        <div className="space-y-2">
+                            {evidenceTrail.map((item, index) => (
+                                <button
+                                    key={`${item.snippet}-${index}`}
+                                    type="button"
+                                    onClick={() => {
+                                        if (item.matchingTurnIndex != null) {
+                                            setActiveTranscriptIndex(item.matchingTurnIndex);
+                                        }
+                                    }}
+                                    className="w-full rounded-2xl border border-slate-800 bg-slate-950/40 px-4 py-3 text-left hover:border-indigo-500/30 transition-colors"
+                                >
+                                    <p className="text-sm text-slate-200 leading-relaxed">{item.snippet}</p>
+                                    <p className="text-[11px] text-slate-500 mt-2">
+                                        {item.matchingTurnIndex != null ? `Jump to transcript turn ${item.matchingTurnIndex + 1}` : 'No exact transcript turn match was found'}
+                                    </p>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
                 <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
                     {graphLoading ? (
                         <div className="text-center py-10">
@@ -368,6 +489,85 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                     </div>
                 )}
 
+                <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl space-y-4">
+                    <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+                        <div>
+                            <h4 className="text-slate-300 font-semibold">Transcript annotations</h4>
+                            <p className="text-sm text-slate-500 mt-1">Anchor evidence, flag concerns, and leave follow-up cues directly on specific turns.</p>
+                        </div>
+                        <div className="text-xs text-slate-500">
+                            {annotations.length} saved annotation{annotations.length !== 1 ? 's' : ''}
+                        </div>
+                    </div>
+
+                    {(canEditReview || annotations.length > 0) && (
+                        <div className="grid grid-cols-1 lg:grid-cols-[0.8fr_minmax(0,1fr)] gap-4">
+                            <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 space-y-3">
+                                <label className="block">
+                                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Annotation type</span>
+                                    <select
+                                        value={annotationCategory}
+                                        disabled={!canEditReview}
+                                        onChange={(event) => setAnnotationCategory(event.target.value as SubmissionAnnotationCategory)}
+                                        className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950/60 px-4 py-3 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 disabled:opacity-60"
+                                    >
+                                        <option value="evidence">Evidence</option>
+                                        <option value="strength">Strength</option>
+                                        <option value="concern">Concern</option>
+                                        <option value="follow_up">Follow up</option>
+                                    </select>
+                                </label>
+                                <div className="rounded-2xl border border-slate-800 bg-slate-900/50 px-4 py-3 text-sm text-slate-400">
+                                    {annotationTurnIndex == null
+                                        ? 'Select a transcript turn to anchor a new annotation.'
+                                        : `Preparing an annotation for transcript turn ${annotationTurnIndex + 1}.`}
+                                </div>
+                                <textarea
+                                    value={annotationDraft}
+                                    disabled={!canEditReview}
+                                    onChange={(event) => setAnnotationDraft(event.target.value)}
+                                    rows={4}
+                                    placeholder="Add evidence, a scoring rationale, or a follow-up teaching note."
+                                    className="w-full rounded-xl border border-slate-700 bg-slate-950/60 px-4 py-3 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 disabled:opacity-60"
+                                />
+                                {canEditReview && (
+                                    <div className="flex justify-end">
+                                        <Button onClick={handleSaveAnnotation} disabled={annotationTurnIndex == null || !annotationDraft.trim() || isSavingAnnotation}>
+                                            {isSavingAnnotation ? 'Saving annotation...' : 'Save annotation'}
+                                        </Button>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 space-y-3 max-h-[320px] overflow-y-auto custom-scrollbar">
+                                {annotations.length === 0 ? (
+                                    <p className="text-sm text-slate-500">No annotations yet. Add reviewer evidence to build a stronger grading trail.</p>
+                                ) : (
+                                    annotations.map((annotation) => (
+                                        <button
+                                            key={annotation.id}
+                                            type="button"
+                                            onClick={() => setActiveTranscriptIndex(annotation.transcriptIndex)}
+                                            className={`w-full rounded-2xl border px-4 py-3 text-left ${ANNOTATION_COLORS[annotation.category]}`}
+                                        >
+                                            <div className="flex items-center justify-between gap-3">
+                                                <span className="text-[10px] uppercase tracking-[0.18em] font-bold">
+                                                    {annotation.category.replace('_', ' ')} • Turn {annotation.transcriptIndex + 1}
+                                                </span>
+                                                <span className="text-[10px] opacity-70">
+                                                    {new Date(annotation.createdAt).toLocaleDateString()}
+                                                </span>
+                                            </div>
+                                            <p className="text-sm mt-2 leading-relaxed">{annotation.note}</p>
+                                            <p className="text-[11px] mt-2 opacity-70">By {annotation.authorName}</p>
+                                        </button>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+
                 <div className="space-y-4">
                     <h4 className="text-slate-500 font-bold text-xs uppercase tracking-widest">
                         Full conversation transcript
@@ -390,18 +590,46 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                                 >
                                     {turn.speaker === 'user' ? 'Student' : 'AI'}
                                 </div>
-                                <div
-                                    className={`flex-1 px-4 py-3 rounded-xl text-sm ${turn.speaker === 'user'
-                                        ? 'bg-indigo-600/20 text-indigo-100 rounded-tr-sm'
-                                        : 'bg-slate-800 text-slate-300 rounded-tl-sm'
-                                        } ${activeTranscriptIndex === index
-                                            ? 'ring-2 ring-emerald-400/70 shadow-lg shadow-emerald-500/10'
-                                            : highlightedTranscriptIndices.includes(index)
-                                                ? 'ring-1 ring-indigo-400/60 shadow-md shadow-indigo-500/10'
-                                                : ''
-                                        } transition-all duration-300 outline-none`}
-                                >
-                                    {turn.text}
+                                <div className="flex-1 space-y-2">
+                                    <div
+                                        className={`px-4 py-3 rounded-xl text-sm ${turn.speaker === 'user'
+                                            ? 'bg-indigo-600/20 text-indigo-100 rounded-tr-sm'
+                                            : 'bg-slate-800 text-slate-300 rounded-tl-sm'
+                                            } ${activeTranscriptIndex === index
+                                                ? 'ring-2 ring-emerald-400/70 shadow-lg shadow-emerald-500/10'
+                                                : highlightedTranscriptIndices.includes(index)
+                                                    ? 'ring-1 ring-indigo-400/60 shadow-md shadow-indigo-500/10'
+                                                    : ''
+                                            } transition-all duration-300 outline-none`}
+                                    >
+                                        {turn.text}
+                                    </div>
+                                    <div className={`flex flex-wrap items-center gap-2 ${turn.speaker === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                        {annotations
+                                            .filter((annotation) => annotation.transcriptIndex === index)
+                                            .map((annotation) => (
+                                                <button
+                                                    key={annotation.id}
+                                                    type="button"
+                                                    onClick={() => setActiveTranscriptIndex(index)}
+                                                    className={`px-2 py-1 rounded-full text-[10px] border ${ANNOTATION_COLORS[annotation.category]}`}
+                                                >
+                                                    {annotation.category.replace('_', ' ')}
+                                                </button>
+                                            ))}
+                                        {canEditReview && (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setAnnotationTurnIndex(index);
+                                                    setActiveTranscriptIndex(index);
+                                                }}
+                                                className="px-2 py-1 rounded-full text-[10px] border border-slate-700 bg-slate-950/50 text-slate-400 hover:text-white hover:border-indigo-500/30"
+                                            >
+                                                Annotate turn
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         ))}

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { ArgumentEdge, ArgumentGraph, ArgumentNode } from '../../types';
 
 interface TranscriptTurn {
@@ -172,6 +172,7 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
     const [selectedEdgeKey, setSelectedEdgeKey] = useState<string | null>(null);
     const [collapsedClusterIds, setCollapsedClusterIds] = useState<string[]>([]);
     const [isPlaying, setIsPlaying] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
     const dragRef = useRef<
         | { type: 'pan'; x: number; y: number; viewport: ViewportState }
         | { type: 'node'; nodeId: string; pointer: Position; origin: Position; moved: boolean }
@@ -179,6 +180,7 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
     >(null);
 
     const radialPositions = useMemo(() => buildRadialLayout(graph.nodes, graph.edges), [graph.edges, graph.nodes]);
+    const deferredSearchQuery = useDeferredValue(searchQuery);
     const nodesById = useMemo(() => Object.fromEntries(graph.nodes.map((node) => [node.id, node] as const)), [graph.nodes]);
     const relationOptions = useMemo(() => Array.from(new Set(graph.edges.map((edge) => edge.relation))), [graph.edges]);
     const persistedLayoutKey = storageKey ? `${STORAGE_PREFIX}:${storageKey}` : null;
@@ -292,6 +294,21 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
         return hidden;
     }, [clusterMap, collapsedClusterIds]);
 
+    const searchedNodeIds = useMemo(() => {
+        const query = deferredSearchQuery.trim().toLowerCase();
+        if (!query) return null;
+
+        const matchingIds = graph.nodes
+            .filter((node) =>
+                node.content.toLowerCase().includes(query) ||
+                (node.metadata?.conceptType || '').toLowerCase().includes(query) ||
+                node.type.toLowerCase().includes(query)
+            )
+            .map((node) => node.id);
+
+        return new Set(matchingIds);
+    }, [deferredSearchQuery, graph.nodes]);
+
     const visibleTimelineNodeIds = useMemo(() => {
         const visible = new Set<string>();
         graph.nodes.forEach((node) => {
@@ -307,12 +324,16 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
         if (!visibleTimelineNodeIds.has(edge.from) || !visibleTimelineNodeIds.has(edge.to)) return false;
         if (hiddenNodeIds.has(edge.from) || hiddenNodeIds.has(edge.to)) return false;
         if (selectedRelation && edge.relation !== selectedRelation) return false;
+        if (searchedNodeIds && !searchedNodeIds.has(edge.from) && !searchedNodeIds.has(edge.to)) return false;
         return true;
-    }), [graph.edges, hiddenNodeIds, selectedRelation, visibleTimelineNodeIds]);
+    }), [graph.edges, hiddenNodeIds, searchedNodeIds, selectedRelation, visibleTimelineNodeIds]);
 
     const visibleNodeIds = useMemo(() => {
         if (!selectedRelation) {
-            return new Set(graph.nodes.filter((node) => visibleTimelineNodeIds.has(node.id) && !hiddenNodeIds.has(node.id)).map((node) => node.id));
+            return new Set(graph.nodes
+                .filter((node) => visibleTimelineNodeIds.has(node.id) && !hiddenNodeIds.has(node.id))
+                .filter((node) => !searchedNodeIds || searchedNodeIds.has(node.id))
+                .map((node) => node.id));
         }
         const relationNodes = new Set<string>();
         filteredEdges.forEach((edge) => {
@@ -321,7 +342,7 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
         });
         if (focusedNodeId) relationNodes.add(focusedNodeId);
         return relationNodes;
-    }, [filteredEdges, focusedNodeId, graph.nodes, hiddenNodeIds, selectedRelation, visibleTimelineNodeIds]);
+    }, [filteredEdges, focusedNodeId, graph.nodes, hiddenNodeIds, searchedNodeIds, selectedRelation, visibleTimelineNodeIds]);
 
     const visibleNodes = useMemo(() => graph.nodes.filter((node) => visibleNodeIds.has(node.id)), [graph.nodes, visibleNodeIds]);
     const focusedNode = focusedNodeId ? nodesById[focusedNodeId] || null : null;
@@ -391,6 +412,34 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
 
     const minimapViewport = { x: (-viewport.x) / viewport.scale, y: (-viewport.y) / viewport.scale, width: VIEW_WIDTH / viewport.scale, height: VIEW_HEIGHT / viewport.scale };
 
+    const downloadFile = (filename: string, content: string, mimeType: string) => {
+        const blob = new Blob([content], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        link.click();
+        URL.revokeObjectURL(url);
+    };
+
+    const handleExportJson = () => {
+        downloadFile(
+            `${storageKey || 'concept-map'}.json`,
+            JSON.stringify({ graph, viewport, positions, collapsedClusterIds }, null, 2),
+            'application/json'
+        );
+    };
+
+    const handleExportSvg = () => {
+        if (!svgRef.current) return;
+        const serializer = new XMLSerializer();
+        downloadFile(
+            `${storageKey || 'concept-map'}.svg`,
+            serializer.serializeToString(svgRef.current),
+            'image/svg+xml;charset=utf-8'
+        );
+    };
+
     return (
         <div className="space-y-4">
             <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
@@ -399,12 +448,27 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
                     <p className="text-xs text-slate-500 mt-1">Pan, zoom, drag nodes, focus concepts, filter edges, and replay the interview.</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
+                    <input
+                        type="search"
+                        value={searchQuery}
+                        onChange={(event) => setSearchQuery(event.target.value)}
+                        placeholder="Search concepts"
+                        className="w-full sm:w-44 rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                    />
                     <button type="button" onClick={() => { setLayoutMode('radial'); setPositions(radialPositions); }} className={`px-3 py-2 rounded-xl text-xs border ${layoutMode === 'radial' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-slate-700 bg-slate-900/60 text-slate-400'}`}>Radial</button>
                     <button type="button" onClick={() => { setLayoutMode('force'); setPositions((current) => buildForceLayout(graph.nodes, graph.edges, current)); }} className={`px-3 py-2 rounded-xl text-xs border ${layoutMode === 'force' ? 'border-indigo-500/30 bg-indigo-500/10 text-indigo-300' : 'border-slate-700 bg-slate-900/60 text-slate-400'}`}>Force</button>
                     <button type="button" onClick={() => setViewport(DEFAULT_VIEWPORT)} className="px-3 py-2 rounded-xl text-xs border border-slate-700 bg-slate-900/60 text-slate-400">Reset view</button>
                     <button type="button" onClick={() => { setSelectedRelation(null); setSelectedEdgeKey(null); }} className="px-3 py-2 rounded-xl text-xs border border-slate-700 bg-slate-900/60 text-slate-400">Clear filter</button>
+                    <button type="button" onClick={handleExportJson} className="px-3 py-2 rounded-xl text-xs border border-slate-700 bg-slate-900/60 text-slate-400">Export JSON</button>
+                    <button type="button" onClick={handleExportSvg} className="px-3 py-2 rounded-xl text-xs border border-slate-700 bg-slate-900/60 text-slate-400">Export SVG</button>
                 </div>
             </div>
+
+            {deferredSearchQuery.trim() && (
+                <div className="rounded-2xl border border-slate-800 bg-slate-900/40 px-4 py-3 text-xs text-slate-400">
+                    {visibleNodes.length} concept{visibleNodes.length !== 1 ? 's' : ''} matched “{deferredSearchQuery.trim()}”.
+                </div>
+            )}
 
             <div className="flex flex-wrap gap-2">
                 {relationOptions.map((relation) => (

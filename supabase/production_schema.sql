@@ -128,6 +128,42 @@ create table if not exists public.submission_reviews (
     updated_at timestamptz not null default now()
 );
 
+create table if not exists public.course_templates (
+    id text primary key,
+    institution_id text references public.institutions(id) on delete set null,
+    institution_name text,
+    name text not null,
+    prompt text not null,
+    instructor_name text not null,
+    source_course_id text references public.courses(id) on delete set null,
+    created_by_email text,
+    created_at timestamptz not null default now()
+);
+
+create table if not exists public.submission_annotations (
+    id text primary key,
+    submission_id text not null references public.submissions(id) on delete cascade,
+    transcript_index integer not null default 0,
+    category text not null default 'evidence' check (category in ('strength', 'concern', 'evidence', 'follow_up')),
+    note text not null,
+    author_name text not null,
+    author_email text,
+    created_at timestamptz not null default now()
+);
+
+create table if not exists public.audit_logs (
+    id text primary key,
+    action text not null,
+    description text not null,
+    target_type text not null check (target_type in ('course', 'submission', 'review', 'user', 'template', 'institution')),
+    target_id text not null,
+    actor_name text,
+    actor_email text,
+    institution_id text references public.institutions(id) on delete set null,
+    metadata jsonb,
+    created_at timestamptz not null default now()
+);
+
 create index if not exists idx_user_profiles_email on public.user_profiles(email);
 create index if not exists idx_user_profiles_school_id on public.user_profiles(school_id);
 create index if not exists idx_app_users_email on public.app_users(email);
@@ -139,6 +175,10 @@ create index if not exists idx_submissions_course_id on public.submissions(cours
 create index if not exists idx_student_history_user_id on public.student_history(user_id);
 create index if not exists idx_student_history_app_user_id on public.student_history(app_user_id);
 create index if not exists idx_submission_reviews_reviewer_email on public.submission_reviews(reviewer_email);
+create index if not exists idx_course_templates_institution_id on public.course_templates(institution_id);
+create index if not exists idx_submission_annotations_submission_id on public.submission_annotations(submission_id);
+create index if not exists idx_audit_logs_created_at on public.audit_logs(created_at desc);
+create index if not exists idx_audit_logs_institution_id on public.audit_logs(institution_id);
 
 -- ============================================================================
 -- Helpers
@@ -430,6 +470,9 @@ alter table public.courses enable row level security;
 alter table public.submissions enable row level security;
 alter table public.student_history enable row level security;
 alter table public.submission_reviews enable row level security;
+alter table public.course_templates enable row level security;
+alter table public.submission_annotations enable row level security;
+alter table public.audit_logs enable row level security;
 
 drop policy if exists "institutions are readable by authenticated users" on public.institutions;
 drop policy if exists "staff can read institutions" on public.institutions;
@@ -635,6 +678,36 @@ on public.submission_reviews
 for all
 to anon, authenticated
 using (true)
+with check (true);
+
+drop policy if exists "public can manage course templates" on public.course_templates;
+create policy "public can manage course templates"
+on public.course_templates
+for all
+to anon, authenticated
+using (true)
+with check (true);
+
+drop policy if exists "public can manage submission annotations" on public.submission_annotations;
+create policy "public can manage submission annotations"
+on public.submission_annotations
+for all
+to anon, authenticated
+using (true)
+with check (true);
+
+drop policy if exists "public can read audit logs" on public.audit_logs;
+create policy "public can read audit logs"
+on public.audit_logs
+for select
+to anon, authenticated
+using (true);
+
+drop policy if exists "public can create audit logs" on public.audit_logs;
+create policy "public can create audit logs"
+on public.audit_logs
+for insert
+to anon, authenticated
 with check (true);
 
 drop policy if exists "staff can create submission reviews" on public.submission_reviews;
