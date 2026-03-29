@@ -14,6 +14,7 @@ import {
     updateUserSchool,
     getSavedSchool
 } from '../lib/supabase/auth';
+import { isSupabaseConfigured, supabase } from '../lib/supabase';
 
 interface UseAuthReturn {
     user: AuthUser | null;
@@ -21,7 +22,14 @@ interface UseAuthReturn {
     isAuthenticated: boolean;
 
     // Auth actions
-    signUp: (email: string, password: string, displayName: string, role: 'student' | 'instructor') => Promise<{ success: boolean; error?: string }>;
+    signUp: (
+        email: string,
+        password: string,
+        displayName: string,
+        role: 'student' | 'instructor',
+        schoolId?: string,
+        schoolName?: string
+    ) => Promise<{ success: boolean; error?: string }>;
     signIn: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
     signOut: () => Promise<void>;
     resetPassword: (email: string) => Promise<{ success: boolean; error?: string }>;
@@ -56,21 +64,40 @@ export function useAuth(): UseAuthReturn {
         }
 
         loadUser();
+
+        if (!isSupabaseConfigured()) {
+            return;
+        }
+
+        const { data: authListener } = supabase.auth.onAuthStateChange(async () => {
+            const currentUser = await getCurrentUser();
+            setUser(currentUser);
+            setSavedSchool(getSavedSchool());
+        });
+
+        return () => {
+            authListener.subscription.unsubscribe();
+        };
     }, []);
 
     const signUp = useCallback(async (
         email: string,
         password: string,
         displayName: string,
-        role: 'student' | 'instructor'
+        role: 'student' | 'instructor',
+        schoolId?: string,
+        schoolName?: string
     ) => {
         setIsLoading(true);
         try {
-            const result = await authSignUp(email, password, displayName, role);
+            const result = await authSignUp(email, password, displayName, role, schoolId, schoolName);
             if (result.success && result.user) {
                 setUser(result.user);
                 // Save to localStorage for session persistence
                 localStorage.setItem('speakwise_user', JSON.stringify(result.user));
+                if (schoolId && schoolName) {
+                    setSavedSchool({ schoolId, schoolName });
+                }
             }
             return { success: result.success, error: result.error };
         } finally {

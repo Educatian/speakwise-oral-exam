@@ -1,29 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Button, Input } from '../ui';
-import { UserRole, ADMIN_EMAIL } from '../../types';
-
-interface UserProfile {
-    id: string;
-    email: string;
-    displayName: string;
-    role: UserRole;
-    schoolId?: string;
-    schoolName?: string;
-    createdAt: string;
-}
+import { UserRole, ADMIN_EMAIL, UserProfile } from '../../types';
+import { getUserProfiles, updateUserRole } from '../../lib/supabase';
 
 interface AdminPanelViewProps {
     currentUserEmail?: string;
     onBack: () => void;
 }
-
-// Demo users for local development (will be replaced with Supabase)
-const DEMO_USERS: UserProfile[] = [
-    { id: '1', email: 'jewoong.moon@gmail.com', displayName: 'Dr. Moon', role: UserRole.ADMIN, createdAt: '2025-01-01' },
-    { id: '2', email: 'instructor@ou.edu', displayName: 'Prof. Smith', role: UserRole.INSTRUCTOR, schoolName: 'University of Oklahoma', createdAt: '2025-01-15' },
-    { id: '3', email: 'mod@speakwise.edu', displayName: 'Moderator Jane', role: UserRole.MODERATOR, createdAt: '2025-01-20' },
-    { id: '4', email: 'student@ua.edu', displayName: 'John Student', role: UserRole.STUDENT, schoolName: 'University of Alabama', createdAt: '2025-01-25' },
-];
 
 /**
  * Admin Panel View
@@ -34,7 +17,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
     currentUserEmail,
     onBack
 }) => {
-    const [users, setUsers] = useState<UserProfile[]>(DEMO_USERS);
+    const [users, setUsers] = useState<UserProfile[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -42,6 +25,21 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
 
     // Check if current user is admin
     const isAdmin = currentUserEmail?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+
+    useEffect(() => {
+        async function loadUsers() {
+            if (!isAdmin) return;
+            setIsLoading(true);
+            try {
+                const profiles = await getUserProfiles();
+                setUsers(profiles);
+            } finally {
+                setIsLoading(false);
+            }
+        }
+
+        loadUsers();
+    }, [isAdmin]);
 
     // Filter users based on search
     const filteredUsers = users.filter(user =>
@@ -59,8 +57,12 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
 
         setIsLoading(true);
 
-        // Simulate API call
-        await new Promise(resolve => setTimeout(resolve, 500));
+        const success = await updateUserRole(userId, newRole);
+        if (!success) {
+            setSuccessMessage('');
+            setIsLoading(false);
+            return;
+        }
 
         setUsers(prev => prev.map(user =>
             user.id === userId ? { ...user, role: newRole } : user

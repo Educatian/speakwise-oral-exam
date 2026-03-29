@@ -1,5 +1,5 @@
 import React from 'react';
-import { AppView, Course, Submission, ADMIN_EMAIL } from '../types';
+import { AppView, Course, Institution, Submission, ADMIN_EMAIL } from '../types';
 
 import { LandingView } from './views/LandingView';
 import { InstructorLoginView } from './views/InstructorLoginView';
@@ -23,14 +23,26 @@ interface AppRouterProps {
     user: any;
     userRole: 'student' | 'instructor';
     studentName: string;
-    savedSchool: string | null;
+    savedSchool: { schoolId: string; schoolName: string } | null;
+    institutions: Institution[];
     courses: Course[];
     history: Submission[];
     activeCourse: Course | null;
     returnToLanding: () => void;
     navigateTo: (view: AppView) => void;
-    handleAuthSuccess: (user: any, role: 'student' | 'instructor', name: string) => void;
+    handleAuthSuccess: (user: any) => void;
     handleSchoolSelect: (schoolId: string, name: string) => void;
+    signIn: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+    signUp: (
+        email: string,
+        password: string,
+        displayName: string,
+        role: 'student' | 'instructor',
+        schoolId?: string,
+        schoolName?: string
+    ) => Promise<{ success: boolean; error?: string }>;
+    resetPassword: (email: string) => Promise<{ success: boolean; error?: string }>;
+    validateInstitutionAccessCode: (institutionId: string, accessCode: string) => Promise<Institution | null>;
     handleStudentLogin: (course: Course, name: string) => void;
     handleInterviewComplete: (submission: Submission) => void;
     handleAddCourse: (courseData: Omit<Course, 'id' | 'submissions'>) => void;
@@ -50,6 +62,7 @@ export const AppRouter: React.FC<AppRouterProps> = ({
     userRole,
     studentName,
     savedSchool,
+    institutions,
     courses,
     history,
     activeCourse,
@@ -57,6 +70,10 @@ export const AppRouter: React.FC<AppRouterProps> = ({
     navigateTo,
     handleAuthSuccess,
     handleSchoolSelect,
+    signIn,
+    signUp,
+    resetPassword,
+    validateInstitutionAccessCode,
     handleStudentLogin,
     handleInterviewComplete,
     handleAddCourse,
@@ -85,6 +102,13 @@ export const AppRouter: React.FC<AppRouterProps> = ({
     const storedEmail = storedUser ? JSON.parse(storedUser)?.email : null;
     const resolvedEmail = user?.email || storedEmail;
     const isAdmin = checkIsAdmin(resolvedEmail);
+    const activeInstitutionId = savedSchool?.schoolId || user?.schoolId || null;
+    const studentVisibleCourses = activeInstitutionId && activeInstitutionId !== 'guest'
+        ? courses.filter(course =>
+            !course.institutionId ||
+            course.institutionId === activeInstitutionId
+        )
+        : courses;
 
     switch (view) {
         case AppView.LANDING:
@@ -101,6 +125,10 @@ export const AppRouter: React.FC<AppRouterProps> = ({
                     onAuthSuccess={handleAuthSuccess}
                     onBack={returnToLanding}
                     defaultRole={userRole}
+                    institutions={institutions}
+                    signIn={signIn}
+                    signUp={signUp}
+                    resetPassword={resetPassword}
                 />
             );
 
@@ -111,6 +139,8 @@ export const AppRouter: React.FC<AppRouterProps> = ({
                     onBack={() => navigateTo(AppView.UNIFIED_AUTH)}
                     savedSchool={savedSchool}
                     userName={studentName || user?.displayName}
+                    institutions={institutions}
+                    validateAccessCode={validateInstitutionAccessCode}
                 />
             );
 
@@ -141,6 +171,8 @@ export const AppRouter: React.FC<AppRouterProps> = ({
                     onSelectSubmission={setSelectedSubmission}
                     onBack={returnToLanding}
                     currentUserEmail={resolvedEmail}
+                    currentInstitution={savedSchool || (user?.schoolId ? { schoolId: user.schoolId, schoolName: user.schoolName } : null)}
+                    availableInstitutions={institutions}
                     onAdminPanel={isAdmin ? () => navigateTo(AppView.ADMIN_PANEL) : undefined}
                 />
             );
@@ -148,13 +180,14 @@ export const AppRouter: React.FC<AppRouterProps> = ({
         case AppView.STUDENT_COURSES:
             return (
                 <StudentCoursesView
-                    courses={courses}
+                    courses={studentVisibleCourses}
                     onSelectCourse={(course) => {
                         setActiveCourse(course);
                         navigateTo(AppView.STUDENT_LOGIN);
                     }}
                     onViewHistory={() => navigateTo(AppView.STUDENT_HISTORY)}
                     onBack={returnToLanding}
+                    savedSchool={savedSchool}
                 />
             );
 
@@ -222,6 +255,8 @@ export const AppRouter: React.FC<AppRouterProps> = ({
                     onSelectSubmission={setSelectedSubmission}
                     onBack={returnToLanding}
                     currentUserEmail={resolvedEmail}
+                    currentInstitution={savedSchool || (user?.schoolId ? { schoolId: user.schoolId, schoolName: user.schoolName } : null)}
+                    availableInstitutions={institutions}
                     onAdminPanel={isAdmin ? () => navigateTo(AppView.ADMIN_PANEL) : undefined}
                 />
             );

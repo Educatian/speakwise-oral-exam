@@ -1,10 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { Button, Input } from '../ui';
+import { Institution } from '../../types';
 
 interface UnifiedAuthViewProps {
     onAuthSuccess: (user: { id: string; email: string; displayName: string; role: 'student' | 'instructor' }) => void;
     onBack: () => void;
     defaultRole?: 'student' | 'instructor';
+    institutions: Institution[];
+    signIn: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+    signUp: (
+        email: string,
+        password: string,
+        displayName: string,
+        role: 'student' | 'instructor',
+        schoolId?: string,
+        schoolName?: string
+    ) => Promise<{ success: boolean; error?: string }>;
+    resetPassword: (email: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 type AuthMode = 'signin' | 'signup' | 'forgot';
@@ -17,7 +29,11 @@ type AuthMode = 'signin' | 'signup' | 'forgot';
 export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
     onAuthSuccess,
     onBack,
-    defaultRole = 'student'
+    defaultRole = 'student',
+    institutions,
+    signIn,
+    signUp,
+    resetPassword
 }) => {
     const [mode, setMode] = useState<AuthMode>('signin');
     const [email, setEmail] = useState('');
@@ -25,7 +41,7 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
     const [confirmPassword, setConfirmPassword] = useState('');
     const [firstName, setFirstName] = useState('');
     const [lastName, setLastName] = useState('');
-    const [school, setSchool] = useState('');
+    const [selectedInstitutionId, setSelectedInstitutionId] = useState('');
     const [role, setRole] = useState<'student' | 'instructor'>(defaultRole);
     const [showPassword, setShowPassword] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
@@ -46,19 +62,20 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
 
         try {
             if (mode === 'forgot') {
-                // Password reset
                 if (!email) {
                     setError('Please enter your email address');
                     return;
                 }
-                // Simulate API call - will integrate with useAuth
-                await new Promise(resolve => setTimeout(resolve, 1000));
+                const result = await resetPassword(email);
+                if (!result.success) {
+                    setError(result.error || 'Failed to send reset email');
+                    return;
+                }
                 setSuccessMessage('Check your email for reset instructions. Don\'t forget to check spam folder!');
                 return;
             }
 
             if (mode === 'signup') {
-                // Validation for student signup
                 if (!firstName.trim()) {
                     setError('Please enter your first name');
                     return;
@@ -67,8 +84,8 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
                     setError('Please enter your last name');
                     return;
                 }
-                if (!school.trim()) {
-                    setError('Please enter your school/institution name');
+                if (!selectedInstitutionId) {
+                    setError('Please select your institution');
                     return;
                 }
                 if (password.length < 6) {
@@ -86,20 +103,43 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
                 return;
             }
 
-            // Simulate auth - will integrate with useAuth
-            await new Promise(resolve => setTimeout(resolve, 800));
+            if (mode === 'signup') {
+                const displayName = `${firstName.trim()} ${lastName.trim()}`.trim();
+                const selectedInstitution = institutions.find((institution) => institution.id === selectedInstitutionId);
+                const result = await signUp(
+                    email,
+                    password,
+                    displayName,
+                    'student',
+                    selectedInstitution?.id,
+                    selectedInstitution?.name
+                );
 
-            // Build display name from first and last name
-            const displayName = mode === 'signup'
-                ? `${firstName.trim()} ${lastName.trim()}`
-                : email.split('@')[0];
+                if (!result.success) {
+                    setError(result.error || 'Account creation failed. Please try again.');
+                    return;
+                }
 
-            // Success - pass user data
+                onAuthSuccess({
+                    id: `signup_${Date.now()}`,
+                    email,
+                    displayName,
+                    role: 'student'
+                });
+                return;
+            }
+
+            const signInResult = await signIn(email, password);
+            if (!signInResult.success) {
+                setError(signInResult.error || 'Authentication failed. Please try again.');
+                return;
+            }
+
             onAuthSuccess({
-                id: `user_${Date.now()}`,
+                id: `signin_${Date.now()}`,
                 email,
-                displayName,
-                role: 'student' // Sign up is always student
+                displayName: email.split('@')[0],
+                role
             });
 
         } catch (err) {
@@ -182,18 +222,25 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
                             </div>
                         </div>
                         <div>
-                            <label htmlFor="school" className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                                School / Institution
+                            <label htmlFor="institution" className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                                Institution
                             </label>
-                            <Input
-                                id="school"
-                                type="text"
-                                value={school}
-                                onChange={(e) => setSchool(e.target.value)}
-                                placeholder="University of Example"
-                                autoComplete="organization"
+                            <select
+                                id="institution"
+                                value={selectedInstitutionId}
+                                onChange={(e) => setSelectedInstitutionId(e.target.value)}
+                                className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all"
                                 disabled={isLoading}
-                            />
+                            >
+                                <option value="">Select your institution</option>
+                                {institutions
+                                    .filter((institution) => institution.id !== 'guest')
+                                    .map((institution) => (
+                                        <option key={institution.id} value={institution.id}>
+                                            {institution.name}
+                                        </option>
+                                    ))}
+                            </select>
                         </div>
                     </>
                 )}

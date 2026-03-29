@@ -31,6 +31,26 @@ export enum UserRole {
   ADMIN = 'admin'
 }
 
+export interface Institution {
+  id: string;
+  name: string;
+  accessCode?: string;
+  domain?: string;
+  logoUrl?: string;
+  primaryColor?: string;
+  isActive?: boolean;
+}
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  displayName: string;
+  role: UserRole;
+  schoolId?: string;
+  schoolName?: string;
+  createdAt?: string;
+}
+
 export enum AppView {
   LANDING = 'LANDING',
   // New unified auth flow
@@ -239,6 +259,8 @@ export interface Course {
   submissions: Submission[];
   createdAt?: number;          // Creation timestamp
   ownerEmail?: string;         // Owner's email for visibility control
+  institutionId?: string;      // Institution workspace this course belongs to
+  institutionName?: string;
 }
 
 export interface InterviewSummary {

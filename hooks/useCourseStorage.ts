@@ -140,6 +140,8 @@ export function useCourseStorage(): UseCourseStorageReturn {
                 if (updates.name !== undefined) supabaseUpdates.name = updates.name;
                 if (updates.instructorName !== undefined) supabaseUpdates.instructor_name = updates.instructorName;
                 if (updates.password !== undefined) supabaseUpdates.password = updates.password;
+                if (updates.institutionId !== undefined) supabaseUpdates.institution_id = updates.institutionId;
+                if (updates.institutionName !== undefined) supabaseUpdates.institution_name = updates.institutionName;
 
                 const { error } = await (await import('../lib/supabase')).supabase
                     .from('courses')

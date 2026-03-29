@@ -1,5 +1,12 @@
 import { supabase, isSupabaseConfigured } from './client';
-import { Course, Submission } from '../../types';
+import { Course, Institution, Submission, UserProfile, UserRole } from '../../types';
+
+async function getCurrentSessionUserId(): Promise<string | null> {
+    if (!isSupabaseConfigured()) return null;
+
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.user?.id || null;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Course Service - Supabase Operations for Courses
@@ -14,6 +21,11 @@ export async function getAllCourses(): Promise<Course[]> {
     }
 
     try {
+        const currentUserId = await getCurrentSessionUserId();
+        if (!currentUserId) {
+            return [];
+        }
+
         // Get courses
         const { data: courses, error: coursesError } = await supabase
             .from('courses')
@@ -40,6 +52,8 @@ export async function getAllCourses(): Promise<Course[]> {
             prompt: course.prompt,
             createdAt: course.created_at ? new Date(course.created_at).getTime() : Date.now(),
             ownerEmail: course.owner_email || '',
+            institutionId: course.institution_id || '',
+            institutionName: course.institution_name || '',
             submissions: (submissions || [])
                 .filter(s => s.course_id === course.id)
                 .map(s => ({
@@ -64,7 +78,7 @@ export async function getAllCourses(): Promise<Course[]> {
         }));
     } catch (error) {
         console.error('Error fetching courses from Supabase:', error);
-        return getCoursesFromLocalStorage();
+        return [];
     }
 }
 
@@ -85,7 +99,9 @@ export async function addCourse(course: Course): Promise<void> {
             instructor_pin_hash: course.instructorPinHash || '',
             password: course.password,
             prompt: course.prompt,
-            owner_email: course.ownerEmail || ''
+            owner_email: course.ownerEmail || '',
+            institution_id: course.institutionId || null,
+            institution_name: course.institutionName || null
         });
 
         if (error) throw error;
@@ -130,9 +146,16 @@ export async function addSubmissionToCourse(
     }
 
     try {
+        const { data: courseData } = await supabase
+            .from('courses')
+            .select('institution_id')
+            .eq('id', courseId)
+            .maybeSingle();
+
         const { error } = await supabase.from('submissions').insert({
             id: submission.id,
             course_id: courseId,
+            institution_id: courseData?.institution_id || null,
             student_name: submission.studentName,
             course_name: submission.courseName,
             timestamp: submission.timestamp,
@@ -222,8 +245,13 @@ export function subscribeToCoursesRealtime(
         )
         .subscribe();
 
+    const { data: authListener } = supabase.auth.onAuthStateChange(() => {
+        getAllCourses().then(onUpdate);
+    });
+
     return () => {
         supabase.removeChannel(coursesChannel);
+        authListener.subscription.unsubscribe();
     };
 }
 
@@ -240,11 +268,16 @@ export async function getStudentHistory(): Promise<Submission[]> {
     }
 
     try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) {
+            return getHistoryFromLocalStorage();
+        }
+
         const deviceId = getDeviceId();
         const { data, error } = await supabase
             .from('student_history')
             .select('*')
-            .eq('device_id', deviceId)
+            .eq('user_id', session.user.id)
             .order('timestamp', { ascending: false });
 
         if (error) throw error;
@@ -284,10 +317,20 @@ export async function addToStudentHistory(submission: Submission): Promise<void>
     }
 
     try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) {
+            addToHistoryLocalStorage(submission);
+            return;
+        }
+
         const deviceId = getDeviceId();
+        const savedSchoolRaw = localStorage.getItem('speakwise_school');
+        const savedSchool = savedSchoolRaw ? JSON.parse(savedSchoolRaw) : null;
         const { error } = await supabase.from('student_history').insert({
             id: submission.id,
+            user_id: session.user.id,
             device_id: deviceId,
+            institution_id: savedSchool?.schoolId || null,
             student_name: submission.studentName,
             course_name: submission.courseName,
             timestamp: submission.timestamp,
@@ -313,6 +356,148 @@ export async function addToStudentHistory(submission: Submission): Promise<void>
     }
 }
 
+/**
+ * Get available institutions.
+ * Uses Supabase when configured and falls back to local seeded workspaces.
+ */
+export async function getInstitutions(): Promise<Institution[]> {
+    if (!isSupabaseConfigured()) {
+        return getInstitutionsFromLocalStorage();
+    }
+
+    try {
+        const { data, error } = await supabase.rpc('list_active_institutions');
+
+        if (error) throw error;
+
+        if (!data || data.length === 0) {
+            return getInstitutionsFromLocalStorage();
+        }
+
+        return data.map((institution) => ({
+            id: institution.id,
+            name: institution.name,
+            domain: institution.domain || '',
+            logoUrl: institution.logo_url || '',
+            primaryColor: institution.primary_color || '',
+            isActive: institution.is_active ?? true
+        }));
+    } catch (error) {
+        console.error('Error fetching institutions:', error);
+        return getInstitutionsFromLocalStorage();
+    }
+}
+
+/**
+ * Validate an institution access code and return the matched institution.
+ */
+export async function validateInstitutionAccessCode(
+    institutionId: string,
+    accessCode: string
+): Promise<Institution | null> {
+    const normalizedInstitutionId = institutionId?.trim();
+    const normalizedCode = accessCode?.trim().toUpperCase();
+
+    if (!normalizedInstitutionId) return null;
+
+    if (isSupabaseConfigured()) {
+        try {
+            const { data, error } = await supabase.rpc('validate_institution_access_code', {
+                institution_id_input: normalizedInstitutionId,
+                access_code_input: normalizedCode
+            });
+
+            if (error) throw error;
+
+            const match = Array.isArray(data) ? data[0] : data;
+            if (match?.id) {
+                return {
+                    id: match.id,
+                    name: match.name,
+                    domain: match.domain || '',
+                    logoUrl: match.logo_url || '',
+                    primaryColor: match.primary_color || '',
+                    isActive: true
+                };
+            }
+            return null;
+        } catch (error) {
+            console.error('Error validating institution access code:', error);
+        }
+    }
+
+    const institutions = getInstitutionsFromLocalStorage();
+    const match = institutions.find((institution) => institution.id === normalizedInstitutionId);
+    if (!match) return null;
+
+    if (match.id === 'guest') {
+        return match;
+    }
+
+    if ((match.accessCode || '').toUpperCase() === normalizedCode) {
+        return match;
+    }
+
+    return null;
+}
+
+/**
+ * Get all user profiles for admin management.
+ */
+export async function getUserProfiles(): Promise<UserProfile[]> {
+    if (!isSupabaseConfigured()) {
+        return getUserProfilesFromLocalStorage();
+    }
+
+    try {
+        const { data, error } = await supabase
+            .from('user_profiles')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        return (data || []).map((profile) => ({
+            id: profile.id,
+            email: profile.email,
+            displayName: profile.display_name || profile.email,
+            role: (profile.role || UserRole.STUDENT) as UserRole,
+            schoolId: profile.school_id || '',
+            schoolName: profile.school_name || '',
+            createdAt: profile.created_at
+        }));
+    } catch (error) {
+        console.error('Error fetching user profiles:', error);
+        return getUserProfilesFromLocalStorage();
+    }
+}
+
+/**
+ * Update a user's role.
+ */
+export async function updateUserRole(userId: string, role: UserRole): Promise<boolean> {
+    if (!isSupabaseConfigured()) {
+        const profiles = getUserProfilesFromLocalStorage().map((profile) =>
+            profile.id === userId ? { ...profile, role } : profile
+        );
+        localStorage.setItem(USER_PROFILES_KEY, JSON.stringify(profiles));
+        return true;
+    }
+
+    try {
+        const { error } = await supabase
+            .from('user_profiles')
+            .update({ role })
+            .eq('id', userId);
+
+        if (error) throw error;
+        return true;
+    } catch (error) {
+        console.error('Error updating user role:', error);
+        return false;
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Device ID Helper (for anonymous student history)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -335,6 +520,40 @@ function getDeviceId(): string {
 
 const COURSES_KEY = 'speakwise_courses';
 const HISTORY_KEY = 'speakwise_student_history';
+const INSTITUTIONS_KEY = 'speakwise_institutions';
+const USER_PROFILES_KEY = 'speakwise_user_profiles';
+
+const FALLBACK_INSTITUTIONS: Institution[] = [
+    {
+        id: 'ua',
+        name: 'University of Alabama',
+        accessCode: 'ROLL2025',
+        domain: 'ua.edu',
+        primaryColor: '#9d2235',
+        isActive: true
+    },
+    {
+        id: 'ou',
+        name: 'University of Oklahoma',
+        accessCode: 'BOOMER2025',
+        domain: 'ou.edu',
+        primaryColor: '#841617',
+        isActive: true
+    },
+    {
+        id: 'demo',
+        name: 'Demo Institution',
+        accessCode: 'DEMO',
+        primaryColor: '#10b981',
+        isActive: true
+    },
+    {
+        id: 'guest',
+        name: 'Guest Access',
+        accessCode: '',
+        isActive: true
+    }
+];
 
 function getCoursesFromLocalStorage(): Course[] {
     try {
@@ -388,6 +607,50 @@ function addToHistoryLocalStorage(submission: Submission): void {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
 }
 
+function getInstitutionsFromLocalStorage(): Institution[] {
+    try {
+        const saved = localStorage.getItem(INSTITUTIONS_KEY);
+        if (!saved) {
+            localStorage.setItem(INSTITUTIONS_KEY, JSON.stringify(FALLBACK_INSTITUTIONS));
+            return FALLBACK_INSTITUTIONS;
+        }
+
+        const parsed = JSON.parse(saved) as Institution[];
+        return parsed.length > 0 ? parsed : FALLBACK_INSTITUTIONS;
+    } catch (e) {
+        return FALLBACK_INSTITUTIONS;
+    }
+}
+
+function getUserProfilesFromLocalStorage(): UserProfile[] {
+    try {
+        const saved = localStorage.getItem(USER_PROFILES_KEY);
+        if (saved) {
+            return JSON.parse(saved);
+        }
+
+        const currentUserRaw = localStorage.getItem('speakwise_user');
+        if (!currentUserRaw) {
+            return [];
+        }
+
+        const currentUser = JSON.parse(currentUserRaw);
+        const seededProfile: UserProfile = {
+            id: currentUser.id,
+            email: currentUser.email,
+            displayName: currentUser.displayName || currentUser.email,
+            role: (currentUser.role || UserRole.STUDENT) as UserRole,
+            schoolId: currentUser.schoolId || '',
+            schoolName: currentUser.schoolName || '',
+            createdAt: new Date().toISOString()
+        };
+        localStorage.setItem(USER_PROFILES_KEY, JSON.stringify([seededProfile]));
+        return [seededProfile];
+    } catch (e) {
+        return [];
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Instructor Management - Database-driven role checking
 // ═══════════════════════════════════════════════════════════════════════════
@@ -416,6 +679,16 @@ export async function checkInstructorStatus(email: string): Promise<boolean> {
     }
 
     try {
+        const { data: profile, error: profileError } = await supabase
+            .from('user_profiles')
+            .select('role')
+            .eq('email', normalizedEmail)
+            .single();
+
+        if (!profileError && profile && ['instructor', 'moderator', 'admin'].includes(profile.role)) {
+            return true;
+        }
+
         // Check instructors table
         const { data, error } = await supabase
             .from('instructors')
@@ -445,8 +718,26 @@ export async function addInstructor(email: string, addedBy: string): Promise<boo
     }
 
     try {
+        const normalizedEmail = email.toLowerCase().trim();
+        const { data: existingProfile, error: profileLookupError } = await supabase
+            .from('user_profiles')
+            .select('id')
+            .eq('email', normalizedEmail)
+            .maybeSingle();
+
+        if (!profileLookupError && existingProfile?.id) {
+            const { error: profileError } = await supabase
+            .from('user_profiles')
+            .update({ role: UserRole.INSTRUCTOR })
+            .eq('email', normalizedEmail);
+
+            if (!profileError) {
+                return true;
+            }
+        }
+
         const { error } = await supabase.from('instructors').insert({
-            email: email.toLowerCase().trim(),
+            email: normalizedEmail,
             added_by: addedBy,
             added_at: new Date().toISOString()
         });
@@ -472,6 +763,16 @@ export async function getAllInstructors(): Promise<string[]> {
     }
 
     try {
+        const { data: profiles, error: profilesError } = await supabase
+            .from('user_profiles')
+            .select('email, role')
+            .in('role', ['instructor', 'moderator', 'admin']);
+
+        if (!profilesError && profiles && profiles.length > 0) {
+            const emailsFromProfiles = profiles.map((profile) => profile.email);
+            return [...new Set([...FALLBACK_INSTRUCTORS, ...emailsFromProfiles])];
+        }
+
         const { data, error } = await supabase
             .from('instructors')
             .select('email')
@@ -500,6 +801,10 @@ export default {
     subscribeToCoursesRealtime,
     getStudentHistory,
     addToStudentHistory,
+    getInstitutions,
+    validateInstitutionAccessCode,
+    getUserProfiles,
+    updateUserRole,
     checkInstructorStatus,
     addInstructor,
     getAllInstructors

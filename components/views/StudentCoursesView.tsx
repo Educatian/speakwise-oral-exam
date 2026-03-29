@@ -8,13 +8,15 @@ interface StudentCoursesViewProps {
     onSelectCourse: (course: Course) => void;
     onViewHistory: () => void;
     onBack: () => void;
+    savedSchool?: { schoolId: string; schoolName: string } | null;
 }
 
 export const StudentCoursesView: React.FC<StudentCoursesViewProps> = ({
     courses,
     onSelectCourse,
     onViewHistory,
-    onBack
+    onBack,
+    savedSchool
 }) => {
     const [searchQuery, setSearchQuery] = useState('');
 
@@ -52,7 +54,15 @@ export const StudentCoursesView: React.FC<StudentCoursesViewProps> = ({
                 {/* Title & Search */}
                 <div className="text-center mb-8">
                     <h1 className="text-3xl font-bold text-white mb-2">Available Courses</h1>
-                    <p className="text-slate-400 mb-6">Select a course to begin your oral examination</p>
+                    <p className="text-slate-400 mb-3">Select a course to begin your oral examination</p>
+                    {savedSchool && (
+                        <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-full mb-6">
+                            <span className="text-[10px] uppercase tracking-[0.2em] text-emerald-400 font-bold">
+                                Institution
+                            </span>
+                            <span className="text-sm text-white">{savedSchool.schoolName}</span>
+                        </div>
+                    )}
 
                     <div className="max-w-md mx-auto">
                         <Input

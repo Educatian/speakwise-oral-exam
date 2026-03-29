@@ -1,33 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Button, Input } from '../ui';
-
-interface School {
-    id: string;
-    name: string;
-}
+import { Institution } from '../../types';
 
 interface SchoolSelectViewProps {
     onSchoolSelect: (schoolId: string, schoolName: string) => void;
     onBack: () => void;
     savedSchool?: { schoolId: string; schoolName: string } | null;
     userName?: string;
+    institutions: Institution[];
+    validateAccessCode: (institutionId: string, accessCode: string) => Promise<Institution | null>;
 }
-
-// Demo schools (will be replaced with Supabase data)
-const DEMO_SCHOOLS: School[] = [
-    { id: 'ua', name: 'University of Alabama' },
-    { id: 'ou', name: 'University of Oklahoma' },
-    { id: 'demo', name: 'Demo Institution' },
-    { id: 'guest', name: 'Guest Access (No School)' }
-];
-
-// Demo passcodes (will be replaced with Supabase validation)
-const DEMO_PASSCODES: Record<string, string> = {
-    'ua': 'ROLL2025',
-    'ou': 'BOOMER2025',
-    'demo': 'DEMO',
-    'guest': '' // No passcode needed
-};
 
 /**
  * School Selection View
@@ -38,7 +20,9 @@ export const SchoolSelectView: React.FC<SchoolSelectViewProps> = ({
     onSchoolSelect,
     onBack,
     savedSchool,
-    userName
+    userName,
+    institutions,
+    validateAccessCode
 }) => {
     const [selectedSchool, setSelectedSchool] = useState<string>(savedSchool?.schoolId || '');
     const [passcode, setPasscode] = useState('');
@@ -77,8 +61,8 @@ export const SchoolSelectView: React.FC<SchoolSelectViewProps> = ({
         }
 
         // Validate passcode
-        const expectedPasscode = DEMO_PASSCODES[selectedSchool];
-        if (passcode.toUpperCase() !== expectedPasscode.toUpperCase()) {
+        const validatedInstitution = await validateAccessCode(selectedSchool, passcode);
+        if (!validatedInstitution) {
             setError('Invalid passcode. Please contact your instructor.');
             return;
         }
@@ -88,13 +72,10 @@ export const SchoolSelectView: React.FC<SchoolSelectViewProps> = ({
         // Simulate API call
         await new Promise(resolve => setTimeout(resolve, 500));
 
-        const school = DEMO_SCHOOLS.find(s => s.id === selectedSchool);
-        onSchoolSelect(selectedSchool, school?.name || 'Unknown School');
+        onSchoolSelect(validatedInstitution.id, validatedInstitution.name);
 
         setIsLoading(false);
     };
-
-    const selectedSchoolName = DEMO_SCHOOLS.find(s => s.id === selectedSchool)?.name;
 
     return (
         <div className="w-full max-w-md mx-auto">
@@ -146,9 +127,9 @@ export const SchoolSelectView: React.FC<SchoolSelectViewProps> = ({
                         disabled={isLoading}
                     >
                         <option value="">-- Select your school --</option>
-                        {DEMO_SCHOOLS.map(school => (
-                            <option key={school.id} value={school.id}>
-                                {school.name}
+                        {institutions.map(institution => (
+                            <option key={institution.id} value={institution.id}>
+                                {institution.name}
                             </option>
                         ))}
                     </select>

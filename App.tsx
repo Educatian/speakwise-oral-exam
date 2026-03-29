@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { AppView, Course, Submission, ADMIN_EMAIL } from './types';
-import { useCourseStorage, useStudentHistory, useAuth } from './hooks';
+import { useCourseStorage, useStudentHistory, useAuth, useInstitutions } from './hooks';
 import { isSupabaseConfigured } from './lib/supabase';
 
 // Views
@@ -46,13 +46,14 @@ const App: React.FC = () => {
   const [userRole, setUserRole] = useState<'student' | 'instructor'>('student');
 
   // Auth hook
-  const { user, isAuthenticated, savedSchool, setSchool, signOut } = useAuth();
+  const { user, isAuthenticated, savedSchool, setSchool, signOut, signIn, signUp, resetPassword } = useAuth();
+  const { institutions, loading: institutionsLoading, validateAccessCode } = useInstitutions();
 
   // Custom hooks for data management (with Supabase)
   const { courses, loading: coursesLoading, addCourse, updateCourse, deleteCourse, addSubmission, deleteSubmission } = useCourseStorage();
   const { history, loading: historyLoading, addToHistory } = useStudentHistory();
 
-  const isLoading = coursesLoading || historyLoading;
+  const isLoading = coursesLoading || historyLoading || institutionsLoading;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Navigation Handlers
@@ -121,19 +122,25 @@ const App: React.FC = () => {
 
   // Handle auth success
   const handleAuthSuccess = useCallback((authUser: { id: string; email: string; displayName: string; role: 'student' | 'instructor' }) => {
-    setStudentName(authUser.displayName);
-    setUserRole(authUser.role);
+    const storedUserRaw = localStorage.getItem('speakwise_user');
+    const persistedUser = storedUserRaw ? JSON.parse(storedUserRaw) : null;
+    const resolvedUser = persistedUser?.email ? persistedUser : authUser;
+
+    setStudentName(resolvedUser.displayName);
+    setUserRole(resolvedUser.role);
 
     // Save user to localStorage for session persistence (critical for course ownership!)
     localStorage.setItem('speakwise_user', JSON.stringify({
-      id: authUser.id,
-      email: authUser.email.toLowerCase(),
-      displayName: authUser.displayName,
-      role: authUser.role
+      id: resolvedUser.id,
+      email: resolvedUser.email.toLowerCase(),
+      displayName: resolvedUser.displayName,
+      role: resolvedUser.role,
+      schoolId: resolvedUser.schoolId,
+      schoolName: resolvedUser.schoolName
     }));
 
     // Instructor also gets session marker
-    if (authUser.role === 'instructor') {
+    if (resolvedUser.role === 'instructor') {
       sessionStorage.setItem('speakwise_instructor', 'true');
       navigateTo(AppView.INSTRUCTOR_DASHBOARD);
     } else {
@@ -215,6 +222,7 @@ const App: React.FC = () => {
         userRole={userRole}
         studentName={studentName}
         savedSchool={savedSchool}
+        institutions={institutions}
         courses={courses}
         history={history}
         activeCourse={activeCourse}
@@ -222,6 +230,10 @@ const App: React.FC = () => {
         navigateTo={navigateTo}
         handleAuthSuccess={handleAuthSuccess}
         handleSchoolSelect={handleSchoolSelect}
+        signIn={signIn}
+        signUp={signUp}
+        resetPassword={resetPassword}
+        validateInstitutionAccessCode={validateAccessCode}
         handleStudentLogin={handleStudentLogin}
         handleInterviewComplete={handleInterviewComplete}
         handleAddCourse={handleAddCourse}

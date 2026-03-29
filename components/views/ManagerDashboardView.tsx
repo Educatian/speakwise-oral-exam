@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import mammoth from 'mammoth';
-import { Course, Submission } from '../../types';
+import { Course, Institution, Submission } from '../../types';
 import { GroupKnowledgeService } from '../../lib/services/GroupKnowledgeService';
 import { Button, Input, Textarea, Modal, PinVerifyModal } from '../ui';
 import { createCoursePromptGenerator } from '../../lib/prompts/interviewerSystem';
@@ -20,6 +20,8 @@ interface ManagerDashboardViewProps {
     onSelectSubmission: (submission: Submission) => void;
     onBack: () => void;
     currentUserEmail?: string; // For access control
+    currentInstitution?: { schoolId: string; schoolName: string } | null;
+    availableInstitutions?: Institution[];
     onAdminPanel?: () => void; // Admin-only panel access
 }
 
@@ -36,6 +38,8 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
     onSelectSubmission,
     onBack,
     currentUserEmail,
+    currentInstitution,
+    availableInstitutions = [],
     onAdminPanel
 }) => {
     // Get email from props or fallback to localStorage
@@ -51,6 +55,7 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
     const [instructorPin, setInstructorPin] = useState('');
     const [coursePassword, setCoursePassword] = useState('');
     const [coursePrompt, setCoursePrompt] = useState('');
+    const [selectedInstitutionId, setSelectedInstitutionId] = useState(currentInstitution?.schoolId || '');
     const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false);
     const [formError, setFormError] = useState<string | null>(null);
 
@@ -282,6 +287,10 @@ Only output valid JSON, nothing else.`
             setFormError('Student passcode is required.');
             return;
         }
+        if (!selectedInstitutionId) {
+            setFormError('Institution is required so this course can be deployed in the right workspace.');
+            return;
+        }
         if (coursePassword.length < 4) {
             setFormError('Passcode must be at least 4 characters.');
             return;
@@ -295,13 +304,17 @@ Only output valid JSON, nothing else.`
         const tempId = Math.random().toString(36).substring(2, 8).toUpperCase();
         const pinHash = await hashPin(instructorPin, tempId);
 
+        const selectedInstitution = availableInstitutions.find((institution) => institution.id === selectedInstitutionId);
+
         onAddCourse({
             name: courseName.trim(),
             instructorName: instructorName.trim(),
             instructorPinHash: pinHash,
             password: coursePassword,
             prompt: coursePrompt.trim(),
-            ownerEmail: currentUserEmail // Set owner for visibility control
+            ownerEmail: currentUserEmail, // Set owner for visibility control
+            institutionId: selectedInstitutionId,
+            institutionName: selectedInstitution?.name || currentInstitution?.schoolName || ''
         });
 
         // Reset form
@@ -310,6 +323,7 @@ Only output valid JSON, nothing else.`
         setInstructorPin('');
         setCoursePassword('');
         setCoursePrompt('');
+        setSelectedInstitutionId(currentInstitution?.schoolId || '');
         setUploadedFiles([]);
         setExtractedQuestions([]);
         setExtractedContext('');
@@ -351,7 +365,13 @@ Only output valid JSON, nothing else.`
 
     const visibleCourses = isAdmin
         ? courses
-        : courses.filter(c => c.ownerEmail?.toLowerCase() === effectiveEmail?.toLowerCase());
+        : courses.filter(c => {
+            const matchesOwner = c.ownerEmail?.toLowerCase() === effectiveEmail?.toLowerCase();
+            const matchesInstitution = currentInstitution?.schoolId
+                ? c.institutionId === currentInstitution.schoolId || !c.institutionId
+                : true;
+            return matchesOwner || matchesInstitution;
+        });
 
     // Get all submissions sorted by timestamp (only from visible courses)
     const allSubmissions = visibleCourses
@@ -405,6 +425,29 @@ Only output valid JSON, nothing else.`
                             onChange={(e) => setInstructorName(e.target.value)}
                             aria-label="Instructor name"
                         />
+
+                        <div className="space-y-2">
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">
+                                Institution Workspace
+                            </label>
+                            <select
+                                value={selectedInstitutionId}
+                                onChange={(e) => setSelectedInstitutionId(e.target.value)}
+                                className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all"
+                            >
+                                <option value="">Select institution</option>
+                                {availableInstitutions
+                                    .filter((institution) => institution.id !== 'guest')
+                                    .map((institution) => (
+                                        <option key={institution.id} value={institution.id}>
+                                            {institution.name}
+                                        </option>
+                                    ))}
+                            </select>
+                            <p className="text-xs text-slate-500">
+                                Courses are scoped to an institution so they can be rolled out cleanly by campus or program.
+                            </p>
+                        </div>
 
                         <Input
                             type="password"

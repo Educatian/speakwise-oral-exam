@@ -3,7 +3,8 @@ import { Submission } from '../types';
 import {
     getStudentHistory,
     addToStudentHistory,
-    isSupabaseConfigured
+    isSupabaseConfigured,
+    supabase
 } from '../lib/supabase';
 
 interface UseStudentHistoryReturn {
@@ -54,6 +55,18 @@ export function useStudentHistory(): UseStudentHistoryReturn {
         }
 
         loadHistory();
+
+        if (!isSupabaseConfigured()) {
+            return;
+        }
+
+        const { data: authListener } = supabase.auth.onAuthStateChange(() => {
+            loadHistory();
+        });
+
+        return () => {
+            authListener.subscription.unsubscribe();
+        };
     }, []);
 
     // Persist to localStorage when history changes (fallback mode)

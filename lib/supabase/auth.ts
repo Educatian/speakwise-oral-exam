@@ -36,7 +36,9 @@ export async function signUp(
     email: string,
     password: string,
     displayName: string,
-    role: 'student' | 'instructor'
+    role: 'student' | 'instructor',
+    schoolId?: string,
+    schoolName?: string
 ): Promise<AuthResult> {
     if (!isSupabaseConfigured()) {
         // Fallback for local development without Supabase
@@ -44,9 +46,14 @@ export async function signUp(
             id: `local_${Date.now()}`,
             email,
             displayName,
-            role
+            role,
+            schoolId,
+            schoolName
         };
         localStorage.setItem('speakwise_user', JSON.stringify(localUser));
+        if (schoolId && schoolName) {
+            localStorage.setItem('speakwise_school', JSON.stringify({ schoolId, schoolName }));
+        }
         return { success: true, user: localUser };
     }
 
@@ -75,7 +82,9 @@ export async function signUp(
                 id: authData.user.id,
                 email,
                 display_name: displayName,
-                role
+                role,
+                school_id: schoolId || null,
+                school_name: schoolName || null
             });
 
         if (profileError) {
@@ -87,7 +96,9 @@ export async function signUp(
             id: authData.user.id,
             email,
             displayName,
-            role
+            role,
+            schoolId,
+            schoolName
         };
 
         return { success: true, user };

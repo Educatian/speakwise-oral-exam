@@ -9,7 +9,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 // 2. Create a new project
 // 3. Go to Project Settings > API
 // 4. Copy the Project URL and anon/public key
-// 5. Create tables using the SQL below
+// 5. Create tables using supabase/production_schema.sql
 //
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -32,7 +32,9 @@ export const supabase: SupabaseClient = createClient(
 );
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Database Schema SQL (Run this in Supabase SQL Editor)
+// Database Schema SQL
+// Run supabase/production_schema.sql in Supabase SQL Editor.
+// The legacy reference block below is kept only as historical context.
 // ═══════════════════════════════════════════════════════════════════════════
 /*
 
