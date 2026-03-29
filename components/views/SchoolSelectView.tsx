@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Button, Input } from '../ui';
 import { Institution } from '../../types';
 
@@ -11,11 +11,6 @@ interface SchoolSelectViewProps {
     validateAccessCode: (institutionId: string, accessCode: string) => Promise<Institution | null>;
 }
 
-/**
- * School Selection View
- * Allows users to select their school and enter passcode
- * Remembers last selection for returning users
- */
 export const SchoolSelectView: React.FC<SchoolSelectViewProps> = ({
     onSchoolSelect,
     onBack,
@@ -25,190 +20,221 @@ export const SchoolSelectView: React.FC<SchoolSelectViewProps> = ({
     validateAccessCode
 }) => {
     const [selectedSchool, setSelectedSchool] = useState<string>(savedSchool?.schoolId || '');
+    const [searchQuery, setSearchQuery] = useState('');
     const [passcode, setPasscode] = useState('');
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-    const [showPasscodeField, setShowPasscodeField] = useState(false);
 
-    // If user has saved school, auto-show passcode field
     useEffect(() => {
-        if (savedSchool?.schoolId && savedSchool.schoolId !== 'guest') {
+        if (savedSchool?.schoolId) {
             setSelectedSchool(savedSchool.schoolId);
-            setShowPasscodeField(true);
         }
     }, [savedSchool]);
 
-    const handleSchoolChange = (schoolId: string) => {
-        setSelectedSchool(schoolId);
-        setPasscode('');
-        setError('');
-        setShowPasscodeField(schoolId !== 'guest');
-    };
+    const filteredInstitutions = useMemo(() => {
+        return institutions.filter((institution) =>
+            institution.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            institution.domain?.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+    }, [institutions, searchQuery]);
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const selectedInstitution = institutions.find((institution) => institution.id === selectedSchool);
+
+    const handleSubmit = async (event: React.FormEvent) => {
+        event.preventDefault();
         setError('');
 
         if (!selectedSchool) {
-            setError('Please select a school');
+            setError('Please select an institution.');
             return;
         }
 
-        // Guest access - no passcode needed
         if (selectedSchool === 'guest') {
             onSchoolSelect('guest', 'Guest Access');
             return;
         }
 
-        // Validate passcode
+        setIsLoading(true);
         const validatedInstitution = await validateAccessCode(selectedSchool, passcode);
+        setIsLoading(false);
+
         if (!validatedInstitution) {
-            setError('Invalid passcode. Please contact your instructor.');
+            setError('The institution access code did not match. Please check with your instructor.');
             return;
         }
 
-        setIsLoading(true);
-
-        // Simulate API call
-        await new Promise(resolve => setTimeout(resolve, 500));
-
         onSchoolSelect(validatedInstitution.id, validatedInstitution.name);
-
-        setIsLoading(false);
     };
 
     return (
-        <div className="w-full max-w-md mx-auto">
-            {/* Header */}
-            <div className="text-center mb-8">
-                <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-blue-400 to-indigo-600 rounded-2xl flex items-center justify-center shadow-xl shadow-blue-500/20">
-                    <span className="text-3xl">🏫</span>
+        <div className="w-full max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-[1.05fr_0.95fr] gap-6 animate-fade-in">
+            <section className="glass-panel rounded-3xl p-8 lg:p-10">
+                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-slate-800 bg-slate-900/60 mb-6">
+                    <span className="text-[10px] uppercase tracking-[0.3em] text-slate-500 font-bold">
+                        Institution access
+                    </span>
                 </div>
-                <h2 className="text-2xl font-bold text-white mb-2">Select Your School</h2>
-                <p className="text-slate-400 text-sm">
-                    {userName ? `Welcome, ${userName}!` : 'Choose your institution to access courses'}
-                </p>
-            </div>
 
-            {/* Saved School Quick Access */}
-            {savedSchool && savedSchool.schoolId !== 'guest' && (
-                <div className="mb-6 p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">
-                    <div className="flex items-center justify-between">
+                <h2 className="text-3xl font-bold text-white mb-3">Choose your institution workspace</h2>
+                <p className="text-slate-400 text-sm leading-relaxed max-w-2xl">
+                    {userName
+                        ? `Welcome, ${userName}. Select the institution workspace your course belongs to.`
+                        : 'Select the correct institution so we can show the courses and permissions that belong to you.'}
+                </p>
+
+                {savedSchool && savedSchool.schoolId !== 'guest' && (
+                    <div className="mt-6 p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl flex items-center justify-between gap-3">
                         <div>
-                            <p className="text-xs text-emerald-400 font-bold uppercase mb-1">Last Used</p>
+                            <p className="text-xs text-emerald-400 font-bold uppercase tracking-[0.2em] mb-1">Recent workspace</p>
                             <p className="text-white font-medium">{savedSchool.schoolName}</p>
                         </div>
                         <Button
                             variant="primary"
                             size="sm"
-                            onClick={() => {
-                                setSelectedSchool(savedSchool.schoolId);
-                                setShowPasscodeField(true);
-                            }}
+                            onClick={() => setSelectedSchool(savedSchool.schoolId)}
                         >
-                            Use Again →
+                            Use this workspace
                         </Button>
                     </div>
-                </div>
-            )}
+                )}
 
-            {/* School Selection Form */}
-            <form onSubmit={handleSubmit} className="space-y-4">
-                {/* School Dropdown */}
-                <div>
-                    <label htmlFor="school" className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                        Institution
+                <div className="mt-6">
+                    <label htmlFor="institution-search" className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                        Search institutions
                     </label>
-                    <select
-                        id="school"
-                        value={selectedSchool}
-                        onChange={(e) => handleSchoolChange(e.target.value)}
-                        className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all"
-                        disabled={isLoading}
-                    >
-                        <option value="">-- Select your school --</option>
-                        {institutions.map(institution => (
-                            <option key={institution.id} value={institution.id}>
-                                {institution.name}
-                            </option>
-                        ))}
-                    </select>
+                    <Input
+                        id="institution-search"
+                        type="text"
+                        value={searchQuery}
+                        onChange={(event) => setSearchQuery(event.target.value)}
+                        placeholder="Search by institution name or domain"
+                    />
                 </div>
 
-                {/* Passcode Field */}
-                {showPasscodeField && selectedSchool !== 'guest' && (
-                    <div className="animate-fadeIn">
-                        <label htmlFor="passcode" className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                            School Passcode 🔑
+                <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[380px] overflow-y-auto custom-scrollbar pr-1">
+                    {filteredInstitutions.map((institution) => {
+                        const isSelected = selectedSchool === institution.id;
+                        return (
+                            <button
+                                key={institution.id}
+                                type="button"
+                                onClick={() => {
+                                    setSelectedSchool(institution.id);
+                                    setError('');
+                                }}
+                                className={`rounded-2xl border p-4 text-left transition-all ${
+                                    isSelected
+                                        ? 'border-emerald-500/40 bg-emerald-500/10'
+                                        : 'border-slate-800 bg-slate-900/40 hover:border-slate-700'
+                                }`}
+                            >
+                                <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                        <p className="text-sm font-semibold text-white">{institution.name}</p>
+                                        <p className="text-xs text-slate-500 mt-1">
+                                            {institution.id === 'guest'
+                                                ? 'Open demo workspace'
+                                                : institution.domain || 'Private institution workspace'}
+                                        </p>
+                                    </div>
+                                    <span
+                                        className="w-3 h-3 rounded-full flex-shrink-0 mt-1"
+                                        style={{ backgroundColor: institution.primaryColor || '#10b981' }}
+                                    />
+                                </div>
+                            </button>
+                        );
+                    })}
+                </div>
+
+                {filteredInstitutions.length === 0 && (
+                    <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-900/40 p-5 text-center">
+                        <p className="text-sm font-medium text-white">No institution matched that search.</p>
+                        <p className="text-sm text-slate-400 mt-1">
+                            Try a broader name, a domain keyword, or contact support if your institution has not been added yet.
+                        </p>
+                    </div>
+                )}
+            </section>
+
+            <aside className="glass-panel-light rounded-3xl p-8 lg:p-10">
+                <h3 className="text-xl font-semibold text-white mb-2">
+                    {selectedInstitution ? selectedInstitution.name : 'Confirm your workspace'}
+                </h3>
+                <p className="text-sm text-slate-400 leading-relaxed">
+                    {selectedInstitution?.id === 'guest'
+                        ? 'Guest access opens the demo experience without a restricted institution workspace.'
+                        : 'Enter the institution access code provided by your instructor or program admin.'}
+                </p>
+
+                <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+                    <div>
+                        <label htmlFor="institution-code" className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                            Institution access code
                         </label>
                         <Input
-                            id="passcode"
+                            id="institution-code"
                             type="text"
                             value={passcode}
-                            onChange={(e) => setPasscode(e.target.value.toUpperCase())}
-                            placeholder="Enter passcode from instructor"
+                            onChange={(event) => setPasscode(event.target.value.toUpperCase())}
+                            placeholder={selectedInstitution?.id === 'guest' ? 'No code required' : 'Enter the access code'}
                             maxLength={20}
-                            disabled={isLoading}
+                            disabled={isLoading || selectedInstitution?.id === 'guest'}
                             className="uppercase tracking-widest font-mono"
                         />
-                        <p className="mt-2 text-xs text-slate-600">
-                            💡 Your instructor will provide this code
-                        </p>
                     </div>
-                )}
 
-                {/* Guest Access Info */}
-                {selectedSchool === 'guest' && (
-                    <div className="p-4 bg-slate-800/50 border border-slate-700 rounded-xl">
-                        <p className="text-slate-400 text-sm">
-                            ℹ️ <strong>Guest Access</strong> allows you to explore the platform with demo content.
-                            No passcode required.
-                        </p>
-                    </div>
-                )}
-
-                {/* Error Message */}
-                {error && (
-                    <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm" role="alert">
-                        ⚠️ {error}
-                    </div>
-                )}
-
-                {/* Submit Button */}
-                <Button
-                    type="submit"
-                    variant="primary"
-                    size="lg"
-                    className="w-full"
-                    disabled={isLoading || !selectedSchool}
-                >
-                    {isLoading ? (
-                        <span className="flex items-center justify-center gap-2">
-                            <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                            Verifying...
-                        </span>
-                    ) : (
-                        <>Continue to Courses →</>
+                    {selectedInstitution && (
+                        <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
+                            <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600 font-bold mb-2">Selected workspace</p>
+                            <p className="text-white font-medium">{selectedInstitution.name}</p>
+                            <p className="text-xs text-slate-500 mt-1">
+                                {selectedInstitution.domain || 'Institution-specific course access'}
+                            </p>
+                        </div>
                     )}
-                </Button>
-            </form>
 
-            {/* Back Button */}
-            <div className="mt-6 text-center">
-                <button
-                    onClick={onBack}
-                    className="text-slate-600 hover:text-slate-400 text-sm transition-colors"
-                >
-                    ← Back
-                </button>
-            </div>
+                    {error && (
+                        <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm" role="alert">
+                            {error}
+                        </div>
+                    )}
 
-            {/* Help Text */}
-            <div className="mt-8 text-center">
-                <p className="text-slate-600 text-xs">
-                    Don't see your school? Contact <span className="text-slate-500">support@speakwise.edu</span>
-                </p>
-            </div>
+                    <Button
+                        type="submit"
+                        variant="primary"
+                        size="lg"
+                        className="w-full"
+                        disabled={isLoading || !selectedSchool}
+                    >
+                        {isLoading ? 'Verifying...' : 'Continue to Courses'}
+                    </Button>
+                </form>
+
+                <div className="mt-8 pt-6 border-t border-slate-800 space-y-3">
+                    <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
+                        <p className="text-sm font-semibold text-white">Why this step matters</p>
+                        <p className="text-sm text-slate-400 mt-1">
+                            Institution selection keeps course visibility, permissions, and reporting aligned with the right deployment workspace.
+                        </p>
+                    </div>
+                    <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
+                        <p className="text-sm font-semibold text-white">Need help?</p>
+                        <p className="text-sm text-slate-400 mt-1">
+                            If your institution is missing or your code does not work, contact your instructor or platform support.
+                        </p>
+                    </div>
+                </div>
+
+                <div className="mt-6 text-center">
+                    <button
+                        onClick={onBack}
+                        className="text-slate-600 hover:text-slate-400 text-sm transition-colors"
+                    >
+                        Back
+                    </button>
+                </div>
+            </aside>
         </div>
     );
 };

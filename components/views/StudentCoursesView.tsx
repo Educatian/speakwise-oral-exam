@@ -87,6 +87,11 @@ export const StudentCoursesView: React.FC<StudentCoursesViewProps> = ({
                         <p className="text-slate-500">
                             {searchQuery ? 'No courses match your search' : 'No courses available yet'}
                         </p>
+                        {savedSchool && !searchQuery && (
+                            <p className="text-sm text-slate-600 mt-2">
+                                No courses are currently visible for {savedSchool.schoolName}.
+                            </p>
+                        )}
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

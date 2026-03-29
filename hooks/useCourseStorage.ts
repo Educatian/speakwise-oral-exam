@@ -7,7 +7,8 @@ import {
     addSubmissionToCourse,
     deleteSubmission as deleteSubmissionFromSupabase,
     subscribeToCoursesRealtime,
-    isSupabaseConfigured
+    isSupabaseConfigured,
+    supabase
 } from '../lib/supabase';
 
 interface UseCourseStorageReturn {
@@ -143,7 +144,7 @@ export function useCourseStorage(): UseCourseStorageReturn {
                 if (updates.institutionId !== undefined) supabaseUpdates.institution_id = updates.institutionId;
                 if (updates.institutionName !== undefined) supabaseUpdates.institution_name = updates.institutionName;
 
-                const { error } = await (await import('../lib/supabase')).supabase
+                const { error } = await supabase
                     .from('courses')
                     .update(supabaseUpdates)
                     .eq('id', courseId);

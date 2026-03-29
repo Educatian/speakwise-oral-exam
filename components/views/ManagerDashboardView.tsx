@@ -58,6 +58,7 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
     const [selectedInstitutionId, setSelectedInstitutionId] = useState(currentInstitution?.schoolId || '');
     const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false);
     const [formError, setFormError] = useState<string | null>(null);
+    const [leftPanelMode, setLeftPanelMode] = useState<'create' | 'library'>('create');
 
     // Modal state
     const [viewingCourse, setViewingCourse] = useState<Course | null>(null);
@@ -379,13 +380,19 @@ Only output valid JSON, nothing else.`
         .sort((a, b) => b.timestamp - a.timestamp);
 
     const totalSubmissions = allSubmissions.length;
+    const currentInstitutionName = currentInstitution?.schoolName || 'All Institutions';
 
     return (
         <div className="w-full max-w-6xl mx-auto space-y-8 animate-slide-in-up pb-20">
             {/* Header */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div className="flex items-center gap-4">
-                    <h2 className="text-2xl font-bold text-white">Course Manager Dashboard</h2>
+                    <div>
+                        <h2 className="text-2xl font-bold text-white">Course Manager Dashboard</h2>
+                        <p className="text-sm text-slate-500 mt-1">
+                            Operating in {currentInstitutionName}
+                        </p>
+                    </div>
                     {/* Admin Panel Button - only for admins */}
                     {onAdminPanel && (
                         <button
@@ -405,10 +412,45 @@ Only output valid JSON, nothing else.`
                 </Button>
             </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="glass-panel-light rounded-2xl p-4">
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600 font-bold mb-2">Institution scope</p>
+                    <p className="text-lg font-semibold text-white">{currentInstitutionName}</p>
+                    <p className="text-xs text-slate-500 mt-2">Courses and access stay aligned with the selected deployment workspace.</p>
+                </div>
+                <div className="glass-panel-light rounded-2xl p-4">
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600 font-bold mb-2">Visible courses</p>
+                    <p className="text-lg font-semibold text-white">{visibleCourses.length}</p>
+                    <p className="text-xs text-slate-500 mt-2">Live workspaces you can manage right now.</p>
+                </div>
+                <div className="glass-panel-light rounded-2xl p-4">
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600 font-bold mb-2">Total submissions</p>
+                    <p className="text-lg font-semibold text-white">{totalSubmissions}</p>
+                    <p className="text-xs text-slate-500 mt-2">Interview attempts collected across your visible courses.</p>
+                </div>
+            </div>
+
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                 {/* Left Column - Create Course & List */}
                 <div className="lg:col-span-4 space-y-6">
-                    {/* Create Course Form */}
+                    <div className="glass-panel-light rounded-2xl p-2 flex gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setLeftPanelMode('create')}
+                            className={`flex-1 dashboard-tab ${leftPanelMode === 'create' ? 'dashboard-tab-active' : ''}`}
+                        >
+                            Build Course
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setLeftPanelMode('library')}
+                            className={`flex-1 dashboard-tab ${leftPanelMode === 'library' ? 'dashboard-tab-active' : ''}`}
+                        >
+                            Course Library
+                        </button>
+                    </div>
+
+                    {leftPanelMode === 'create' && (
                     <div className="glass-panel p-6 rounded-3xl space-y-4">
                         <h3 className="text-lg font-semibold text-emerald-400">Add New Course</h3>
 
@@ -621,12 +663,21 @@ Only output valid JSON, nothing else.`
                             Create Course
                         </Button>
                     </div>
+                    )}
 
-                    {/* Live Courses List */}
+                    {leftPanelMode === 'library' && (
                     <div className="glass-panel p-6 rounded-3xl">
-                        <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest mb-4">
-                            Live Courses
-                        </h3>
+                        <div className="flex items-center justify-between gap-3 mb-4">
+                            <div>
+                                <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest">
+                                    Live Courses
+                                </h3>
+                                <p className="text-xs text-slate-600 mt-1">
+                                    Review or remove institution-scoped course workspaces.
+                                </p>
+                            </div>
+                            <span className="badge badge-accent">{visibleCourses.length}</span>
+                        </div>
 
                         <div className="space-y-3">
                             {visibleCourses.length === 0 ? (
@@ -642,6 +693,11 @@ Only output valid JSON, nothing else.`
                                             <p className="text-[10px] text-indigo-400 font-mono">
                                                 ID: {c.id} | by {c.instructorName || 'Unknown'}
                                             </p>
+                                            {c.institutionName && (
+                                                <p className="text-[10px] text-slate-500 mt-1">
+                                                    Workspace: {c.institutionName}
+                                                </p>
+                                            )}
                                         </div>
                                         <div className="flex items-center gap-2 flex-shrink-0">
                                             {/* Verified indicator */}
@@ -677,6 +733,7 @@ Only output valid JSON, nothing else.`
                             )}
                         </div>
                     </div>
+                    )}
                 </div>
 
                 {/* Right Column - Submissions Feed */}

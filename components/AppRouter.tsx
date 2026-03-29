@@ -1,20 +1,39 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { AppView, Course, Institution, Submission, ADMIN_EMAIL } from '../types';
 
-import { LandingView } from './views/LandingView';
-import { InstructorLoginView } from './views/InstructorLoginView';
-import { StudentCoursesView } from './views/StudentCoursesView';
-
-import {
-    UnifiedAuthView,
-    SchoolSelectView,
-    AdminPanelView,
-    ManagerDashboardView,
-    StudentLoginView,
-    StudentHistoryView,
-    InterviewSessionView,
-    StudentResultsView
-} from './views';
+const LandingView = lazy(() =>
+    import('./views/LandingView').then((module) => ({ default: module.LandingView }))
+);
+const InstructorLoginView = lazy(() =>
+    import('./views/InstructorLoginView').then((module) => ({ default: module.InstructorLoginView }))
+);
+const StudentCoursesView = lazy(() =>
+    import('./views/StudentCoursesView').then((module) => ({ default: module.StudentCoursesView }))
+);
+const UnifiedAuthView = lazy(() =>
+    import('./views/UnifiedAuthView').then((module) => ({ default: module.UnifiedAuthView }))
+);
+const SchoolSelectView = lazy(() =>
+    import('./views/SchoolSelectView').then((module) => ({ default: module.SchoolSelectView }))
+);
+const AdminPanelView = lazy(() =>
+    import('./views/AdminPanelView').then((module) => ({ default: module.AdminPanelView }))
+);
+const ManagerDashboardView = lazy(() =>
+    import('./views/ManagerDashboardView').then((module) => ({ default: module.ManagerDashboardView }))
+);
+const StudentLoginView = lazy(() =>
+    import('./views/StudentLoginView').then((module) => ({ default: module.StudentLoginView }))
+);
+const StudentHistoryView = lazy(() =>
+    import('./views/StudentHistoryView').then((module) => ({ default: module.StudentHistoryView }))
+);
+const InterviewSessionView = lazy(() =>
+    import('./views/InterviewSessionView').then((module) => ({ default: module.InterviewSessionView }))
+);
+const StudentResultsView = lazy(() =>
+    import('./views/StudentResultsView').then((module) => ({ default: module.StudentResultsView }))
+);
 
 interface AppRouterProps {
     view: AppView;
@@ -29,7 +48,7 @@ interface AppRouterProps {
     history: Submission[];
     activeCourse: Course | null;
     returnToLanding: () => void;
-    navigateTo: (view: AppView) => void;
+    navigateTo: (view: AppView, role?: 'student' | 'instructor') => void;
     handleAuthSuccess: (user: any) => void;
     handleSchoolSelect: (schoolId: string, name: string) => void;
     signIn: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
@@ -46,13 +65,20 @@ interface AppRouterProps {
     handleStudentLogin: (course: Course, name: string) => void;
     handleInterviewComplete: (submission: Submission) => void;
     handleAddCourse: (courseData: Omit<Course, 'id' | 'submissions'>) => void;
-    updateCourse: (course: Course) => void;
+    updateCourse: (courseId: string, updates: Partial<Course>) => void;
     deleteCourse: (id: string) => void;
     deleteSubmission: (courseId: string, submissionId: string) => void;
     setSelectedSubmission: (submission: Submission | null) => void;
     setActiveCourse: (course: Course | null) => void;
     lastSubmission: Submission | null;
 }
+
+const RouteFallback: React.FC = () => (
+    <div className="flex flex-col items-center justify-center min-h-[40vh] gap-4">
+        <div className="w-10 h-10 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
+        <p className="text-slate-500 text-sm">Loading workspace...</p>
+    </div>
+);
 
 export const AppRouter: React.FC<AppRouterProps> = ({
     view,
@@ -84,7 +110,6 @@ export const AppRouter: React.FC<AppRouterProps> = ({
     setActiveCourse,
     lastSubmission
 }) => {
-    // Show loading state while Supabase data loads
     if (isLoading) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[50vh] gap-4">
@@ -96,31 +121,28 @@ export const AppRouter: React.FC<AppRouterProps> = ({
         );
     }
 
-    const checkIsAdmin = (currentEmail: string | undefined | null) => currentEmail?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+    const checkIsAdmin = (currentEmail: string | undefined | null) =>
+        currentEmail?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
 
     const storedUser = localStorage.getItem('speakwise_user');
     const storedEmail = storedUser ? JSON.parse(storedUser)?.email : null;
     const resolvedEmail = user?.email || storedEmail;
     const isAdmin = checkIsAdmin(resolvedEmail);
     const activeInstitutionId = savedSchool?.schoolId || user?.schoolId || null;
-    const studentVisibleCourses = activeInstitutionId && activeInstitutionId !== 'guest'
-        ? courses.filter(course =>
-            !course.institutionId ||
-            course.institutionId === activeInstitutionId
-        )
-        : courses;
+    const studentVisibleCourses =
+        activeInstitutionId && activeInstitutionId !== 'guest'
+            ? courses.filter((course) => !course.institutionId || course.institutionId === activeInstitutionId)
+            : courses;
+
+    let viewNode: React.ReactNode = null;
 
     switch (view) {
         case AppView.LANDING:
-            return (
-                <LandingView
-                    onNavigate={navigateTo}
-                />
-            );
+            viewNode = <LandingView onNavigate={navigateTo} />;
+            break;
 
-        // New unified auth flow
         case AppView.UNIFIED_AUTH:
-            return (
+            viewNode = (
                 <UnifiedAuthView
                     onAuthSuccess={handleAuthSuccess}
                     onBack={returnToLanding}
@@ -131,9 +153,10 @@ export const AppRouter: React.FC<AppRouterProps> = ({
                     resetPassword={resetPassword}
                 />
             );
+            break;
 
         case AppView.SCHOOL_SELECT:
-            return (
+            viewNode = (
                 <SchoolSelectView
                     onSchoolSelect={handleSchoolSelect}
                     onBack={() => navigateTo(AppView.UNIFIED_AUTH)}
@@ -143,25 +166,29 @@ export const AppRouter: React.FC<AppRouterProps> = ({
                     validateAccessCode={validateInstitutionAccessCode}
                 />
             );
+            break;
 
         case AppView.INSTRUCTOR_LOGIN:
-            return (
+            viewNode = (
                 <InstructorLoginView
                     onLogin={() => navigateTo(AppView.INSTRUCTOR_DASHBOARD)}
                     onBack={returnToLanding}
                 />
             );
+            break;
 
         case AppView.ADMIN_PANEL:
-            return (
+            viewNode = (
                 <AdminPanelView
                     currentUserEmail={user?.email}
                     onBack={() => navigateTo(AppView.INSTRUCTOR_DASHBOARD)}
                 />
             );
+            break;
 
         case AppView.INSTRUCTOR_DASHBOARD:
-            return (
+        case AppView.MANAGER_DASHBOARD:
+            viewNode = (
                 <ManagerDashboardView
                     courses={courses}
                     onAddCourse={handleAddCourse}
@@ -171,14 +198,17 @@ export const AppRouter: React.FC<AppRouterProps> = ({
                     onSelectSubmission={setSelectedSubmission}
                     onBack={returnToLanding}
                     currentUserEmail={resolvedEmail}
-                    currentInstitution={savedSchool || (user?.schoolId ? { schoolId: user.schoolId, schoolName: user.schoolName } : null)}
+                    currentInstitution={
+                        savedSchool || (user?.schoolId ? { schoolId: user.schoolId, schoolName: user.schoolName } : null)
+                    }
                     availableInstitutions={institutions}
                     onAdminPanel={isAdmin ? () => navigateTo(AppView.ADMIN_PANEL) : undefined}
                 />
             );
+            break;
 
         case AppView.STUDENT_COURSES:
-            return (
+            viewNode = (
                 <StudentCoursesView
                     courses={studentVisibleCourses}
                     onSelectCourse={(course) => {
@@ -190,9 +220,10 @@ export const AppRouter: React.FC<AppRouterProps> = ({
                     savedSchool={savedSchool}
                 />
             );
+            break;
 
         case AppView.STUDENT_LOGIN:
-            return (
+            viewNode = (
                 <StudentLoginView
                     courses={courses}
                     selectedCourse={activeCourse}
@@ -205,63 +236,57 @@ export const AppRouter: React.FC<AppRouterProps> = ({
                     }}
                 />
             );
+            break;
 
         case AppView.STUDENT_HISTORY:
-            return (
+            viewNode = (
                 <StudentHistoryView
                     submissions={history}
                     onSelectSubmission={setSelectedSubmission}
                     onBack={returnToLanding}
                 />
             );
+            break;
 
         case AppView.STUDENT_INTERVIEW:
-            if (!activeCourse) return null;
-            return (
+            viewNode = activeCourse ? (
                 <InterviewSessionView
                     course={activeCourse}
                     studentName={studentName}
                     onComplete={handleInterviewComplete}
                     onBack={returnToLanding}
                 />
-            );
+            ) : null;
+            break;
 
-        case AppView.STUDENT_RESULTS:
-            if (!lastSubmission) return null;
-            // Find peer submissions from the same course
-            const matchingCourse = courses.find(c =>
-                c.name === lastSubmission.courseName ||
-                c.submissions.some(s => s.id === lastSubmission.id)
+        case AppView.STUDENT_RESULTS: {
+            if (!lastSubmission) {
+                viewNode = null;
+                break;
+            }
+
+            const matchingCourse = courses.find(
+                (course) =>
+                    course.name === lastSubmission.courseName ||
+                    course.submissions.some((submission) => submission.id === lastSubmission.id)
             );
             const peerSubs = matchingCourse
-                ? matchingCourse.submissions.filter(s => s.id !== lastSubmission.id)
+                ? matchingCourse.submissions.filter((submission) => submission.id !== lastSubmission.id)
                 : [];
-            return (
+
+            viewNode = (
                 <StudentResultsView
                     submission={lastSubmission}
                     peerSubmissions={peerSubs}
                     onBack={returnToLanding}
                 />
             );
-
-        case AppView.MANAGER_DASHBOARD:
-            return (
-                <ManagerDashboardView
-                    courses={courses}
-                    onAddCourse={handleAddCourse}
-                    onUpdateCourse={updateCourse}
-                    onDeleteCourse={deleteCourse}
-                    onDeleteSubmission={deleteSubmission}
-                    onSelectSubmission={setSelectedSubmission}
-                    onBack={returnToLanding}
-                    currentUserEmail={resolvedEmail}
-                    currentInstitution={savedSchool || (user?.schoolId ? { schoolId: user.schoolId, schoolName: user.schoolName } : null)}
-                    availableInstitutions={institutions}
-                    onAdminPanel={isAdmin ? () => navigateTo(AppView.ADMIN_PANEL) : undefined}
-                />
-            );
+            break;
+        }
 
         default:
-            return null;
+            viewNode = null;
     }
+
+    return <Suspense fallback={<RouteFallback />}>{viewNode}</Suspense>;
 };

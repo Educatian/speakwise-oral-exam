@@ -1,29 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { Suspense, lazy, useState, useEffect, useCallback } from 'react';
 import { AppView, Course, Submission, ADMIN_EMAIL } from './types';
 import { useCourseStorage, useStudentHistory, useAuth, useInstitutions } from './hooks';
 import { isSupabaseConfigured } from './lib/supabase';
-
-// Views
-import {
-  StudentLoginView,
-  StudentHistoryView,
-  InterviewSessionView,
-  ManagerDashboardView,
-  UnifiedAuthView,
-  SchoolSelectView,
-  AdminPanelView
-} from './components/views';
-import { LandingView } from './components/views/LandingView';
-import { InstructorLoginView } from './components/views/InstructorLoginView';
-import { StudentCoursesView } from './components/views/StudentCoursesView';
-
-// Modals
-import { SubmissionDetailModal } from './components/modals';
-
 import { AppRouter } from './components/AppRouter';
 
-// Accessibility
-import { SkipLink } from './components/ui';
+const SubmissionDetailModal = lazy(() =>
+  import('./components/modals').then((module) => ({ default: module.SubmissionDetailModal }))
+);
 
 /**
  * SpeakWise - AI-Powered Oral Examination Platform
@@ -54,6 +37,12 @@ const App: React.FC = () => {
   const { history, loading: historyLoading, addToHistory } = useStudentHistory();
 
   const isLoading = coursesLoading || historyLoading || institutionsLoading;
+  const activeInstitution = institutions.find((institution) =>
+    institution.id === (savedSchool?.schoolId || user?.schoolId)
+  ) || (savedSchool ? {
+    id: savedSchool.schoolId,
+    name: savedSchool.schoolName
+  } : null);
 
   // ─────────────────────────────────────────────────────────────────────────
   // Navigation Handlers
@@ -259,8 +248,8 @@ const App: React.FC = () => {
       </a>
 
       {/* Platform Header */}
-      <header className="w-full max-w-6xl flex justify-between items-center mb-8 md:mb-12">
-        <div className="flex items-center gap-3 md:gap-4">
+      <header className="w-full max-w-6xl flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-center mb-8 md:mb-12">
+        <div className="flex items-center gap-3 md:gap-4 min-w-0">
           {/* Logo */}
           <div
             className="w-9 h-9 md:w-10 md:h-10 bg-gradient-to-br from-emerald-400 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20 cursor-pointer"
@@ -271,18 +260,41 @@ const App: React.FC = () => {
           </div>
 
           {/* Brand Name */}
-          <h1 className="text-2xl md:text-3xl font-black tracking-tight cursor-pointer" onClick={returnToLanding}>
+          <h1 className="text-2xl md:text-3xl font-black tracking-tight cursor-pointer truncate" onClick={returnToLanding}>
             <span className="text-gradient-white">SpeakWise</span>
             <span className="text-emerald-500">.</span>
           </h1>
+
+          {activeInstitution && (
+            <div className="hidden lg:flex flex-col pl-4 border-l border-slate-800">
+              <span className="text-[10px] font-bold uppercase tracking-[0.3em] text-slate-600">
+                Institution
+              </span>
+              <span className="text-sm text-slate-300 font-medium">
+                {activeInstitution.name}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Status Badges & User Info */}
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 sm:justify-end">
+          {activeInstitution && (
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-900/70 rounded-xl border border-slate-700 max-w-full">
+              <span
+                className="w-2.5 h-2.5 rounded-full"
+                style={{ backgroundColor: activeInstitution.primaryColor || '#10b981' }}
+              />
+              <span className="text-xs text-slate-400 truncate max-w-[180px] sm:max-w-none">
+                {activeInstitution.name}
+              </span>
+            </div>
+          )}
+
           {/* User Badge */}
           {isAuthenticated && user && (
-            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-slate-800/50 rounded-lg border border-slate-700">
-              <span className="text-slate-400 text-xs">{user.displayName}</span>
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-800/50 rounded-lg border border-slate-700 max-w-full">
+              <span className="text-slate-400 text-xs truncate max-w-[120px] sm:max-w-[180px]">{user.displayName}</span>
               <button
                 onClick={() => {
                   signOut();
@@ -330,11 +342,13 @@ const App: React.FC = () => {
           ? peerCourse.submissions.filter(s => s.id !== selectedSubmission.id)
           : [];
         return (
-          <SubmissionDetailModal
-            submission={selectedSubmission}
-            peerSubmissions={peers}
-            onClose={() => setSelectedSubmission(null)}
-          />
+          <Suspense fallback={null}>
+            <SubmissionDetailModal
+              submission={selectedSubmission}
+              peerSubmissions={peers}
+              onClose={() => setSelectedSubmission(null)}
+            />
+          </Suspense>
         );
       })()}
 
