@@ -1,0 +1,140 @@
+<svg width="1600" height="640" viewBox="0 0 1600 640" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">SpeakWise repository banner</title>
+  <desc id="desc">A scientific and ambient product banner for the SpeakWise institution-ready oral assessment platform.</desc>
+  <defs>
+    <linearGradient id="bg" x1="128" y1="48" x2="1454" y2="612" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#020617"/>
+      <stop offset="0.56" stop-color="#0F172A"/>
+      <stop offset="1" stop-color="#111827"/>
+    </linearGradient>
+    <radialGradient id="glowA" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1180 132) rotate(130.073) scale(380.301 344.967)">
+      <stop stop-color="#22D3EE" stop-opacity="0.24"/>
+      <stop offset="1" stop-color="#22D3EE" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowB" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(316 514) rotate(-24.891) scale(430.958 313.948)">
+      <stop stop-color="#10B981" stop-opacity="0.2"/>
+      <stop offset="1" stop-color="#10B981" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="cardStroke" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="white" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="white" stop-opacity="0.05"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#34D399"/>
+      <stop offset="1" stop-color="#818CF8"/>
+    </linearGradient>
+    <filter id="blur" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="32"/>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="640" fill="url(#bg)"/>
+  <rect x="0" y="0" width="1600" height="640" fill="url(#glowA)"/>
+  <rect x="0" y="0" width="1600" height="640" fill="url(#glowB)"/>
+
+  <g opacity="0.22">
+    <path d="M0 136H1600" stroke="#64748B" stroke-width="1"/>
+    <path d="M0 264H1600" stroke="#64748B" stroke-width="1"/>
+    <path d="M0 392H1600" stroke="#64748B" stroke-width="1"/>
+    <path d="M0 520H1600" stroke="#64748B" stroke-width="1"/>
+    <path d="M216 0V640" stroke="#64748B" stroke-width="1"/>
+    <path d="M472 0V640" stroke="#64748B" stroke-width="1"/>
+    <path d="M728 0V640" stroke="#64748B" stroke-width="1"/>
+    <path d="M984 0V640" stroke="#64748B" stroke-width="1"/>
+    <path d="M1240 0V640" stroke="#64748B" stroke-width="1"/>
+  </g>
+
+  <g opacity="0.12">
+    <circle cx="1188" cy="188" r="146" stroke="#E2E8F0" stroke-width="1.5"/>
+    <circle cx="1188" cy="188" r="216" stroke="#E2E8F0" stroke-width="1.5" stroke-dasharray="8 10"/>
+    <circle cx="1268" cy="420" r="90" stroke="#34D399" stroke-width="1.5" stroke-dasharray="6 9"/>
+  </g>
+
+  <circle cx="1180" cy="132" r="76" fill="#22D3EE" opacity="0.22" filter="url(#blur)"/>
+  <circle cx="1276" cy="458" r="88" fill="#10B981" opacity="0.16" filter="url(#blur)"/>
+
+  <g>
+    <rect x="96" y="84" width="742" height="470" rx="28" fill="#0F172A" fill-opacity="0.58" stroke="url(#cardStroke)" stroke-width="1.5"/>
+    <rect x="128" y="116" width="156" height="34" rx="17" fill="#111827" stroke="rgba(255,255,255,0.12)"/>
+    <text x="151" y="138" fill="#94A3B8" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" letter-spacing="2">INSTITUTION READY</text>
+
+    <text x="128" y="228" fill="white" font-family="Arial, Helvetica, sans-serif" font-size="84" font-weight="800">SpeakWise</text>
+    <circle cx="557" cy="204" r="9" fill="url(#accent)"/>
+
+    <text x="128" y="286" fill="#CBD5E1" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="500">
+      AI oral assessment platform for structured speaking interviews,
+    </text>
+    <text x="128" y="326" fill="#CBD5E1" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="500">
+      transcript review, instructor judgment, and institution deployment.
+    </text>
+
+    <g transform="translate(128 382)">
+      <rect width="182" height="86" rx="18" fill="#020617" fill-opacity="0.72" stroke="rgba(255,255,255,0.1)"/>
+      <text x="20" y="28" fill="#64748B" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" letter-spacing="2">WORKFLOWS</text>
+      <text x="20" y="58" fill="white" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="800">Student</text>
+      <text x="20" y="76" fill="#94A3B8" font-family="Arial, Helvetica, sans-serif" font-size="13">Interview and reflection</text>
+    </g>
+
+    <g transform="translate(332 382)">
+      <rect width="182" height="86" rx="18" fill="#020617" fill-opacity="0.72" stroke="rgba(255,255,255,0.1)"/>
+      <text x="20" y="28" fill="#64748B" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" letter-spacing="2">REVIEW</text>
+      <text x="20" y="58" fill="white" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="800">Instructor</text>
+      <text x="20" y="76" fill="#94A3B8" font-family="Arial, Helvetica, sans-serif" font-size="13">Annotations and override</text>
+    </g>
+
+    <g transform="translate(536 382)">
+      <rect width="182" height="86" rx="18" fill="#020617" fill-opacity="0.72" stroke="rgba(255,255,255,0.1)"/>
+      <text x="20" y="28" fill="#64748B" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" letter-spacing="2">OPERATIONS</text>
+      <text x="20" y="58" fill="white" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="800">Admin</text>
+      <text x="20" y="76" fill="#94A3B8" font-family="Arial, Helvetica, sans-serif" font-size="13">Institutions and audit logs</text>
+    </g>
+  </g>
+
+  <g transform="translate(942 96)">
+    <rect width="556" height="448" rx="30" fill="#0B1120" fill-opacity="0.62" stroke="url(#cardStroke)" stroke-width="1.5"/>
+
+    <g transform="translate(38 38)">
+      <text x="0" y="16" fill="#94A3B8" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" letter-spacing="2">ASSESSMENT SURFACES</text>
+
+      <g transform="translate(0 46)">
+        <rect width="236" height="140" rx="22" fill="#020617" fill-opacity="0.74" stroke="rgba(255,255,255,0.1)"/>
+        <text x="22" y="30" fill="white" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700">Live Interview</text>
+        <rect x="22" y="54" width="192" height="10" rx="5" fill="#1E293B"/>
+        <rect x="22" y="54" width="124" height="10" rx="5" fill="#34D399"/>
+        <rect x="22" y="78" width="164" height="12" rx="6" fill="#0F172A" stroke="rgba(52,211,153,0.35)"/>
+        <rect x="22" y="102" width="128" height="12" rx="6" fill="#0F172A" stroke="rgba(129,140,248,0.35)"/>
+      </g>
+
+      <g transform="translate(254 46)">
+        <rect width="226" height="140" rx="22" fill="#020617" fill-opacity="0.74" stroke="rgba(255,255,255,0.1)"/>
+        <text x="22" y="30" fill="white" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700">Concept Map</text>
+        <circle cx="82" cy="88" r="18" fill="#0F172A" stroke="#34D399"/>
+        <circle cx="144" cy="64" r="14" fill="#0F172A" stroke="#818CF8"/>
+        <circle cx="164" cy="114" r="16" fill="#0F172A" stroke="#22D3EE"/>
+        <path d="M98 81L130 69" stroke="#64748B" stroke-width="2"/>
+        <path d="M95 98L146 108" stroke="#64748B" stroke-width="2"/>
+      </g>
+
+      <g transform="translate(0 212)">
+        <rect width="480" height="156" rx="22" fill="#020617" fill-opacity="0.74" stroke="rgba(255,255,255,0.1)"/>
+        <text x="22" y="30" fill="white" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700">Institution Deployment</text>
+        <text x="22" y="60" fill="#CBD5E1" font-family="Arial, Helvetica, sans-serif" font-size="18">Templates, annotations, review workflows, and institution-scoped operations.</text>
+
+        <g transform="translate(22 92)">
+          <rect width="134" height="36" rx="18" fill="#0F172A" stroke="rgba(52,211,153,0.35)"/>
+          <text x="25" y="23" fill="#A7F3D0" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700">Course Templates</text>
+        </g>
+
+        <g transform="translate(172 92)">
+          <rect width="122" height="36" rx="18" fill="#0F172A" stroke="rgba(129,140,248,0.35)"/>
+          <text x="23" y="23" fill="#C7D2FE" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700">Annotations</text>
+        </g>
+
+        <g transform="translate(310 92)">
+          <rect width="120" height="36" rx="18" fill="#0F172A" stroke="rgba(34,211,238,0.35)"/>
+          <text x="28" y="23" fill="#BAE6FD" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700">Audit Logs</text>
+        </g>
+      </g>
+    </g>
+  </g>
+</svg>
