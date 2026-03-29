@@ -215,6 +215,17 @@ export interface RubricBreakdown {
   engagement: { score: number; evidence: string[] };
 }
 
+export type InstructorReviewStatus = 'pending' | 'validated' | 'overridden';
+
+export interface InstructorReview {
+  status: InstructorReviewStatus;
+  reviewerName: string;
+  reviewerEmail?: string;
+  reviewedAt: number;
+  overrideScore?: number | null;
+  notes?: string;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Core Data Types
 // ─────────────────────────────────────────────────────────────────────────────
@@ -238,6 +249,7 @@ export interface Submission {
   confidenceScore?: number;         // AI's confidence in evaluation (0.0-1.0)
   confidenceRationale?: string;     // Why AI is confident/uncertain
   rubricBreakdown?: RubricBreakdown;
+  instructorReview?: InstructorReview;
 
   // Metacognition
   reflectionPrompt?: string;        // Question asked after interview

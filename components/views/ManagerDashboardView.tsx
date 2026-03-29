@@ -381,6 +381,29 @@ Only output valid JSON, nothing else.`
 
     const totalSubmissions = allSubmissions.length;
     const currentInstitutionName = currentInstitution?.schoolName || 'All Institutions';
+    const averageScore = totalSubmissions > 0
+        ? Math.round(allSubmissions.reduce((sum, submission) => sum + submission.score, 0) / totalSubmissions)
+        : null;
+    const coursesWithoutSubmissions = visibleCourses.filter((course) => course.submissions.length === 0).length;
+    const instructorPriorities = visibleCourses
+        .map((course) => {
+            const courseAverage = course.submissions.length > 0
+                ? Math.round(course.submissions.reduce((sum, submission) => sum + submission.score, 0) / course.submissions.length)
+                : null;
+
+            return {
+                id: course.id,
+                name: course.name,
+                submissions: course.submissions.length,
+                averageScore: courseAverage
+            };
+        })
+        .sort((left, right) => {
+            if (left.submissions === 0 && right.submissions > 0) return -1;
+            if (right.submissions === 0 && left.submissions > 0) return 1;
+            return (left.averageScore ?? 101) - (right.averageScore ?? 101);
+        })
+        .slice(0, 3);
 
     return (
         <div className="w-full max-w-6xl mx-auto space-y-8 animate-slide-in-up pb-20">
@@ -412,7 +435,7 @@ Only output valid JSON, nothing else.`
                 </Button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                 <div className="glass-panel-light rounded-2xl p-4">
                     <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600 font-bold mb-2">Institution scope</p>
                     <p className="text-lg font-semibold text-white">{currentInstitutionName}</p>
@@ -427,6 +450,57 @@ Only output valid JSON, nothing else.`
                     <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600 font-bold mb-2">Total submissions</p>
                     <p className="text-lg font-semibold text-white">{totalSubmissions}</p>
                     <p className="text-xs text-slate-500 mt-2">Interview attempts collected across your visible courses.</p>
+                </div>
+                <div className="glass-panel-light rounded-2xl p-4">
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600 font-bold mb-2">Average score</p>
+                    <p className="text-lg font-semibold text-white">{averageScore != null ? `${averageScore}%` : 'N/A'}</p>
+                    <p className="text-xs text-slate-500 mt-2">A quick cohort-level signal across submitted interviews.</p>
+                </div>
+            </div>
+
+            <div className="glass-panel rounded-3xl p-6">
+                <div className="flex flex-col lg:flex-row gap-6">
+                    <div className="flex-1">
+                        <h3 className="text-lg font-semibold text-white">Instructor guidance</h3>
+                        <p className="text-sm text-slate-500 mt-1">
+                            A lightweight operating layer so the dashboard supports review decisions, not just management tasks.
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
+                            <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
+                                <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600 font-bold mb-2">Deployment readiness</p>
+                                <p className="text-sm text-white">{coursesWithoutSubmissions} course{coursesWithoutSubmissions !== 1 ? 's' : ''} need first submissions</p>
+                                <p className="text-xs text-slate-500 mt-2">Prioritize prompt checks and student onboarding in these workspaces.</p>
+                            </div>
+                            <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
+                                <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600 font-bold mb-2">Review quality</p>
+                                <p className="text-sm text-white">{totalSubmissions > 0 ? 'Evidence review is active' : 'No review data yet'}</p>
+                                <p className="text-xs text-slate-500 mt-2">Open lower-scoring submissions first so instructors can validate weak reasoning patterns.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="flex-1">
+                        <h4 className="text-sm font-semibold text-white">Courses needing attention</h4>
+                        <div className="space-y-3 mt-4">
+                            {instructorPriorities.length > 0 ? instructorPriorities.map((course) => (
+                                <div key={course.id} className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <p className="text-sm font-medium text-white">{course.name}</p>
+                                        <span className="text-xs text-slate-500">{course.submissions} submission{course.submissions !== 1 ? 's' : ''}</span>
+                                    </div>
+                                    <p className="text-xs text-slate-500 mt-2">
+                                        {course.submissions === 0
+                                            ? 'No student evidence yet. Check onboarding, passcodes, or course visibility.'
+                                            : `Average score ${course.averageScore}% across current submissions.`}
+                                    </p>
+                                </div>
+                            )) : (
+                                <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
+                                    <p className="text-sm text-slate-500">Guidance cards will populate once courses are available in this workspace.</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -766,7 +840,11 @@ Only output valid JSON, nothing else.`
                                     <p>Awaiting student submissions...</p>
                                 </div>
                             ) : (
-                                allSubmissions.map(sub => (
+                                allSubmissions.map(sub => {
+                                    const finalScore = sub.instructorReview?.overrideScore ?? sub.score;
+                                    const mastery = getMasteryLevel(finalScore);
+
+                                    return (
                                     <div
                                         key={sub.id}
                                         className="w-full bg-slate-900/50 border border-slate-800 p-4 rounded-2xl hover:border-indigo-500/30 transition-all group"
@@ -790,11 +868,11 @@ Only output valid JSON, nothing else.`
                                                     onClick={() => onSelectSubmission(sub)}
                                                 >
                                                     <div className="text-right">
-                                                        <div className={`text-xl font-bold ${getMasteryLevel(sub.score).color}`}>
-                                                            {getMasteryLevel(sub.score).emoji} {sub.score}%
+                                                        <div className={`text-xl font-bold ${mastery.color}`}>
+                                                            {mastery.emoji} {finalScore}%
                                                         </div>
-                                                        <p className={`text-[10px] uppercase ${getMasteryLevel(sub.score).color}`}>
-                                                            {getMasteryLevel(sub.score).label}
+                                                        <p className={`text-[10px] uppercase ${mastery.color}`}>
+                                                            {mastery.label}
                                                         </p>
                                                     </div>
                                                 </button>
@@ -816,7 +894,8 @@ Only output valid JSON, nothing else.`
                                             </div>
                                         </div>
                                     </div>
-                                ))
+                                    );
+                                })
                             )}
                         </div>
                     </div>

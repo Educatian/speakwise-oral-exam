@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useState, useEffect, useCallback } from 'react';
-import { AppView, Course, Submission, ADMIN_EMAIL } from './types';
+import { AppView, Course, InstructorReview, Submission, ADMIN_EMAIL } from './types';
 import { useCourseStorage, useStudentHistory, useAuth, useInstitutions } from './hooks';
 import { isSupabaseConfigured } from './lib/supabase';
 import { AppRouter } from './components/AppRouter';
@@ -33,7 +33,16 @@ const App: React.FC = () => {
   const { institutions, loading: institutionsLoading, validateAccessCode } = useInstitutions();
 
   // Custom hooks for data management (with Supabase)
-  const { courses, loading: coursesLoading, addCourse, updateCourse, deleteCourse, addSubmission, deleteSubmission } = useCourseStorage();
+  const {
+    courses,
+    loading: coursesLoading,
+    addCourse,
+    updateCourse,
+    deleteCourse,
+    addSubmission,
+    deleteSubmission,
+    updateSubmissionReview
+  } = useCourseStorage();
   const { history, loading: historyLoading, addToHistory } = useStudentHistory();
 
   const isLoading = coursesLoading || historyLoading || institutionsLoading;
@@ -92,6 +101,26 @@ const App: React.FC = () => {
   const handleAddCourse = (courseData: Omit<Course, 'id' | 'submissions'>) => {
     addCourse(courseData);
   };
+
+  const handleUpdateSubmissionReview = useCallback(async (
+    courseId: string,
+    submissionId: string,
+    review: InstructorReview
+  ) => {
+    await updateSubmissionReview(courseId, submissionId, review);
+
+    setSelectedSubmission((current) =>
+      current?.id === submissionId
+        ? { ...current, instructorReview: review }
+        : current
+    );
+
+    setLastSubmission((current) =>
+      current?.id === submissionId
+        ? { ...current, instructorReview: review }
+        : current
+    );
+  }, [updateSubmissionReview]);
 
   const returnToLanding = useCallback(() => {
     setView(AppView.LANDING);
@@ -341,11 +370,23 @@ const App: React.FC = () => {
         const peers = peerCourse
           ? peerCourse.submissions.filter(s => s.id !== selectedSubmission.id)
           : [];
+        const matchedSubmission = peerCourse?.submissions.find((submission) => submission.id === selectedSubmission.id) || selectedSubmission;
+        const canEditReview = view === AppView.INSTRUCTOR_DASHBOARD || view === AppView.MANAGER_DASHBOARD || userRole === 'instructor';
+        const reviewerName = user?.displayName || studentName || 'Instructor';
+        const reviewerEmail = user?.email || undefined;
         return (
           <Suspense fallback={null}>
             <SubmissionDetailModal
-              submission={selectedSubmission}
+              submission={matchedSubmission}
               peerSubmissions={peers}
+              canEditReview={canEditReview}
+              currentReviewerName={reviewerName}
+              currentReviewerEmail={reviewerEmail}
+              onUpdateReview={
+                peerCourse
+                  ? (submissionId, review) => handleUpdateSubmissionReview(peerCourse.id, submissionId, review)
+                  : undefined
+              }
               onClose={() => setSelectedSubmission(null)}
             />
           </Suspense>

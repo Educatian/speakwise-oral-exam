@@ -1,5 +1,5 @@
-import React, { useMemo, useState, useEffect } from 'react';
-import { Submission, ArgumentGraph } from '../../types';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ArgumentGraph, InstructorReview, InstructorReviewStatus, Submission } from '../../types';
 import { Modal, Button, ArgumentMapView } from '../ui';
 import { ArgumentGraphBuilder } from '../../lib/reasoning';
 import { generateConceptNetwork } from '../../lib/reasoning/conceptNetwork';
@@ -9,21 +9,32 @@ import { getMasteryLevel } from '../../lib/utils/scoreDisplay';
 interface SubmissionDetailModalProps {
     submission: Submission | null;
     peerSubmissions?: Submission[];
+    canEditReview?: boolean;
+    currentReviewerName?: string;
+    currentReviewerEmail?: string;
+    onUpdateReview?: (submissionId: string, review: InstructorReview) => Promise<void> | void;
     onClose: () => void;
 }
 
-/**
- * Submission Detail Modal
- * Displays full interview details including transcript and feedback
- */
+const REVIEW_STATUS_LABELS: Record<InstructorReviewStatus, string> = {
+    pending: 'Pending review',
+    validated: 'Validated',
+    overridden: 'Score overridden'
+};
+
 export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
     submission,
     peerSubmissions,
+    canEditReview = false,
+    currentReviewerName,
+    currentReviewerEmail,
+    onUpdateReview,
     onClose
 }) => {
-    // AI-generated concept network (async)
     const [argumentGraph, setArgumentGraph] = useState<ArgumentGraph | null>(null);
     const [graphLoading, setGraphLoading] = useState(false);
+    const [reviewDraft, setReviewDraft] = useState<InstructorReview | null>(null);
+    const [isSavingReview, setIsSavingReview] = useState(false);
 
     useEffect(() => {
         if (!submission) {
@@ -31,26 +42,23 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
             return;
         }
 
-        // Use existing argumentGraph if it has edges and metadata (AI-generated)
         if (submission.argumentGraph && submission.argumentGraph.nodes.length > 0 && submission.argumentGraph.edges.length > 0) {
             setArgumentGraph(submission.argumentGraph);
             return;
         }
 
-        // Generate from transcript using AI
         if (submission.transcript && submission.transcript.length > 0) {
             setGraphLoading(true);
             generateConceptNetwork(submission.transcript)
-                .then(graph => {
+                .then((graph) => {
                     setArgumentGraph(graph);
                     setGraphLoading(false);
                 })
-                .catch(err => {
-                    console.error('[SubmissionDetail] Concept network generation failed:', err);
-                    // Fallback to basic builder
+                .catch((error) => {
+                    console.error('[SubmissionDetail] Concept network generation failed:', error);
                     const builder = new ArgumentGraphBuilder();
                     let lastQuestionId: string | undefined;
-                    submission.transcript.forEach(item => {
+                    submission.transcript.forEach((item) => {
                         if (item.speaker === 'interviewer') {
                             if (item.text.includes('?')) {
                                 lastQuestionId = builder.addQuestion(item.text, item.timestamp);
@@ -65,9 +73,59 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
         }
     }, [submission]);
 
+    useEffect(() => {
+        if (!submission) {
+            setReviewDraft(null);
+            return;
+        }
+
+        setReviewDraft(
+            submission.instructorReview || {
+                status: 'pending',
+                reviewerName: currentReviewerName || 'Instructor',
+                reviewerEmail: currentReviewerEmail,
+                reviewedAt: Date.now(),
+                overrideScore: null,
+                notes: ''
+            }
+        );
+    }, [submission, currentReviewerEmail, currentReviewerName]);
+
+    const peerData = useMemo(() => {
+        if (!submission || !peerSubmissions || peerSubmissions.length === 0) {
+            return null;
+        }
+        return GroupKnowledgeService.getPeerClaims([submission, ...peerSubmissions], submission.studentName);
+    }, [peerSubmissions, submission]);
+
     if (!submission) return null;
 
     const mastery = getMasteryLevel(submission.score);
+    const reviewedScore = submission.instructorReview?.overrideScore ?? null;
+    const displayScore = reviewedScore ?? submission.score;
+    const scoreDelta = reviewedScore == null ? 0 : reviewedScore - submission.score;
+
+    const handleSaveReview = async () => {
+        if (!submission || !reviewDraft || !onUpdateReview) return;
+
+        const normalizedReview: InstructorReview = {
+            ...reviewDraft,
+            reviewerName: reviewDraft.reviewerName || currentReviewerName || 'Instructor',
+            reviewerEmail: reviewDraft.reviewerEmail || currentReviewerEmail,
+            reviewedAt: Date.now(),
+            overrideScore:
+                reviewDraft.status === 'overridden'
+                    ? Math.max(0, Math.min(100, Number(reviewDraft.overrideScore ?? submission.score)))
+                    : null
+        };
+
+        setIsSavingReview(true);
+        try {
+            await onUpdateReview(submission.id, normalizedReview);
+        } finally {
+            setIsSavingReview(false);
+        }
+    };
 
     return (
         <Modal
@@ -78,19 +136,35 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
             size="lg"
         >
             <div className="space-y-6">
-                {/* Score & Date Summary */}
-                <div className="flex flex-col sm:flex-row items-center justify-between bg-slate-900/50 p-6 rounded-2xl border border-slate-800 gap-4">
-                    <div className="flex items-center gap-4">
-                        <div className={`text-4xl font-black ${mastery.color}`}>
-                            {mastery.emoji} {submission.score}%
+                <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between bg-slate-900/50 p-6 rounded-2xl border border-slate-800 gap-4">
+                    <div className="flex flex-col gap-3">
+                        <div className="flex items-center gap-4 flex-wrap">
+                            <div className={`text-4xl font-black ${getMasteryLevel(displayScore).color}`}>
+                                {getMasteryLevel(displayScore).emoji} {displayScore}%
+                            </div>
+                            <div className={`text-sm font-bold px-3 py-1 rounded-lg ${mastery.bgColor} ${mastery.color}`}>
+                                {getMasteryLevel(displayScore).label}
+                            </div>
+                            {submission.instructorReview && (
+                                <div className="px-3 py-1 rounded-lg border border-indigo-500/20 bg-indigo-500/10 text-indigo-300 text-xs font-semibold">
+                                    {REVIEW_STATUS_LABELS[submission.instructorReview.status]}
+                                </div>
+                            )}
                         </div>
-                        <div className={`text-lg font-bold px-3 py-1 rounded-lg ${mastery.bgColor} ${mastery.color}`}>
-                            {mastery.label}
+                        <div className="flex flex-wrap gap-3 text-xs text-slate-500">
+                            <span>AI score: {submission.score}%</span>
+                            {reviewedScore != null && (
+                                <span>
+                                    Final reviewed score: {reviewedScore}%
+                                    {scoreDelta !== 0 && ` (${scoreDelta > 0 ? '+' : ''}${scoreDelta})`}
+                                </span>
+                            )}
+                            <span>{submission.transcript.length} transcript turns</span>
                         </div>
                     </div>
-                    <div className="text-center sm:text-right">
+                    <div className="text-left xl:text-right">
                         <h4 className="text-slate-500 font-bold text-xs uppercase tracking-widest mb-1">
-                            Session Date
+                            Session date
                         </h4>
                         <p className="text-slate-300 font-medium">
                             <time dateTime={new Date(submission.timestamp).toISOString()}>
@@ -107,207 +181,231 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                     </div>
                 </div>
 
-                {/* AI Feedback */}
+                <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl space-y-4">
+                    <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+                        <div>
+                            <h4 className="text-slate-200 font-semibold">Instructor review</h4>
+                            <p className="text-sm text-slate-500 mt-1">
+                                Validate the AI result or override the final score with instructor notes.
+                            </p>
+                        </div>
+                        {submission.instructorReview && (
+                            <div className="text-xs text-slate-500">
+                                Reviewed by {submission.instructorReview.reviewerName} on{' '}
+                                {new Date(submission.instructorReview.reviewedAt).toLocaleDateString()}
+                            </div>
+                        )}
+                    </div>
+
+                    {reviewDraft && (
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            <div className="space-y-4">
+                                <label className="block">
+                                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Review status</span>
+                                    <select
+                                        value={reviewDraft.status}
+                                        disabled={!canEditReview || !onUpdateReview}
+                                        onChange={(event) => setReviewDraft((current) => current ? {
+                                            ...current,
+                                            status: event.target.value as InstructorReviewStatus,
+                                            overrideScore: event.target.value === 'overridden'
+                                                ? (current.overrideScore ?? submission.score)
+                                                : null
+                                        } : current)}
+                                        className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950/60 px-4 py-3 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                    >
+                                        <option value="pending">Pending review</option>
+                                        <option value="validated">Validated AI score</option>
+                                        <option value="overridden">Override final score</option>
+                                    </select>
+                                </label>
+
+                                <label className="block">
+                                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Final score</span>
+                                    <input
+                                        type="number"
+                                        min={0}
+                                        max={100}
+                                        disabled={!canEditReview || !onUpdateReview || reviewDraft.status !== 'overridden'}
+                                        value={reviewDraft.status === 'overridden' ? (reviewDraft.overrideScore ?? submission.score) : submission.score}
+                                        onChange={(event) => setReviewDraft((current) => current ? {
+                                            ...current,
+                                            overrideScore: Number(event.target.value)
+                                        } : current)}
+                                        className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950/60 px-4 py-3 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 disabled:opacity-60"
+                                    />
+                                    <p className="mt-2 text-xs text-slate-500">
+                                        Use override only when the AI score needs adjustment after review.
+                                    </p>
+                                </label>
+                            </div>
+
+                            <div className="space-y-4">
+                                <label className="block">
+                                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Instructor notes</span>
+                                    <textarea
+                                        value={reviewDraft.notes || ''}
+                                        disabled={!canEditReview || !onUpdateReview}
+                                        onChange={(event) => setReviewDraft((current) => current ? {
+                                            ...current,
+                                            notes: event.target.value
+                                        } : current)}
+                                        rows={6}
+                                        placeholder="Capture why the score was validated or adjusted, plus next teaching actions."
+                                        className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950/60 px-4 py-3 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 disabled:opacity-60"
+                                    />
+                                </label>
+
+                                <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 text-sm text-slate-400">
+                                    <p className="font-medium text-slate-300 mb-2">Review guidance</p>
+                                    <p>Confirm the AI score when it matches your judgment, or override it when evidence in the transcript suggests a more accurate final evaluation.</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {canEditReview && onUpdateReview ? (
+                        <div className="flex justify-end">
+                            <Button onClick={handleSaveReview} disabled={isSavingReview}>
+                                {isSavingReview ? 'Saving review...' : 'Save instructor review'}
+                            </Button>
+                        </div>
+                    ) : submission.instructorReview?.notes ? (
+                        <div className="rounded-2xl border border-indigo-500/20 bg-indigo-500/5 p-4">
+                            <p className="text-xs uppercase tracking-wide text-indigo-300 font-semibold mb-2">Instructor notes</p>
+                            <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap">{submission.instructorReview.notes}</p>
+                        </div>
+                    ) : null}
+                </div>
+
                 <div className="bg-indigo-500/5 border border-indigo-500/20 p-6 rounded-2xl">
                     <div className="flex items-center gap-2 mb-3">
                         <svg className="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                         </svg>
-                        <h4 className="text-indigo-400 font-bold text-sm uppercase">AI Feedback</h4>
+                        <h4 className="text-indigo-400 font-bold text-sm uppercase">AI feedback</h4>
                     </div>
                     <p className="text-slate-300 text-sm leading-relaxed italic">
                         "{submission.feedback}"
                     </p>
                 </div>
 
-                {/* Concept Network - AI generated */}
                 <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
                     {graphLoading ? (
                         <div className="text-center py-10">
                             <div className="w-8 h-8 border-2 border-indigo-500/30 border-t-indigo-400 rounded-full animate-spin mx-auto mb-3" />
                             <p className="text-slate-400 text-sm font-medium">Analyzing concept network...</p>
-                            <p className="text-xs text-slate-600 mt-1">AI is extracting semantic relationships</p>
+                            <p className="text-xs text-slate-600 mt-1">The model is reconstructing semantic relationships from the conversation.</p>
                         </div>
                     ) : argumentGraph && argumentGraph.nodes.length > 0 ? (
                         <ArgumentMapView graph={argumentGraph} />
                     ) : (
                         <div className="text-center py-6 text-slate-500">
-                            <span className="text-3xl mb-2 block">🗺️</span>
-                            <h4 className="text-slate-400 font-bold text-sm mb-1">Concept Network</h4>
-                            <p className="text-xs">No concept data available for this session.</p>
-                            <p className="text-xs mt-1 text-slate-600">
-                                (Transcript too short or no recognizable concepts)
-                            </p>
+                            <h4 className="text-slate-400 font-bold text-sm mb-1">Concept network</h4>
+                            <p className="text-xs">No concept network is available for this session.</p>
                         </div>
                     )}
                 </div>
 
-                {/* Toulmin Reasoning Rubric */}
                 {submission.reasoningRubric && (
                     <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
                         <div className="flex items-center justify-between mb-4">
-                            <h4 className="text-slate-400 font-bold text-xs uppercase tracking-widest flex items-center gap-2">
-                                🧠 Argumentative Reasoning Analysis
+                            <h4 className="text-slate-400 font-bold text-xs uppercase tracking-widest">
+                                Argumentative reasoning analysis
                             </h4>
-                            {(submission.reasoningRubric as any).overallReasoningScore != null && (
-                                <span className="text-lg font-black text-indigo-400">
-                                    {(submission.reasoningRubric as any).overallReasoningScore}%
-                                </span>
-                            )}
+                            <span className="text-lg font-black text-indigo-400">
+                                {submission.reasoningRubric.overallReasoningScore}%
+                            </span>
                         </div>
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             {[
-                                { key: 'explicitJustification', label: 'Justification', emoji: '🔗', color: 'amber', scoreKey: 'score' },
-                                { key: 'causalExplanation', label: 'Causal Reasoning', emoji: '⚡', color: 'emerald', scoreKey: 'score' },
-                                { key: 'counterArgumentHandling', label: 'Counter-Argument', emoji: '⚖️', color: 'rose', scoreKey: 'score' },
-                                { key: 'abstractionGeneralization', label: 'Abstraction', emoji: '🔭', color: 'blue', scoreKey: 'score' }
-                            ].map(({ key, label, emoji, color, scoreKey }) => {
-                                const item = (submission.reasoningRubric as any)?.[key];
-                                if (!item) return null;
-                                const scoreNum = typeof item === 'object' ? (item[scoreKey] ?? 0) : (typeof item === 'number' ? item : 0);
-                                return (
-                                    <div key={key} className="bg-slate-800/50 rounded-xl p-3 border border-slate-700/50">
-                                        <div className="flex items-center justify-between mb-2">
-                                            <span className="text-xs font-bold text-slate-300">{emoji} {label}</span>
-                                            <span className={`text-sm font-black`} style={{ color: `var(--${color}, #94a3b8)` }}>{scoreNum}/5</span>
-                                        </div>
-                                        <div className="w-full bg-slate-700 rounded-full h-1.5">
-                                            <div
-                                                className="h-1.5 rounded-full transition-all duration-500"
-                                                style={{
-                                                    width: `${(scoreNum / 5) * 100}%`,
-                                                    backgroundColor: color === 'amber' ? '#f59e0b' : color === 'emerald' ? '#10b981' : color === 'rose' ? '#f43f5e' : '#3b82f6'
-                                                }}
-                                            />
-                                        </div>
-                                        {item.count != null && (
-                                            <p className="text-[10px] text-slate-500 mt-1.5">{item.count || item.attempts || 0} instances detected</p>
-                                        )}
+                                { label: 'Justification', score: submission.reasoningRubric.explicitJustification.score, hint: `${submission.reasoningRubric.explicitJustification.count} evidence-based statements` },
+                                { label: 'Causal reasoning', score: submission.reasoningRubric.causalExplanation.score, hint: `${submission.reasoningRubric.causalExplanation.patterns.length} causal markers found` },
+                                { label: 'Counter-argument handling', score: submission.reasoningRubric.counterArgumentHandling.score, hint: `${submission.reasoningRubric.counterArgumentHandling.attempts} rebuttal attempts` },
+                                { label: 'Abstraction', score: submission.reasoningRubric.abstractionGeneralization.score, hint: `${submission.reasoningRubric.abstractionGeneralization.instances.length} generalization attempts` }
+                            ].map((item) => (
+                                <div key={item.label} className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-sm font-semibold text-slate-200">{item.label}</span>
+                                        <span className="text-sm font-black text-indigo-300">{item.score}/5</span>
                                     </div>
-                                );
-                            })}
-                        </div>
-
-                        {/* Toulmin Analysis */}
-                        {(submission.reasoningRubric as any).toulminAnalysis && (
-                            <div className="mt-3 p-3 bg-slate-800/30 rounded-xl border border-slate-700/30">
-                                <p className="text-[10px] text-slate-500 uppercase font-bold mb-2">Toulmin Components</p>
-                                <div className="flex flex-wrap gap-2">
-                                    {['claim', 'data', 'warrant', 'backing', 'qualifier', 'rebuttal'].map(comp => {
-                                        const t = (submission.reasoningRubric as any).toulminAnalysis;
-                                        const found = t?.components?.[comp] || t?.[comp];
-                                        return (
-                                            <span key={comp} className={`text-[10px] px-2 py-1 rounded-full border ${
-                                                found ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400' : 'bg-slate-800 border-slate-700 text-slate-600'
-                                            }`}>
-                                                {found ? '✓' : '○'} {comp}
-                                            </span>
-                                        );
-                                    })}
+                                    <div className="w-full bg-slate-700 rounded-full h-1.5">
+                                        <div
+                                            className="h-1.5 rounded-full bg-indigo-400 transition-all duration-500"
+                                            style={{ width: `${(item.score / 5) * 100}%` }}
+                                        />
+                                    </div>
+                                    <p className="text-[11px] text-slate-500 mt-2">{item.hint}</p>
                                 </div>
-                            </div>
-                        )}
-
-                        {/* Dialogue Metrics Summary */}
-                        {submission.dialogueMetrics && (
-                            <div className="mt-3 flex flex-wrap gap-2 text-[10px]">
-                                {submission.dialogueMetrics.totalTurns > 0 && (
-                                    <span className="bg-slate-800 px-2 py-1 rounded-full text-slate-400">
-                                        🔄 {submission.dialogueMetrics.totalTurns} turns
-                                    </span>
-                                )}
-                                {(submission.dialogueMetrics as any).avgWordsPerTurn > 0 && (
-                                    <span className="bg-slate-800 px-2 py-1 rounded-full text-slate-400">
-                                        📝 {Math.round((submission.dialogueMetrics as any).avgWordsPerTurn)} avg words/turn
-                                    </span>
-                                )}
-                            </div>
-                        )}
+                            ))}
+                        </div>
                     </div>
                 )}
 
-                {/* Transcript */}
                 <div className="space-y-4">
-                    <h4 className="text-slate-500 font-bold text-xs uppercase tracking-widest flex items-center gap-2">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-                        </svg>
-                        Full Conversation Transcript
+                    <h4 className="text-slate-500 font-bold text-xs uppercase tracking-widest">
+                        Full conversation transcript
                     </h4>
 
                     <div className="space-y-3 max-h-[40vh] overflow-y-auto custom-scrollbar pr-2">
-                        {submission.transcript.map((t, idx) => (
+                        {submission.transcript.map((turn, index) => (
                             <div
-                                key={idx}
-                                className={`flex gap-3 ${t.speaker === 'user' ? 'flex-row-reverse' : ''}`}
+                                key={`${turn.timestamp}-${index}`}
+                                className={`flex gap-3 ${turn.speaker === 'user' ? 'flex-row-reverse' : ''}`}
                             >
                                 <div
-                                    className={`text-[10px] font-bold uppercase mt-1 flex-shrink-0 w-12 ${t.speaker === 'user' ? 'text-indigo-400 text-right' : 'text-emerald-400'
+                                    className={`text-[10px] font-bold uppercase mt-1 flex-shrink-0 w-16 ${turn.speaker === 'user' ? 'text-indigo-400 text-right' : 'text-emerald-400'
                                         }`}
                                 >
-                                    {t.speaker === 'user' ? 'Student' : 'AI'}
+                                    {turn.speaker === 'user' ? 'Student' : 'AI'}
                                 </div>
                                 <div
-                                    className={`flex-1 px-4 py-3 rounded-xl text-sm ${t.speaker === 'user'
+                                    className={`flex-1 px-4 py-3 rounded-xl text-sm ${turn.speaker === 'user'
                                         ? 'bg-indigo-600/20 text-indigo-100 rounded-tr-sm'
                                         : 'bg-slate-800 text-slate-300 rounded-tl-sm'
                                         }`}
                                 >
-                                    {t.text}
+                                    {turn.text}
                                 </div>
                             </div>
                         ))}
                     </div>
                 </div>
 
-                {/* Peer Perspectives */}
-                {(() => {
-                    if (!peerSubmissions || peerSubmissions.length === 0) return null;
-                    const allSubs = [submission, ...peerSubmissions];
-                    const peerData = GroupKnowledgeService.getPeerClaims(allSubs, submission.studentName);
-                    if (!peerData) return (
-                        <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-2xl text-center">
-                            <p className="text-slate-600 text-sm">👥 Peer perspectives will appear when 3+ classmates complete this interview.</p>
-                        </div>
-                    );
-                    if (peerData.shared.length === 0 && peerData.unique.length === 0) return null;
-                    return (
-                        <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
-                            <h4 className="text-slate-400 font-bold text-xs uppercase tracking-widest mb-3 flex items-center gap-2">
-                                👥 Peer Perspectives
-                                <span className="text-slate-600 normal-case font-normal">• {peerData.totalPeers} anonymous peers</span>
-                            </h4>
-                            {peerData.shared.length > 0 && (
-                                <div className="mb-3">
-                                    <p className="text-xs text-emerald-500 font-medium mb-2">🤝 Shared Ideas</p>
-                                    <div className="space-y-1.5">
-                                        {peerData.shared.map((item, i) => (
-                                            <div key={i} className="flex items-start gap-2 text-sm">
-                                                <span className="flex-shrink-0 px-1.5 py-0.5 bg-emerald-500/20 rounded text-xs text-emerald-400">{item.count+1}</span>
-                                                <span className="text-slate-400">"{item.claim}"</span>
-                                            </div>
-                                        ))}
-                                    </div>
+                {peerData && (peerData.shared.length > 0 || peerData.unique.length > 0) && (
+                    <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
+                        <h4 className="text-slate-400 font-bold text-xs uppercase tracking-widest mb-3">
+                            Peer perspectives
+                        </h4>
+                        {peerData.shared.length > 0 && (
+                            <div className="mb-4">
+                                <p className="text-xs text-emerald-500 font-medium mb-2">Shared ideas</p>
+                                <div className="space-y-2">
+                                    {peerData.shared.map((item, index) => (
+                                        <div key={index} className="flex items-start gap-2 text-sm">
+                                            <span className="flex-shrink-0 px-1.5 py-0.5 bg-emerald-500/20 rounded text-xs text-emerald-400">{item.count + 1}</span>
+                                            <span className="text-slate-400">"{item.claim}"</span>
+                                        </div>
+                                    ))}
                                 </div>
-                            )}
-                            {peerData.unique.length > 0 && (
-                                <div>
-                                    <p className="text-xs text-indigo-500 font-medium mb-2">💡 Different Perspectives</p>
-                                    <div className="space-y-1.5">
-                                        {peerData.unique.map((item, i) => (
-                                            <div key={i} className="flex items-start gap-2 text-sm">
-                                                <span className="flex-shrink-0 px-1.5 py-0.5 bg-indigo-500/20 rounded text-xs text-indigo-400">{item.count}</span>
-                                                <span className="text-slate-400">"{item.claim}"</span>
-                                            </div>
-                                        ))}
-                                    </div>
+                            </div>
+                        )}
+                        {peerData.unique.length > 0 && (
+                            <div>
+                                <p className="text-xs text-indigo-500 font-medium mb-2">Different perspectives</p>
+                                <div className="space-y-2">
+                                    {peerData.unique.map((item, index) => (
+                                        <div key={index} className="flex items-start gap-2 text-sm">
+                                            <span className="flex-shrink-0 px-1.5 py-0.5 bg-indigo-500/20 rounded text-xs text-indigo-400">{item.count}</span>
+                                            <span className="text-slate-400">"{item.claim}"</span>
+                                        </div>
+                                    ))}
                                 </div>
-                            )}
-                        </div>
-                    );
-                })()}
+                            </div>
+                        )}
+                    </div>
+                )}
 
-                {/* Actions */}
                 <div className="flex justify-end pt-4 border-t border-slate-800">
                     <Button variant="ghost" onClick={onClose}>
                         Close

@@ -1,10 +1,9 @@
-import React, { useEffect, useRef, useMemo, useState, useCallback } from 'react';
-import { Course, InterviewStatus, Submission, TranscriptionItem, RubricBreakdown } from '../../types';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Course, InterviewStatus, Submission } from '../../types';
 import { useGeminiLive } from '../../hooks';
 import { createInterviewerPrompt } from '../../lib/prompts/interviewerSystem';
 import { AudioVisualizer } from '../AudioVisualizer';
 import { Button, MicTest } from '../ui';
-import { sanitizeTranscript } from '../../lib/security/sanitize';
 import { EvaluationService } from '../../lib/services/EvaluationService';
 import { usePresence } from '../../hooks/usePresence';
 
@@ -15,32 +14,28 @@ interface InterviewSessionViewProps {
     onBack: () => void;
 }
 
-/**
- * Interview Session View
- * Real-time AI-powered oral examination interface
- * Enhanced with Learning Analytics tracking
- */
-export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({
-    course,
-    studentName,
-    onComplete,
-    onBack
-}) => {
-    const scrollAnchorRef = useRef<HTMLDivElement>(null);
+const statusCopy = (status: InterviewStatus, turnPhase: string) => {
+    if (status === InterviewStatus.CONNECTING) return 'Connecting to interviewer...';
+    if (status === InterviewStatus.ENDED) return 'Interview completed';
+    if (status === InterviewStatus.ERROR) return 'Connection error';
+    if (status !== InterviewStatus.LIVE) return 'Ready to start';
+    if (turnPhase === 'ai_speaking') return 'Listen to the prompt';
+    if (turnPhase === 'recording') return 'Respond when you are ready';
+    if (turnPhase === 'transcribing') return 'Saving your spoken response';
+    return 'Preparing the next step';
+};
 
-    // Silence tracking for thinking prompts
-    const [silenceSeconds, setSilenceSeconds] = useState(0);
-    const [showThinkingPrompt, setShowThinkingPrompt] = useState(false);
+export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ course, studentName, onComplete, onBack }) => {
+    const scrollAnchorRef = useRef<HTMLDivElement>(null);
     const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
     const lastActivityRef = useRef<number>(Date.now());
+    const hasSubmittedRef = useRef(false);
 
-    // Create the system instruction
-    const systemInstruction = useMemo(() =>
-        createInterviewerPrompt(course),
-        [course]
-    );
+    const [silenceSeconds, setSilenceSeconds] = useState(0);
+    const [showThinkingPrompt, setShowThinkingPrompt] = useState(false);
+    const [showAnalytics, setShowAnalytics] = useState(false);
 
-    // Use the Gemini Live hook with LA tracking
+    const systemInstruction = useMemo(() => createInterviewerPrompt(course), [course]);
     const {
         status,
         transcriptions,
@@ -53,60 +48,39 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({
         turnPhase,
         latencyMetrics,
         bargeInEvents,
-        // Advanced Analytics
         dialogueMetrics,
         argumentGraph,
         getReasoningRubric,
         startSession,
         endSession,
         stopRecording
-    } = useGeminiLive({
-        systemInstruction,
-        voiceName: 'Kore'
-    });
+    } = useGeminiLive({ systemInstruction, voiceName: 'Kore' });
 
-    // Real-time presence tracking
-    const { peerCount } = usePresence(
-        course.id,
-        studentName,
-        status === InterviewStatus.LIVE
-    );
+    const { peerCount } = usePresence(course.id, studentName, status === InterviewStatus.LIVE);
 
-    // Auto-scroll to latest message
     useEffect(() => {
         scrollAnchorRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [transcriptions, isInterviewerSpeaking, pendingUserText, pendingAIText]);
+    }, [transcriptions, pendingAIText, pendingUserText, isInterviewerSpeaking]);
 
-    // Silence detection for thinking prompts
     useEffect(() => {
-        // Only track silence when session is live and AI is not speaking
         if (status !== InterviewStatus.LIVE || isInterviewerSpeaking || isUserSpeaking) {
-            // Reset when not in silence state
             setSilenceSeconds(0);
             setShowThinkingPrompt(false);
             lastActivityRef.current = Date.now();
             return;
         }
 
-        // Start silence timer
         silenceTimerRef.current = setInterval(() => {
             const elapsed = Math.floor((Date.now() - lastActivityRef.current) / 1000);
             setSilenceSeconds(elapsed);
-
-            // Show thinking prompt at 5 seconds
-            if (elapsed >= 5 && elapsed < 10) {
-                setShowThinkingPrompt(true);
-            }
+            if (elapsed >= 5 && elapsed < 10) setShowThinkingPrompt(true);
         }, 1000);
 
         return () => {
-            if (silenceTimerRef.current) {
-                clearInterval(silenceTimerRef.current);
-            }
+            if (silenceTimerRef.current) clearInterval(silenceTimerRef.current);
         };
     }, [status, isInterviewerSpeaking, isUserSpeaking]);
 
-    // Reset silence timer when user speaks or AI responds
     useEffect(() => {
         if (isUserSpeaking || isInterviewerSpeaking || pendingUserText || pendingAIText) {
             lastActivityRef.current = Date.now();
@@ -115,12 +89,9 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({
         }
     }, [isUserSpeaking, isInterviewerSpeaking, pendingUserText, pendingAIText]);
 
-    // Generate feedback and submit when session ends
-    const hasSubmittedRef = useRef(false);
     const handleEndAndSubmit = async () => {
-        if (hasSubmittedRef.current) return; // Guard against double-submit
+        if (hasSubmittedRef.current) return;
         hasSubmittedRef.current = true;
-
         const finalTranscripts = await endSession();
 
         try {
@@ -134,13 +105,10 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({
                 argumentGraph,
                 reasoningRubric: getReasoningRubric()
             });
-
             onComplete(submission);
-        } catch (e) {
-            console.error('Failed to generate feedback:', e);
-
-            // Still submit with default values if feedback generation fails
-            const submission: Submission = {
+        } catch (submitError) {
+            console.error('Failed to generate feedback:', submitError);
+            onComplete({
                 id: Math.random().toString(36).substr(2, 9),
                 studentName,
                 courseName: course.name,
@@ -148,323 +116,195 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({
                 transcript: finalTranscripts,
                 score: 0,
                 feedback: 'Feedback generation failed. Please contact your instructor.',
-                latencyMetrics: latencyMetrics,
-                bargeInEvents: bargeInEvents,
-
-                // Advanced Reasoning Analytics (still capture even on failure)
-                dialogueMetrics: dialogueMetrics,
-                argumentGraph: argumentGraph,
+                latencyMetrics,
+                bargeInEvents,
+                dialogueMetrics,
+                argumentGraph,
                 reasoningRubric: getReasoningRubric()
-            };
-
-            onComplete(submission);
+            });
         }
     };
 
-    // Auto-trigger save when AI signals interview end
     useEffect(() => {
         if (status === InterviewStatus.ENDED && !hasSubmittedRef.current) {
-            console.log('[InterviewSession] Auto-triggering save on AI end signal');
             handleEndAndSubmit();
         }
     }, [status]);
 
-    const getStatusLabel = () => {
-        switch (status) {
-            case InterviewStatus.CONNECTING:
-                return 'Connecting to interviewer...';
-            case InterviewStatus.LIVE:
-                switch (turnPhase) {
-                    case 'ai_speaking': return '🔊 AI is speaking...';
-                    case 'recording': return '🔴 Recording your answer...';
-                    case 'transcribing': return '⏳ Transcribing...';
-                    default: return 'Preparing...';
-                }
-            case InterviewStatus.ENDED:
-                return 'Interview completed';
-            case InterviewStatus.ERROR:
-                return 'Connection error';
-            default:
-                return 'Ready to start';
-        }
-    };
+    const supportCards = [
+        'Listen fully before answering.',
+        'A brief pause is fine before you start.',
+        'Use examples when you can explain them clearly.'
+    ];
 
-    // Format latency for display
-    const formatLatency = (ms: number) => {
-        if (ms < 1000) return `${ms}ms`;
-        return `${(ms / 1000).toFixed(1)}s`;
-    };
+    const analyticsVisible = status === InterviewStatus.LIVE && showAnalytics;
 
     return (
-        <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 animate-fade-in">
-            {/* Left Panel - Controls & Visualizer */}
-            <div className="lg:col-span-4 space-y-6">
-                {/* Student Info Card */}
-                <div className="glass-panel p-6 rounded-3xl text-center space-y-4">
-                    <div
-                        className="w-20 h-20 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto border border-emerald-500/20"
-                        aria-hidden="true"
-                    >
-                        <svg className="w-10 h-10 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                        </svg>
-                    </div>
-
-                    <div>
+        <div className="w-full max-w-6xl grid grid-cols-1 xl:grid-cols-12 gap-4 lg:gap-8 animate-fade-in">
+            <div className="xl:col-span-4 space-y-4 lg:space-y-6">
+                <div className="glass-panel p-5 sm:p-6 rounded-3xl space-y-5">
+                    <div className="text-center">
+                        <div className="w-20 h-20 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto border border-emerald-500/20 mb-4">
+                            <svg className="w-10 h-10 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                            </svg>
+                        </div>
                         <h2 className="text-xl font-bold text-white">{studentName}</h2>
-                        <p className="text-xs text-slate-500 uppercase tracking-widest mt-1">
-                            Course: {course.name}
-                        </p>
-
-                        {/* Live Presence Indicator */}
+                        <p className="text-xs text-slate-500 uppercase tracking-widest mt-1">Course: {course.name}</p>
                         {peerCount > 0 && (
-                            <div className="flex items-center justify-center gap-1.5 mt-2 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full">
-                                <span className="relative flex h-2 w-2">
-                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                                </span>
-                                <span className="text-xs text-emerald-400">
-                                    {peerCount} other{peerCount > 1 ? 's' : ''} in session now
-                                </span>
+                            <div className="inline-flex items-center gap-1.5 mt-3 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full">
+                                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                                <span className="text-xs text-emerald-300">{peerCount} other active participant{peerCount > 1 ? 's' : ''}</span>
                             </div>
                         )}
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
+                        <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600 font-bold mb-2">Current state</p>
+                        <p className="text-base font-semibold text-white">{statusCopy(status, turnPhase)}</p>
+                        <p className="text-xs text-slate-500 mt-2">
+                            {status === InterviewStatus.IDLE
+                                ? 'Prepare your microphone, then begin when you feel ready.'
+                                : status === InterviewStatus.LIVE
+                                    ? 'The transcript updates automatically while the system listens and responds.'
+                                    : 'Your work is being prepared for review.'}
+                        </p>
                     </div>
 
                     {status === InterviewStatus.IDLE ? (
                         <div className="space-y-4">
-                            {/* Mic Test before starting */}
                             <MicTest className="mb-4" />
-
-                            <Button
-                                onClick={startSession}
-                                variant="primary"
-                                size="lg"
-                                className="w-full"
-                            >
+                            <Button onClick={startSession} variant="primary" size="lg" className="w-full">
                                 Start Interview Session
                             </Button>
-
-                            <p className="text-xs text-slate-500 text-center">
-                                💡 Test your microphone above before starting
-                            </p>
+                            <p className="text-xs text-slate-500 text-center">Run the microphone check above before starting.</p>
                         </div>
                     ) : status === InterviewStatus.ENDED ? (
-                        <Button
-                            onClick={onBack}
-                            variant="ghost"
-                            size="lg"
-                            className="w-full"
-                        >
+                        <Button onClick={onBack} variant="ghost" size="lg" className="w-full">
                             Return to Login
                         </Button>
                     ) : (
-                        <Button
-                            onClick={handleEndAndSubmit}
-                            variant="danger"
-                            size="lg"
-                            className="w-full"
-                        >
-                            End & Submit Session
-                        </Button>
-                    )}
-
-                    {/* Error Display with Troubleshooting */}
-                    {error && (
-                        <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl">
-                            <p className="text-red-400 text-sm font-medium mb-2">⚠️ {error}</p>
-                            <div className="text-xs text-slate-400 space-y-1">
-                                <p>💡 Troubleshooting tips:</p>
-                                <ul className="list-disc list-inside text-slate-500 space-y-0.5">
-                                    <li>Make sure your microphone is connected</li>
-                                    <li>Allow microphone permission in your browser</li>
-                                    <li>Close other apps using the microphone</li>
-                                    <li>Try refreshing the page</li>
-                                </ul>
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                {/* Audio Visualizer Card */}
-                <div className="glass-panel p-6 rounded-3xl flex flex-col items-center justify-center min-h-[160px]">
-                    <AudioVisualizer
-                        isLive={status === InterviewStatus.LIVE}
-                        isActive={turnPhase === 'recording'}
-                        color={turnPhase === 'ai_speaking' ? 'accent' : 'primary'}
-                    />
-                    <p
-                        className={`text-[10px] mt-4 uppercase font-bold tracking-[0.2em] text-center ${
-                            turnPhase === 'recording' ? 'text-red-400' :
-                            turnPhase === 'ai_speaking' ? 'text-purple-400' :
-                            turnPhase === 'transcribing' ? 'text-amber-400' :
-                            'text-slate-600'
-                        }`}
-                        role="status"
-                        aria-live="polite"
-                    >
-                        {getStatusLabel()}
-                    </p>
-
-                    {/* Done Button — visible during recording phase */}
-                    {status === InterviewStatus.LIVE && turnPhase === 'recording' && (
-                        <Button
-                            onClick={stopRecording}
-                            variant="primary"
-                            size="md"
-                            className="mt-4 w-full"
-                        >
-                            ✅ Done Speaking
-                        </Button>
-                    )}
-                </div>
-
-                {/* Voice Activity Indicator - Shows when user is speaking */}
-                {status === InterviewStatus.LIVE && (
-                    <div className="glass-panel p-4 rounded-2xl">
-                        <div className="flex items-center justify-between mb-2">
-                            <span className="text-[10px] text-slate-500 uppercase font-bold tracking-widest">
-                                🎤 Your Voice
-                            </span>
-                            <span className={`text-[10px] font-bold uppercase ${isUserSpeaking ? 'text-emerald-400' : 'text-slate-600'}`}>
-                                {isUserSpeaking ? '● Speaking' : '○ Silent'}
-                            </span>
-                        </div>
-                        {/* Audio Level Bar */}
-                        <div className="h-3 bg-slate-800 rounded-full overflow-hidden">
-                            <div
-                                className={`h-full transition-all duration-75 rounded-full ${isUserSpeaking
-                                    ? 'bg-gradient-to-r from-emerald-500 to-emerald-400'
-                                    : 'bg-slate-700'
-                                    }`}
-                                style={{ width: `${Math.min(100, audioLevel)}%` }}
-                            />
-                        </div>
-                        {/* Audio Level Dots */}
-                        <div className="flex justify-between mt-2">
-                            {[...Array(10)].map((_, i) => (
-                                <div
-                                    key={i}
-                                    className={`w-2 h-2 rounded-full transition-all duration-75 ${audioLevel > i * 10
-                                        ? (i < 7 ? 'bg-emerald-400' : 'bg-amber-400')
-                                        : 'bg-slate-700'
-                                        }`}
-                                />
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                {/* Learning Analytics Panel (visible during live session) */}
-                {status === InterviewStatus.LIVE && latencyMetrics.turnCount > 0 && (
-                    <div className="glass-panel p-4 rounded-2xl space-y-3">
-                        <h4 className="text-[10px] text-slate-500 uppercase font-bold tracking-widest">
-                            📊 Session Analytics
-                        </h4>
-                        <div className="grid grid-cols-2 gap-3 text-xs">
-                            <div className="bg-slate-800/50 rounded-lg p-2 text-center">
-                                <p className="text-slate-400">Avg Response</p>
-                                <p className="text-emerald-400 font-bold">
-                                    {formatLatency(latencyMetrics.avgInitialLatency)}
-                                </p>
-                            </div>
-                            <div className="bg-slate-800/50 rounded-lg p-2 text-center">
-                                <p className="text-slate-400">Turns</p>
-                                <p className="text-emerald-400 font-bold">
-                                    {latencyMetrics.turnCount}
-                                </p>
-                            </div>
-                            {bargeInEvents.length > 0 && (
-                                <div className="col-span-2 bg-amber-500/10 border border-amber-500/20 rounded-lg p-2 text-center">
-                                    <p className="text-amber-400 text-xs">
-                                        ⚡ {bargeInEvents.length} Barge-in{bargeInEvents.length > 1 ? 's' : ''} detected
-                                    </p>
-                                </div>
+                        <div className="space-y-3">
+                            <Button onClick={handleEndAndSubmit} variant="danger" size="lg" className="w-full">
+                                End and Submit Session
+                            </Button>
+                            {status === InterviewStatus.LIVE && turnPhase === 'recording' && (
+                                <Button onClick={stopRecording} variant="primary" size="md" className="w-full">
+                                    Done Speaking
+                                </Button>
                             )}
                         </div>
-                    </div>
-                )}
+                    )}
 
-                {/* Error Display */}
-                {error && (
-                    <div
-                        className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl text-red-400 text-sm"
-                        role="alert"
-                    >
-                        <p className="font-semibold">Connection Error</p>
-                        <p className="text-xs mt-1">{error}</p>
+                    {error && (
+                        <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl">
+                            <p className="text-red-400 text-sm font-medium">{error}</p>
+                            <ul className="list-disc list-inside text-xs text-slate-500 space-y-1 mt-3">
+                                <li>Check microphone permissions in your browser.</li>
+                                <li>Close other apps that may be using the microphone.</li>
+                                <li>Refresh the page and try again if the connection stalls.</li>
+                            </ul>
+                        </div>
+                    )}
+                </div>
+
+                <div className="glass-panel p-5 sm:p-6 rounded-3xl flex flex-col items-center justify-center min-h-[150px]">
+                    <AudioVisualizer isLive={status === InterviewStatus.LIVE} isActive={turnPhase === 'recording'} color={turnPhase === 'ai_speaking' ? 'accent' : 'primary'} />
+                    <p className={`text-[10px] mt-4 uppercase font-bold tracking-[0.2em] text-center ${turnPhase === 'recording' ? 'text-red-400' : turnPhase === 'ai_speaking' ? 'text-cyan-300' : turnPhase === 'transcribing' ? 'text-amber-400' : 'text-slate-600'}`} role="status" aria-live="polite">
+                        {statusCopy(status, turnPhase)}
+                    </p>
+                </div>
+
+                <div className="glass-panel p-4 rounded-2xl">
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="text-[10px] text-slate-500 uppercase font-bold tracking-widest">Your voice</span>
+                        <span className={`text-[10px] font-bold uppercase ${isUserSpeaking ? 'text-emerald-400' : 'text-slate-600'}`}>{isUserSpeaking ? 'Speaking' : 'Silent'}</span>
+                    </div>
+                    <div className="h-3 bg-slate-800 rounded-full overflow-hidden">
+                        <div className={`h-full transition-all duration-75 rounded-full ${isUserSpeaking ? 'bg-gradient-to-r from-emerald-500 to-emerald-400' : 'bg-slate-700'}`} style={{ width: `${Math.min(100, audioLevel)}%` }} />
+                    </div>
+                </div>
+
+                <div className="glass-panel p-4 rounded-2xl">
+                    <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600 font-bold">Student support</p>
+                            <p className="text-sm text-white mt-1">Keep the session calm and deliberate.</p>
+                        </div>
+                        <button type="button" onClick={() => setShowAnalytics((current) => !current)} className="results-tab">
+                            {showAnalytics ? 'Hide analytics' : 'Show analytics'}
+                        </button>
+                    </div>
+                    <div className="space-y-2 mt-4">
+                        {supportCards.map((card) => (
+                            <div key={card} className="rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-2 text-sm text-slate-300">
+                                {card}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {analyticsVisible && status === InterviewStatus.LIVE && (
+                    <div className="glass-panel p-4 rounded-2xl space-y-3">
+                        <h4 className="text-[10px] text-slate-500 uppercase font-bold tracking-widest">Session analytics</h4>
+                        <div className="grid grid-cols-2 gap-3 text-xs">
+                            <div className="bg-slate-800/50 rounded-lg p-3 text-center">
+                                <p className="text-slate-400">Avg response</p>
+                                <p className="text-emerald-400 font-bold">{latencyMetrics.avgInitialLatency < 1000 ? `${latencyMetrics.avgInitialLatency}ms` : `${(latencyMetrics.avgInitialLatency / 1000).toFixed(1)}s`}</p>
+                            </div>
+                            <div className="bg-slate-800/50 rounded-lg p-3 text-center">
+                                <p className="text-slate-400">Turns</p>
+                                <p className="text-emerald-400 font-bold">{latencyMetrics.turnCount}</p>
+                            </div>
+                            <div className="col-span-2 bg-slate-800/50 rounded-lg p-3">
+                                <p className="text-slate-400">Reasoning score</p>
+                                <p className="text-white font-semibold mt-1">{getReasoningRubric().overallReasoningScore}/100</p>
+                                <p className="text-slate-500 mt-1">Barge-in events: {bargeInEvents.length}</p>
+                            </div>
+                        </div>
                     </div>
                 )}
             </div>
 
-            {/* Right Panel - Transcript */}
-            <div className="lg:col-span-8 h-[500px] lg:h-[600px] flex flex-col">
+            <div className="xl:col-span-8 h-[52vh] min-h-[360px] sm:h-[500px] lg:h-[600px] flex flex-col">
                 <div className="glass-panel rounded-3xl flex-1 flex flex-col overflow-hidden">
-                    {/* Transcript Header */}
-                    <div className="px-6 py-4 border-b border-slate-800 bg-slate-900/30 flex justify-between items-center">
-                        <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">
-                            Live Transcript
-                        </h3>
-                        {status === InterviewStatus.LIVE && (
-                            <div
-                                className="live-indicator live-indicator-ring"
-                                aria-label="Live session active"
-                            />
-                        )}
+                    <div className="px-4 sm:px-6 py-4 border-b border-slate-800 bg-slate-900/30 flex justify-between items-center gap-3">
+                        <div>
+                            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Live transcript</h3>
+                            <p className="text-xs text-slate-600 mt-1">This transcript becomes the basis for evaluation and review.</p>
+                        </div>
+                        {status === InterviewStatus.LIVE && <div className="live-indicator live-indicator-ring" aria-label="Live session active" />}
                     </div>
 
-                    {/* Transcript Content */}
-                    <div
-                        className="flex-1 overflow-y-auto p-6 lg:p-8 space-y-4 custom-scrollbar"
-                        role="log"
-                        aria-label="Interview transcript"
-                        aria-live="polite"
-                    >
+                    <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-4 custom-scrollbar" role="log" aria-label="Interview transcript" aria-live="polite">
                         {transcriptions.length === 0 ? (
-                            <div className="h-full flex flex-col items-center justify-center opacity-20 text-center space-y-4">
+                            <div className="h-full flex flex-col items-center justify-center opacity-30 text-center space-y-4">
                                 <svg className="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
                                 </svg>
-                                <p>Real-time analysis will begin once the interview starts.</p>
+                                <p className="text-slate-400">Your transcript will appear here once the interview begins.</p>
                             </div>
                         ) : (
                             transcriptions.map((item, idx) => (
-                                <div
-                                    key={idx}
-                                    className={`flex flex-col ${item.speaker === 'user' ? 'items-end' : 'items-start'} animate-slide-in-up`}
-                                >
-                                    <div
-                                        className={`chat-bubble ${item.speaker === 'user' ? 'chat-bubble-user' : 'chat-bubble-ai'} ${item.isBargeIn ? 'ring-2 ring-amber-500/50' : ''}`}
-                                    >
+                                <div key={idx} className={`flex flex-col ${item.speaker === 'user' ? 'items-end' : 'items-start'} animate-slide-in-up`}>
+                                    <div className={`chat-bubble ${item.speaker === 'user' ? 'chat-bubble-user' : 'chat-bubble-ai'} ${item.isBargeIn ? 'ring-2 ring-amber-500/50' : ''}`}>
                                         <p>{item.text}</p>
                                     </div>
                                     <div className="flex items-center gap-2 mt-1">
-                                        <span className="text-[9px] text-slate-600 font-bold uppercase tracking-tight">
-                                            {item.speaker === 'user' ? studentName : 'AI Interviewer'}
-                                        </span>
-                                        {item.latency && item.speaker === 'user' && (
-                                            <span className="text-[8px] text-slate-700 bg-slate-800/50 px-1.5 py-0.5 rounded">
-                                                ⏱ {formatLatency(item.latency)}
-                                            </span>
-                                        )}
-                                        {item.isBargeIn && (
-                                            <span className="text-[8px] text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded">
-                                                ⚡ Barge-in
-                                            </span>
-                                        )}
+                                        <span className="text-[9px] text-slate-600 font-bold uppercase tracking-tight">{item.speaker === 'user' ? studentName : 'AI interviewer'}</span>
+                                        {item.latency && item.speaker === 'user' && <span className="text-[8px] text-slate-700 bg-slate-800/50 px-1.5 py-0.5 rounded">{item.latency < 1000 ? `${item.latency} ms` : `${(item.latency / 1000).toFixed(1)} s`}</span>}
+                                        {item.isBargeIn && <span className="text-[8px] text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded">Barge-in</span>}
                                     </div>
                                 </div>
                             ))
                         )}
 
-                        {/* Real-time Pending Transcriptions */}
                         {status === InterviewStatus.LIVE && pendingAIText && (
                             <div className="flex flex-col items-start animate-pulse">
-                                <div className="chat-bubble chat-bubble-ai opacity-80 border border-dashed border-purple-500/50">
+                                <div className="chat-bubble chat-bubble-ai opacity-80 border border-dashed border-cyan-500/50">
                                     <p className="italic">{pendingAIText}</p>
                                 </div>
-                                <span className="text-[9px] text-purple-400 font-bold uppercase tracking-tight mt-1">
-                                    🎙️ AI Speaking...
-                                </span>
+                                <span className="text-[9px] text-cyan-300 font-bold uppercase tracking-tight mt-1">AI speaking...</span>
                             </div>
                         )}
 
@@ -473,34 +313,7 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({
                                 <div className="chat-bubble chat-bubble-user opacity-80 border border-dashed border-emerald-500/50">
                                     <p className="italic">{pendingUserText}</p>
                                 </div>
-                                <span className="text-[9px] text-emerald-400 font-bold uppercase tracking-tight mt-1">
-                                    🎤 You're Speaking...
-                                </span>
-                            </div>
-                        )}
-
-                        {/* Turn Phase Indicators */}
-                        {status === InterviewStatus.LIVE && turnPhase === 'recording' && isUserSpeaking && !pendingUserText && (
-                            <div className="flex flex-col items-end animate-fade-in">
-                                <div className="chat-bubble chat-bubble-user opacity-60 border border-dashed border-red-500/40 flex items-center gap-3 py-3 px-4">
-                                    <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
-                                    <div className="flex items-center gap-[3px] h-5">
-                                        {[1, 2, 3, 4, 5].map((i) => (
-                                            <div
-                                                key={i}
-                                                className="w-[3px] bg-emerald-400 rounded-full animate-pulse"
-                                                style={{
-                                                    height: `${Math.max(4, Math.min(20, audioLevel * 0.3 + Math.random() * 8))}px`,
-                                                    animationDelay: `${i * 0.1}s`,
-                                                    animationDuration: '0.3s'
-                                                }}
-                                            />
-                                        ))}
-                                    </div>
-                                    <span className="text-red-300 text-sm font-medium">
-                                        Recording...
-                                    </span>
-                                </div>
+                                <span className="text-[9px] text-emerald-400 font-bold uppercase tracking-tight mt-1">You are speaking...</span>
                             </div>
                         )}
 
@@ -515,25 +328,15 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({
                             </div>
                         )}
 
-                        {/* Thinking Prompt - Appears after 5 seconds of silence */}
                         {status === InterviewStatus.LIVE && showThinkingPrompt && !pendingUserText && !pendingAIText && !isInterviewerSpeaking && (
                             <div className="flex flex-col items-center py-4 animate-fade-in">
                                 <div className="glass-panel rounded-2xl px-6 py-4 border border-amber-500/30 bg-amber-500/5">
-                                    <div className="flex items-center gap-3">
-                                        <span className="text-2xl">🤔</span>
-                                        <div>
-                                            <p className="text-amber-400 font-medium">
-                                                {silenceSeconds >= 10
-                                                    ? "Take your time! I'll move to the next question when you're ready."
-                                                    : "Are you thinking? Take your time..."}
-                                            </p>
-                                            <p className="text-xs text-slate-400 mt-1">
-                                                {silenceSeconds >= 10
-                                                    ? `Waiting for ${silenceSeconds}s - Say anything to continue`
-                                                    : `${10 - silenceSeconds}s until next question...`}
-                                            </p>
-                                        </div>
-                                    </div>
+                                    <p className="text-amber-300 font-medium">
+                                        {silenceSeconds >= 10 ? 'Take your time. The interview will continue when you are ready.' : 'A short pause is fine. Gather your response before speaking.'}
+                                    </p>
+                                    <p className="text-xs text-slate-400 mt-1">
+                                        {silenceSeconds >= 10 ? `Waiting for ${silenceSeconds}s. Say anything to continue.` : `${10 - silenceSeconds}s until the system checks in again.`}
+                                    </p>
                                 </div>
                             </div>
                         )}
@@ -541,18 +344,15 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({
                         <div ref={scrollAnchorRef} />
                     </div>
 
-                    {/* Completion Message */}
                     {status === InterviewStatus.ENDED && (
                         <div className="p-6 lg:p-8 bg-slate-900/50 border-t border-slate-800 text-center space-y-4">
                             <div className="flex items-center justify-center gap-2 text-emerald-400">
                                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                                 </svg>
-                                <h4 className="font-bold">Interview Completed!</h4>
+                                <h4 className="font-bold">Interview completed</h4>
                             </div>
-                            <p className="text-slate-400 text-xs">
-                                Your transcript, analytics, and AI analysis have been saved successfully.
-                            </p>
+                            <p className="text-slate-400 text-xs">Your transcript and analysis have been saved successfully.</p>
                         </div>
                     )}
                 </div>

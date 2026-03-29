@@ -94,12 +94,25 @@ create table if not exists public.student_history (
     created_at timestamptz not null default now()
 );
 
+create table if not exists public.submission_reviews (
+    submission_id text primary key references public.submissions(id) on delete cascade,
+    status text not null default 'pending' check (status in ('pending', 'validated', 'overridden')),
+    reviewer_name text not null,
+    reviewer_email text,
+    reviewed_at timestamptz not null default now(),
+    override_score integer check (override_score between 0 and 100),
+    notes text,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
 create index if not exists idx_user_profiles_email on public.user_profiles(email);
 create index if not exists idx_user_profiles_school_id on public.user_profiles(school_id);
 create index if not exists idx_courses_institution_id on public.courses(institution_id);
 create index if not exists idx_courses_owner_email on public.courses(owner_email);
 create index if not exists idx_submissions_course_id on public.submissions(course_id);
 create index if not exists idx_student_history_user_id on public.student_history(user_id);
+create index if not exists idx_submission_reviews_reviewer_email on public.submission_reviews(reviewer_email);
 
 -- ============================================================================
 -- Helpers
@@ -118,6 +131,12 @@ $$;
 drop trigger if exists set_user_profile_updated_at on public.user_profiles;
 create trigger set_user_profile_updated_at
 before update on public.user_profiles
+for each row
+execute function public.handle_user_profile_timestamps();
+
+drop trigger if exists set_submission_review_updated_at on public.submission_reviews;
+create trigger set_submission_review_updated_at
+before update on public.submission_reviews
 for each row
 execute function public.handle_user_profile_timestamps();
 
@@ -224,8 +243,10 @@ alter table public.instructors enable row level security;
 alter table public.courses enable row level security;
 alter table public.submissions enable row level security;
 alter table public.student_history enable row level security;
+alter table public.submission_reviews enable row level security;
 
 drop policy if exists "institutions are readable by authenticated users" on public.institutions;
+drop policy if exists "staff can read institutions" on public.institutions;
 create policy "staff can read institutions"
 on public.institutions
 for select
@@ -362,6 +383,79 @@ using (
         from public.courses c
         where c.id = submissions.course_id
           and c.owner_email = auth.email()
+    )
+);
+
+drop policy if exists "institution members can read submission reviews" on public.submission_reviews;
+create policy "institution members can read submission reviews"
+on public.submission_reviews
+for select
+to authenticated
+using (
+    public.is_admin_role()
+    or exists (
+        select 1
+        from public.submissions s
+        join public.courses c on c.id = s.course_id
+        where s.id = submission_reviews.submission_id
+          and (
+              c.owner_email = auth.email()
+              or c.institution_id = public.current_user_school_id()
+          )
+    )
+);
+
+drop policy if exists "staff can create submission reviews" on public.submission_reviews;
+create policy "staff can create submission reviews"
+on public.submission_reviews
+for insert
+to authenticated
+with check (
+    public.is_staff_role()
+    and exists (
+        select 1
+        from public.submissions s
+        join public.courses c on c.id = s.course_id
+        where s.id = submission_reviews.submission_id
+          and (
+              public.is_admin_role()
+              or c.owner_email = auth.email()
+              or c.institution_id = public.current_user_school_id()
+          )
+    )
+);
+
+drop policy if exists "staff can update submission reviews" on public.submission_reviews;
+create policy "staff can update submission reviews"
+on public.submission_reviews
+for update
+to authenticated
+using (
+    public.is_staff_role()
+    and exists (
+        select 1
+        from public.submissions s
+        join public.courses c on c.id = s.course_id
+        where s.id = submission_reviews.submission_id
+          and (
+              public.is_admin_role()
+              or c.owner_email = auth.email()
+              or c.institution_id = public.current_user_school_id()
+          )
+    )
+)
+with check (
+    public.is_staff_role()
+    and exists (
+        select 1
+        from public.submissions s
+        join public.courses c on c.id = s.course_id
+        where s.id = submission_reviews.submission_id
+          and (
+              public.is_admin_role()
+              or c.owner_email = auth.email()
+              or c.institution_id = public.current_user_school_id()
+          )
     )
 );
 

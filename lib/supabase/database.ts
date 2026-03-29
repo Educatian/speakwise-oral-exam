@@ -1,11 +1,47 @@
 import { supabase, isSupabaseConfigured } from './client';
-import { Course, Institution, Submission, UserProfile, UserRole } from '../../types';
+import { Course, Institution, InstructorReview, Submission, UserProfile, UserRole } from '../../types';
 
 async function getCurrentSessionUserId(): Promise<string | null> {
     if (!isSupabaseConfigured()) return null;
 
     const { data: { session } } = await supabase.auth.getSession();
     return session?.user?.id || null;
+}
+
+function normalizeInstructorReview(review: any): InstructorReview | undefined {
+    if (!review) return undefined;
+
+    return {
+        status: review.status || 'pending',
+        reviewerName: review.reviewer_name || review.reviewerName || 'Instructor',
+        reviewerEmail: review.reviewer_email || review.reviewerEmail || undefined,
+        reviewedAt: review.reviewed_at
+            ? new Date(review.reviewed_at).getTime()
+            : (review.reviewedAt || Date.now()),
+        overrideScore: review.override_score ?? review.overrideScore ?? null,
+        notes: review.notes || ''
+    };
+}
+
+function mapSubmissionRecord(record: any, reviewMap: Record<string, InstructorReview>): Submission {
+    return {
+        id: record.id,
+        studentName: record.student_name,
+        courseName: record.course_name,
+        timestamp: record.timestamp,
+        transcript: record.transcript || [],
+        score: record.score,
+        feedback: record.feedback,
+        latencyMetrics: record.latency_metrics,
+        bargeInEvents: record.barge_in_events,
+        dialogueMetrics: record.dialogue_metrics,
+        argumentGraph: record.argument_graph,
+        reasoningRubric: record.reasoning_rubric,
+        confidenceScore: record.confidence_score,
+        confidenceRationale: record.confidence_rationale,
+        rubricBreakdown: record.rubric_breakdown,
+        instructorReview: reviewMap[record.id]
+    };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -41,6 +77,7 @@ export async function getAllCourses(): Promise<Course[]> {
             .order('timestamp', { ascending: false });
 
         if (submissionsError) throw submissionsError;
+        const reviewMap = await getSubmissionReviewMap();
 
         // Map submissions to courses
         return (courses || []).map(course => ({
@@ -56,25 +93,7 @@ export async function getAllCourses(): Promise<Course[]> {
             institutionName: course.institution_name || '',
             submissions: (submissions || [])
                 .filter(s => s.course_id === course.id)
-                .map(s => ({
-                    id: s.id,
-                    studentName: s.student_name,
-                    courseName: s.course_name,
-                    timestamp: s.timestamp,
-                    transcript: s.transcript || [],
-                    score: s.score,
-                    feedback: s.feedback,
-                    // Learning Analytics
-                    latencyMetrics: s.latency_metrics,
-                    bargeInEvents: s.barge_in_events,
-                    // Advanced Reasoning Analytics
-                    dialogueMetrics: s.dialogue_metrics,
-                    argumentGraph: s.argument_graph,
-                    reasoningRubric: s.reasoning_rubric,
-                    // AI Confidence
-                    confidenceScore: s.confidence_score,
-                    rubricBreakdown: s.rubric_breakdown
-                }))
+                .map(s => mapSubmissionRecord(s, reviewMap))
         }));
     } catch (error) {
         console.error('Error fetching courses from Supabase:', error);
@@ -171,6 +190,7 @@ export async function addSubmissionToCourse(
             reasoning_rubric: submission.reasoningRubric,
             // AI Confidence
             confidence_score: submission.confidenceScore,
+            confidence_rationale: submission.confidenceRationale,
             rubric_breakdown: submission.rubricBreakdown
         });
 
@@ -184,6 +204,40 @@ export async function addSubmissionToCourse(
     } catch (error) {
         console.error('Error adding submission to Supabase:', error);
         addSubmissionToLocalStorage(courseId, submission);
+    }
+}
+
+/**
+ * Upsert an instructor review for a submission.
+ */
+export async function updateSubmissionReview(
+    submissionId: string,
+    review: InstructorReview
+): Promise<void> {
+    if (!isSupabaseConfigured()) {
+        upsertSubmissionReviewInLocalStorage(submissionId, review);
+        return;
+    }
+
+    try {
+        const payload = {
+            submission_id: submissionId,
+            status: review.status,
+            reviewer_name: review.reviewerName,
+            reviewer_email: review.reviewerEmail || null,
+            reviewed_at: new Date(review.reviewedAt).toISOString(),
+            override_score: review.overrideScore ?? null,
+            notes: review.notes || null
+        };
+
+        const { error } = await supabase
+            .from('submission_reviews')
+            .upsert(payload, { onConflict: 'submission_id' });
+
+        if (error) throw error;
+    } catch (error) {
+        console.error('Error updating submission review in Supabase:', error);
+        upsertSubmissionReviewInLocalStorage(submissionId, review);
     }
 }
 
@@ -243,6 +297,13 @@ export function subscribeToCoursesRealtime(
                 getAllCourses().then(onUpdate);
             }
         )
+        .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'submission_reviews' },
+            () => {
+                getAllCourses().then(onUpdate);
+            }
+        )
         .subscribe();
 
     const { data: authListener } = supabase.auth.onAuthStateChange(() => {
@@ -281,26 +342,9 @@ export async function getStudentHistory(): Promise<Submission[]> {
             .order('timestamp', { ascending: false });
 
         if (error) throw error;
+        const reviewMap = await getSubmissionReviewMap();
 
-        return (data || []).map(s => ({
-            id: s.id,
-            studentName: s.student_name,
-            courseName: s.course_name,
-            timestamp: s.timestamp,
-            transcript: s.transcript || [],
-            score: s.score,
-            feedback: s.feedback,
-            // Learning Analytics
-            latencyMetrics: s.latency_metrics,
-            bargeInEvents: s.barge_in_events,
-            // Advanced Reasoning Analytics
-            dialogueMetrics: s.dialogue_metrics,
-            argumentGraph: s.argument_graph,
-            reasoningRubric: s.reasoning_rubric,
-            // AI Confidence
-            confidenceScore: s.confidence_score,
-            rubricBreakdown: s.rubric_breakdown
-        }));
+        return (data || []).map(s => mapSubmissionRecord(s, reviewMap));
     } catch (error) {
         console.error('Error fetching student history from Supabase:', error);
         return getHistoryFromLocalStorage();
@@ -522,6 +566,7 @@ const COURSES_KEY = 'speakwise_courses';
 const HISTORY_KEY = 'speakwise_student_history';
 const INSTITUTIONS_KEY = 'speakwise_institutions';
 const USER_PROFILES_KEY = 'speakwise_user_profiles';
+const SUBMISSION_REVIEWS_KEY = 'speakwise_submission_reviews';
 
 const FALLBACK_INSTITUTIONS: Institution[] = [
     {
@@ -555,10 +600,45 @@ const FALLBACK_INSTITUTIONS: Institution[] = [
     }
 ];
 
+async function getSubmissionReviewMap(): Promise<Record<string, InstructorReview>> {
+    const localReviewMap = getSubmissionReviewsFromLocalStorage();
+
+    if (!isSupabaseConfigured()) {
+        return localReviewMap;
+    }
+
+    try {
+        const { data, error } = await supabase
+            .from('submission_reviews')
+            .select('*');
+
+        if (error) throw error;
+
+        const reviewMap = (data || []).reduce<Record<string, InstructorReview>>((accumulator, review) => {
+            accumulator[review.submission_id] = normalizeInstructorReview(review)!;
+            return accumulator;
+        }, {});
+
+        return { ...localReviewMap, ...reviewMap };
+    } catch (error) {
+        console.warn('Falling back to local review storage:', error);
+        return localReviewMap;
+    }
+}
+
 function getCoursesFromLocalStorage(): Course[] {
     try {
         const saved = localStorage.getItem(COURSES_KEY);
-        return saved ? JSON.parse(saved) : [];
+        const courses = saved ? JSON.parse(saved) as Course[] : [];
+        const reviewMap = getSubmissionReviewsFromLocalStorage();
+
+        return courses.map((course) => ({
+            ...course,
+            submissions: (course.submissions || []).map((submission) => ({
+                ...submission,
+                instructorReview: submission.instructorReview || reviewMap[submission.id]
+            }))
+        }));
     } catch (e) {
         return [];
     }
@@ -595,7 +675,12 @@ function deleteSubmissionFromLocalStorage(submissionId: string): void {
 function getHistoryFromLocalStorage(): Submission[] {
     try {
         const saved = localStorage.getItem(HISTORY_KEY);
-        return saved ? JSON.parse(saved) : [];
+        const history = saved ? JSON.parse(saved) as Submission[] : [];
+        const reviewMap = getSubmissionReviewsFromLocalStorage();
+        return history.map((submission) => ({
+            ...submission,
+            instructorReview: submission.instructorReview || reviewMap[submission.id]
+        }));
     } catch (e) {
         return [];
     }
@@ -604,6 +689,38 @@ function getHistoryFromLocalStorage(): Submission[] {
 function addToHistoryLocalStorage(submission: Submission): void {
     const history = getHistoryFromLocalStorage();
     history.unshift(submission);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+}
+
+function getSubmissionReviewsFromLocalStorage(): Record<string, InstructorReview> {
+    try {
+        const saved = localStorage.getItem(SUBMISSION_REVIEWS_KEY);
+        return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+        return {};
+    }
+}
+
+function upsertSubmissionReviewInLocalStorage(submissionId: string, review: InstructorReview): void {
+    const reviewMap = getSubmissionReviewsFromLocalStorage();
+    reviewMap[submissionId] = review;
+    localStorage.setItem(SUBMISSION_REVIEWS_KEY, JSON.stringify(reviewMap));
+
+    const courses = getCoursesFromLocalStorage().map((course) => ({
+        ...course,
+        submissions: course.submissions.map((submission) =>
+            submission.id === submissionId
+                ? { ...submission, instructorReview: review }
+                : submission
+        )
+    }));
+    localStorage.setItem(COURSES_KEY, JSON.stringify(courses));
+
+    const history = getHistoryFromLocalStorage().map((submission) =>
+        submission.id === submissionId
+            ? { ...submission, instructorReview: review }
+            : submission
+    );
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
 }
 
@@ -798,6 +915,7 @@ export default {
     addCourse,
     deleteCourse,
     addSubmissionToCourse,
+    updateSubmissionReview,
     subscribeToCoursesRealtime,
     getStudentHistory,
     addToStudentHistory,

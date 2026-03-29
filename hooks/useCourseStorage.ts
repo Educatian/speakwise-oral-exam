@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Course, Submission } from '../types';
+import { Course, InstructorReview, Submission } from '../types';
 import {
     getAllCourses,
     addCourse as addCourseToSupabase,
     deleteCourse as deleteCourseFromSupabase,
     addSubmissionToCourse,
     deleteSubmission as deleteSubmissionFromSupabase,
+    updateSubmissionReview as updateSubmissionReviewInDatabase,
     subscribeToCoursesRealtime,
     isSupabaseConfigured,
     supabase
@@ -20,6 +21,7 @@ interface UseCourseStorageReturn {
     deleteCourse: (id: string) => Promise<void>;
     addSubmission: (courseId: string, submission: Submission) => Promise<void>;
     deleteSubmission: (courseId: string, submissionId: string) => Promise<void>;
+    updateSubmissionReview: (courseId: string, submissionId: string, review: InstructorReview) => Promise<void>;
 }
 
 const STORAGE_KEY = 'speakwise_courses';
@@ -216,6 +218,35 @@ export function useCourseStorage(): UseCourseStorageReturn {
         }
     }, []);
 
+    const updateSubmissionReview = useCallback(async (
+        courseId: string,
+        submissionId: string,
+        review: InstructorReview
+    ): Promise<void> => {
+        setCourses(prev => prev.map(course =>
+            course.id === courseId
+                ? {
+                    ...course,
+                    submissions: course.submissions.map(submission =>
+                        submission.id === submissionId
+                            ? { ...submission, instructorReview: review }
+                            : submission
+                    )
+                }
+                : course
+        ));
+
+        try {
+            await updateSubmissionReviewInDatabase(submissionId, review);
+        } catch (e) {
+            console.error('Failed to update submission review:', e);
+            setError('Failed to save instructor review. Please try again.');
+            if (isSupabaseConfigured()) {
+                getAllCourses().then(setCourses);
+            }
+        }
+    }, []);
+
     return {
         courses,
         loading,
@@ -224,7 +255,8 @@ export function useCourseStorage(): UseCourseStorageReturn {
         updateCourse,
         deleteCourse,
         addSubmission,
-        deleteSubmission
+        deleteSubmission,
+        updateSubmissionReview
     };
 }
 

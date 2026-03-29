@@ -47,6 +47,7 @@ role-based access, and Supabase-backed persistence.
   - `instructors`
   - `courses`
   - `submissions`
+  - `submission_reviews`
   - `student_history`
 - Verify a student can only read:
   - their own profile
@@ -67,6 +68,8 @@ role-based access, and Supabase-backed persistence.
 - Confirm submission is written to:
   - `submissions`
   - `student_history`
+- Save one instructor validation or override and confirm it is written to:
+  - `submission_reviews`
 - Confirm the student can see results and history.
 - Confirm the instructor can review that submission.
 
