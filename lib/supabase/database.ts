@@ -1,13 +1,6 @@
 import { supabase, isSupabaseConfigured } from './client';
 import { Course, Institution, InstructorReview, Submission, UserProfile, UserRole } from '../../types';
 
-async function getCurrentSessionUserId(): Promise<string | null> {
-    if (!isSupabaseConfigured()) return null;
-
-    const { data: { session } } = await supabase.auth.getSession();
-    return session?.user?.id || null;
-}
-
 function normalizeInstructorReview(review: any): InstructorReview | undefined {
     if (!review) return undefined;
 
@@ -44,6 +37,15 @@ function mapSubmissionRecord(record: any, reviewMap: Record<string, InstructorRe
     };
 }
 
+function getPersistedAppUser(): { id?: string; email?: string; schoolId?: string; schoolName?: string; role?: string } | null {
+    try {
+        const stored = localStorage.getItem('speakwise_user');
+        return stored ? JSON.parse(stored) : null;
+    } catch {
+        return null;
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Course Service - Supabase Operations for Courses
 // ═══════════════════════════════════════════════════════════════════════════
@@ -57,11 +59,6 @@ export async function getAllCourses(): Promise<Course[]> {
     }
 
     try {
-        const currentUserId = await getCurrentSessionUserId();
-        if (!currentUserId) {
-            return [];
-        }
-
         // Get courses
         const { data: courses, error: coursesError } = await supabase
             .from('courses')
@@ -306,13 +303,8 @@ export function subscribeToCoursesRealtime(
         )
         .subscribe();
 
-    const { data: authListener } = supabase.auth.onAuthStateChange(() => {
-        getAllCourses().then(onUpdate);
-    });
-
     return () => {
         supabase.removeChannel(coursesChannel);
-        authListener.subscription.unsubscribe();
     };
 }
 
@@ -329,16 +321,15 @@ export async function getStudentHistory(): Promise<Submission[]> {
     }
 
     try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session?.user) {
+        const currentUser = getPersistedAppUser();
+        if (!currentUser?.id) {
             return getHistoryFromLocalStorage();
         }
 
-        const deviceId = getDeviceId();
         const { data, error } = await supabase
             .from('student_history')
             .select('*')
-            .eq('user_id', session.user.id)
+            .eq('app_user_id', currentUser.id)
             .order('timestamp', { ascending: false });
 
         if (error) throw error;
@@ -361,8 +352,8 @@ export async function addToStudentHistory(submission: Submission): Promise<void>
     }
 
     try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session?.user) {
+        const currentUser = getPersistedAppUser();
+        if (!currentUser?.id) {
             addToHistoryLocalStorage(submission);
             return;
         }
@@ -372,7 +363,7 @@ export async function addToStudentHistory(submission: Submission): Promise<void>
         const savedSchool = savedSchoolRaw ? JSON.parse(savedSchoolRaw) : null;
         const { error } = await supabase.from('student_history').insert({
             id: submission.id,
-            user_id: session.user.id,
+            app_user_id: currentUser.id,
             device_id: deviceId,
             institution_id: savedSchool?.schoolId || null,
             student_name: submission.studentName,
@@ -495,8 +486,8 @@ export async function getUserProfiles(): Promise<UserProfile[]> {
 
     try {
         const { data, error } = await supabase
-            .from('user_profiles')
-            .select('*')
+            .from('app_users')
+            .select('id, email, display_name, role, school_id, school_name, created_at')
             .order('created_at', { ascending: false });
 
         if (error) throw error;
@@ -529,10 +520,10 @@ export async function updateUserRole(userId: string, role: UserRole): Promise<bo
     }
 
     try {
-        const { error } = await supabase
-            .from('user_profiles')
-            .update({ role })
-            .eq('id', userId);
+        const { error } = await supabase.rpc('set_app_user_role', {
+            user_id_input: userId,
+            role_input: role
+        });
 
         if (error) throw error;
         return true;
@@ -797,7 +788,7 @@ export async function checkInstructorStatus(email: string): Promise<boolean> {
 
     try {
         const { data: profile, error: profileError } = await supabase
-            .from('user_profiles')
+            .from('app_users')
             .select('role')
             .eq('email', normalizedEmail)
             .single();
@@ -837,16 +828,16 @@ export async function addInstructor(email: string, addedBy: string): Promise<boo
     try {
         const normalizedEmail = email.toLowerCase().trim();
         const { data: existingProfile, error: profileLookupError } = await supabase
-            .from('user_profiles')
+            .from('app_users')
             .select('id')
             .eq('email', normalizedEmail)
             .maybeSingle();
 
         if (!profileLookupError && existingProfile?.id) {
-            const { error: profileError } = await supabase
-            .from('user_profiles')
-            .update({ role: UserRole.INSTRUCTOR })
-            .eq('email', normalizedEmail);
+            const { error: profileError } = await supabase.rpc('set_app_user_role_by_email', {
+                email_input: normalizedEmail,
+                role_input: UserRole.INSTRUCTOR
+            });
 
             if (!profileError) {
                 return true;
@@ -881,7 +872,7 @@ export async function getAllInstructors(): Promise<string[]> {
 
     try {
         const { data: profiles, error: profilesError } = await supabase
-            .from('user_profiles')
+            .from('app_users')
             .select('email, role')
             .in('role', ['instructor', 'moderator', 'admin']);
 

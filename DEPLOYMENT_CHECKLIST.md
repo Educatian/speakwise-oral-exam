@@ -2,17 +2,19 @@
 
 This checklist is for production-style institutional deployment of SpeakWise.
 It assumes the app will be used by one or more institutions, each with scoped courses,
-role-based access, and Supabase-backed persistence.
+role-based access, app-managed sign-in, and Supabase-backed persistence.
 
 ## 1. Infrastructure Setup
 
 - Create a dedicated Supabase project for the environment.
-- Enable Email auth in Supabase Authentication.
-- Set the site URL and redirect URLs for your deployment domain.
 - Run [supabase/production_schema.sql](C:\Users\jewoo\Desktop\speakwise1.1\speakwise-oral-exam\supabase\production_schema.sql) in the Supabase SQL editor.
 - Confirm the RPC functions exist:
   - `list_active_institutions`
   - `validate_institution_access_code`
+  - `register_app_user`
+  - `authenticate_app_user`
+  - `update_app_user_school`
+  - `set_app_user_role`
 
 ## 2. Environment Variables
 
@@ -31,11 +33,11 @@ role-based access, and Supabase-backed persistence.
   - `primary_color`
   - `domain`
 
-## 4. Seed Admins and Staff
+## 4. Seed App Accounts and Staff
 
-- Create the initial admin user through Supabase Auth.
-- Insert or update that user in `public.user_profiles` with role `admin`.
-- Create instructor accounts and set their role to `instructor`.
+- Create the initial admin account in `public.app_users`.
+- Store the password hash in `public.app_user_credentials`.
+- Create instructor accounts in `public.app_users` and set their role to `instructor`.
 - For each instructor, set `school_id` and `school_name`.
 - Use `moderator` only for cross-institution or support staff.
 
@@ -43,20 +45,16 @@ role-based access, and Supabase-backed persistence.
 
 - Confirm RLS is enabled on all tables:
   - `institutions`
-  - `user_profiles`
+  - `app_users`
+  - `app_user_credentials`
   - `instructors`
   - `courses`
   - `submissions`
   - `submission_reviews`
   - `student_history`
-- Verify a student can only read:
-  - their own profile
-  - their own history
-  - courses in their institution
-- Verify an instructor can only manage:
-  - their own courses
-  - institution-scoped data they are allowed to see
-- Verify an admin can manage all institutions and roles.
+- Verify the app can sign in without Supabase Auth.
+- Verify institution and role filtering still works in the UI.
+- Confirm the deployment team understands that access control is now app-managed rather than Supabase session-managed.
 
 ## 6. App Smoke Test
 
@@ -84,14 +82,14 @@ role-based access, and Supabase-backed persistence.
 
 - Create the institution row.
 - Create or import instructor accounts.
-- Assign instructor `user_profiles.school_id`.
+- Assign instructor `app_users.school_id`.
 - Have instructors create institution-scoped courses.
 - Distribute the institution access code to students.
 - Validate student onboarding with one pilot class before wider rollout.
 
 ## 9. Operational Monitoring
 
-- Watch Supabase auth failures.
+- Watch failed app sign-in attempts and duplicate account creation errors.
 - Watch database row growth for:
   - `submissions`
   - `student_history`

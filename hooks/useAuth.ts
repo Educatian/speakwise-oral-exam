@@ -12,9 +12,9 @@ import {
     resetPassword as authResetPassword,
     getCurrentUser,
     updateUserSchool,
-    getSavedSchool
+    getSavedSchool,
+    getAuthEventName
 } from '../lib/supabase/auth';
-import { isSupabaseConfigured, supabase } from '../lib/supabase';
 
 interface UseAuthReturn {
     user: AuthUser | null;
@@ -65,18 +65,14 @@ export function useAuth(): UseAuthReturn {
 
         loadUser();
 
-        if (!isSupabaseConfigured()) {
-            return;
-        }
+        const authEventName = getAuthEventName();
+        const handleAuthChanged = () => {
+            loadUser();
+        };
 
-        const { data: authListener } = supabase.auth.onAuthStateChange(async () => {
-            const currentUser = await getCurrentUser();
-            setUser(currentUser);
-            setSavedSchool(getSavedSchool());
-        });
-
+        window.addEventListener(authEventName, handleAuthChanged);
         return () => {
-            authListener.subscription.unsubscribe();
+            window.removeEventListener(authEventName, handleAuthChanged);
         };
     }, []);
 

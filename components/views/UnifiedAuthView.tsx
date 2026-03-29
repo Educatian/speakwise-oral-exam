@@ -58,7 +58,7 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
 
     const getSubtitle = () => {
         if (mode === 'signup') return 'Join the correct institution workspace before entering your courses.';
-        if (mode === 'forgot') return 'We will send a password reset link to the email address below.';
+        if (mode === 'forgot') return 'Password resets are handled by your institution or platform administrator in this deployment.';
         return role === 'instructor'
             ? 'Use your approved instructor account to manage courses and submissions.'
             : 'Access your institution, courses, and oral interview history.';
@@ -87,7 +87,7 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
                     return;
                 }
 
-                setSuccessMessage('Password reset instructions have been sent to your inbox.');
+                setSuccessMessage('Password reset requests are handled outside the app. Please contact your institution administrator.');
                 return;
             }
 
@@ -355,7 +355,7 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
                         {isLoading ? 'Processing...' : (
                             mode === 'signin' ? 'Sign In' :
                             mode === 'signup' ? 'Create Account' :
-                            'Send Reset Link'
+                            'View Reset Guidance'
                         )}
                     </Button>
 

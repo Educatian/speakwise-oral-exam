@@ -3,9 +3,9 @@ import { Submission } from '../types';
 import {
     getStudentHistory,
     addToStudentHistory,
-    isSupabaseConfigured,
-    supabase
+    isSupabaseConfigured
 } from '../lib/supabase';
+import { getAuthEventName } from '../lib/supabase/auth';
 
 interface UseStudentHistoryReturn {
     history: Submission[];
@@ -56,16 +56,14 @@ export function useStudentHistory(): UseStudentHistoryReturn {
 
         loadHistory();
 
-        if (!isSupabaseConfigured()) {
-            return;
-        }
-
-        const { data: authListener } = supabase.auth.onAuthStateChange(() => {
+        const authEventName = getAuthEventName();
+        const handleAuthChanged = () => {
             loadHistory();
-        });
+        };
 
+        window.addEventListener(authEventName, handleAuthChanged);
         return () => {
-            authListener.subscription.unsubscribe();
+            window.removeEventListener(authEventName, handleAuthChanged);
         };
     }, []);
 

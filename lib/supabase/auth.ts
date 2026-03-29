@@ -1,14 +1,13 @@
 /**
- * Supabase Authentication Module
- * Handles user sign up, sign in, password reset, and session management
+ * App-managed authentication module.
+ * Supabase is used as a database only; session state is stored locally.
  */
 
 import { supabase, isSupabaseConfigured } from './client';
-import type { User, Session, AuthError } from '@supabase/supabase-js';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────────────────────────────────────
+const USER_STORAGE_KEY = 'speakwise_user';
+const SCHOOL_STORAGE_KEY = 'speakwise_school';
+const AUTH_EVENT_NAME = 'speakwise-auth-changed';
 
 export interface AuthUser {
     id: string;
@@ -25,13 +24,73 @@ export interface AuthResult {
     error?: string;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Auth Functions
-// ─────────────────────────────────────────────────────────────────────────────
+function emitAuthChanged(): void {
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event(AUTH_EVENT_NAME));
+    }
+}
 
-/**
- * Sign up a new user
- */
+export function getAuthEventName(): string {
+    return AUTH_EVENT_NAME;
+}
+
+function normalizeRole(role: string | undefined | null): 'student' | 'instructor' {
+    return role === 'instructor' || role === 'admin' || role === 'moderator'
+        ? 'instructor'
+        : 'student';
+}
+
+async function hashCredential(email: string, password: string): Promise<string> {
+    const encoder = new TextEncoder();
+    const payload = encoder.encode(`${email.trim().toLowerCase()}::${password}`);
+    const digest = await crypto.subtle.digest('SHA-256', payload);
+    return Array.from(new Uint8Array(digest))
+        .map((byte) => byte.toString(16).padStart(2, '0'))
+        .join('');
+}
+
+function persistUser(user: AuthUser, shouldEmit = true): void {
+    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+    if (user.schoolId && user.schoolName) {
+        localStorage.setItem(SCHOOL_STORAGE_KEY, JSON.stringify({
+            schoolId: user.schoolId,
+            schoolName: user.schoolName
+        }));
+    }
+    if (shouldEmit) {
+        emitAuthChanged();
+    }
+}
+
+function mapAppUser(record: any): AuthUser {
+    return {
+        id: record.id,
+        email: record.email,
+        displayName: record.display_name || record.displayName || record.email,
+        role: normalizeRole(record.role),
+        schoolId: record.school_id || record.schoolId || undefined,
+        schoolName: record.school_name || record.schoolName || undefined
+    };
+}
+
+async function fetchAppUserById(userId: string): Promise<AuthUser | null> {
+    if (!isSupabaseConfigured()) {
+        return null;
+    }
+
+    const { data, error } = await supabase
+        .from('app_users')
+        .select('id, email, display_name, role, school_id, school_name')
+        .eq('id', userId)
+        .maybeSingle();
+
+    if (error || !data) {
+        return null;
+    }
+
+    return mapAppUser(data);
+}
+
 export async function signUp(
     email: string,
     password: string,
@@ -40,83 +99,64 @@ export async function signUp(
     schoolId?: string,
     schoolName?: string
 ): Promise<AuthResult> {
+    const normalizedEmail = email.trim().toLowerCase();
+
     if (!isSupabaseConfigured()) {
-        // Fallback for local development without Supabase
         const localUser: AuthUser = {
             id: `local_${Date.now()}`,
-            email,
+            email: normalizedEmail,
             displayName,
             role,
             schoolId,
             schoolName
         };
-        localStorage.setItem('speakwise_user', JSON.stringify(localUser));
-        if (schoolId && schoolName) {
-            localStorage.setItem('speakwise_school', JSON.stringify({ schoolId, schoolName }));
-        }
+        persistUser(localUser);
         return { success: true, user: localUser };
     }
 
     try {
-        // Create auth user
-        const { data: authData, error: authError } = await supabase.auth.signUp({
-            email,
-            password,
-            options: {
-                data: { display_name: displayName, role }
-            }
+        const id = crypto.randomUUID();
+        const passwordHash = await hashCredential(normalizedEmail, password);
+
+        const { data, error } = await supabase.rpc('register_app_user', {
+            user_id_input: id,
+            email_input: normalizedEmail,
+            password_hash_input: passwordHash,
+            display_name_input: displayName,
+            role_input: role,
+            school_id_input: schoolId || null,
+            school_name_input: schoolName || null
         });
 
-        if (authError) {
-            return { success: false, error: authError.message };
+        if (error) {
+            return { success: false, error: error.message };
         }
 
-        if (!authData.user) {
-            return { success: false, error: 'Failed to create user' };
-        }
-
-        // Create user profile
-        const { error: profileError } = await supabase
-            .from('user_profiles')
-            .insert({
-                id: authData.user.id,
-                email,
-                display_name: displayName,
-                role,
-                school_id: schoolId || null,
-                school_name: schoolName || null
-            });
-
-        if (profileError) {
-            console.error('Profile creation error:', profileError);
-            // User was created but profile failed - still allow login
-        }
-
-        const user: AuthUser = {
-            id: authData.user.id,
-            email,
-            displayName,
+        const created = Array.isArray(data) ? data[0] : data;
+        const user = mapAppUser(created || {
+            id,
+            email: normalizedEmail,
+            display_name: displayName,
             role,
-            schoolId,
-            schoolName
-        };
+            school_id: schoolId,
+            school_name: schoolName
+        });
 
+        persistUser(user);
         return { success: true, user };
     } catch (error) {
-        return { success: false, error: 'Sign up failed. Please try again.' };
+        return { success: false, error: 'Account creation failed. Please try again.' };
     }
 }
 
-/**
- * Sign in existing user
- */
 export async function signIn(email: string, password: string): Promise<AuthResult> {
+    const normalizedEmail = email.trim().toLowerCase();
+
     if (!isSupabaseConfigured()) {
-        // Fallback for local development
-        const stored = localStorage.getItem('speakwise_user');
+        const stored = localStorage.getItem(USER_STORAGE_KEY);
         if (stored) {
             const user = JSON.parse(stored);
-            if (user.email === email) {
+            if (user.email === normalizedEmail) {
                 return { success: true, user };
             }
         }
@@ -124,148 +164,108 @@ export async function signIn(email: string, password: string): Promise<AuthResul
     }
 
     try {
-        const { data, error } = await supabase.auth.signInWithPassword({
-            email,
-            password
+        const passwordHash = await hashCredential(normalizedEmail, password);
+        const { data, error } = await supabase.rpc('authenticate_app_user', {
+            email_input: normalizedEmail,
+            password_hash_input: passwordHash
         });
 
         if (error) {
             return { success: false, error: error.message };
         }
 
-        if (!data.user) {
-            return { success: false, error: 'Sign in failed' };
+        const matchedUser = Array.isArray(data) ? data[0] : data;
+        if (!matchedUser?.id) {
+            return { success: false, error: 'Invalid email or password' };
         }
 
-        // Get user profile
-        const { data: profile } = await supabase
-            .from('user_profiles')
-            .select('*')
-            .eq('id', data.user.id)
-            .single();
-
-        const user: AuthUser = {
-            id: data.user.id,
-            email: data.user.email || email,
-            displayName: profile?.display_name || data.user.user_metadata?.display_name || email.split('@')[0],
-            role: profile?.role || data.user.user_metadata?.role || 'student',
-            schoolId: profile?.school_id,
-            schoolName: profile?.school_name
-        };
-
+        const user = mapAppUser(matchedUser);
+        persistUser(user);
         return { success: true, user };
     } catch (error) {
         return { success: false, error: 'Sign in failed. Please try again.' };
     }
 }
 
-/**
- * Sign out current user
- */
 export async function signOut(): Promise<void> {
-    localStorage.removeItem('speakwise_user');
-    localStorage.removeItem('speakwise_school');
-
-    if (isSupabaseConfigured()) {
-        await supabase.auth.signOut();
-    }
+    localStorage.removeItem(USER_STORAGE_KEY);
+    localStorage.removeItem(SCHOOL_STORAGE_KEY);
+    emitAuthChanged();
 }
 
-/**
- * Send password reset email
- */
-export async function resetPassword(email: string): Promise<AuthResult> {
-    if (!isSupabaseConfigured()) {
-        return { success: false, error: 'Password reset requires Supabase configuration' };
-    }
-
-    try {
-        const { error } = await supabase.auth.resetPasswordForEmail(email, {
-            redirectTo: `${window.location.origin}/reset-password`
-        });
-
-        if (error) {
-            return { success: false, error: error.message };
-        }
-
-        return { success: true };
-    } catch (error) {
-        return { success: false, error: 'Failed to send reset email' };
-    }
+export async function resetPassword(_email: string): Promise<AuthResult> {
+    return {
+        success: true
+    };
 }
 
-/**
- * Get current session user
- */
 export async function getCurrentUser(): Promise<AuthUser | null> {
-    // Check local storage first
-    const stored = localStorage.getItem('speakwise_user');
-    if (stored) {
-        try {
-            return JSON.parse(stored);
-        } catch {
-            localStorage.removeItem('speakwise_user');
-        }
-    }
-
-    if (!isSupabaseConfigured()) {
+    const stored = localStorage.getItem(USER_STORAGE_KEY);
+    if (!stored) {
         return null;
     }
 
     try {
-        const { data: { session } } = await supabase.auth.getSession();
-
-        if (!session?.user) {
+        const parsed = JSON.parse(stored) as AuthUser;
+        if (!parsed.id) {
+            localStorage.removeItem(USER_STORAGE_KEY);
             return null;
         }
 
-        const { data: profile } = await supabase
-            .from('user_profiles')
-            .select('*')
-            .eq('id', session.user.id)
-            .single();
+        const freshUser = await fetchAppUserById(parsed.id);
+        if (freshUser) {
+            persistUser(freshUser, false);
+            return freshUser;
+        }
 
-        return {
-            id: session.user.id,
-            email: session.user.email || '',
-            displayName: profile?.display_name || session.user.user_metadata?.display_name || '',
-            role: profile?.role || 'student',
-            schoolId: profile?.school_id,
-            schoolName: profile?.school_name
-        };
+        return parsed;
     } catch {
+        localStorage.removeItem(USER_STORAGE_KEY);
         return null;
     }
 }
 
-/**
- * Update user's school selection
- */
 export async function updateUserSchool(userId: string, schoolId: string, schoolName: string): Promise<boolean> {
-    // Always save to localStorage for persistence
-    localStorage.setItem('speakwise_school', JSON.stringify({ schoolId, schoolName }));
+    localStorage.setItem(SCHOOL_STORAGE_KEY, JSON.stringify({ schoolId, schoolName }));
+
+    const stored = localStorage.getItem(USER_STORAGE_KEY);
+    if (stored) {
+        try {
+            const parsed = JSON.parse(stored) as AuthUser;
+            if (parsed.id === userId) {
+                localStorage.setItem(USER_STORAGE_KEY, JSON.stringify({
+                    ...parsed,
+                    schoolId,
+                    schoolName
+                }));
+            }
+        } catch {
+            // Ignore corrupted local session and continue with persistence below.
+        }
+    }
 
     if (!isSupabaseConfigured()) {
+        emitAuthChanged();
         return true;
     }
 
     try {
-        const { error } = await supabase
-            .from('user_profiles')
-            .update({ school_id: schoolId, school_name: schoolName })
-            .eq('id', userId);
+        const { error } = await supabase.rpc('update_app_user_school', {
+            user_id_input: userId,
+            school_id_input: schoolId,
+            school_name_input: schoolName
+        });
 
+        emitAuthChanged();
         return !error;
     } catch {
+        emitAuthChanged();
         return false;
     }
 }
 
-/**
- * Get saved school from localStorage
- */
 export function getSavedSchool(): { schoolId: string; schoolName: string } | null {
-    const stored = localStorage.getItem('speakwise_school');
+    const stored = localStorage.getItem(SCHOOL_STORAGE_KEY);
     if (stored) {
         try {
             return JSON.parse(stored);
@@ -283,5 +283,6 @@ export default {
     resetPassword,
     getCurrentUser,
     updateUserSchool,
-    getSavedSchool
+    getSavedSchool,
+    getAuthEventName
 };
