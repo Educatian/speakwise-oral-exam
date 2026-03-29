@@ -56,6 +56,8 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
     const [instructorPin, setInstructorPin] = useState('');
     const [coursePassword, setCoursePassword] = useState('');
     const [coursePrompt, setCoursePrompt] = useState('');
+    const [silenceThresholdMs, setSilenceThresholdMs] = useState(3000);
+    const [minTurnDurationMs, setMinTurnDurationMs] = useState(700);
     const [selectedInstitutionId, setSelectedInstitutionId] = useState(currentInstitution?.schoolId || '');
     const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false);
     const [formError, setFormError] = useState<string | null>(null);
@@ -314,7 +316,11 @@ Only output valid JSON, nothing else.`
             institutionId: selectedInstitutionId || currentInstitution?.schoolId || '',
             institutionName: institution?.name || currentInstitution?.schoolName || '',
             createdByEmail: effectiveEmail || '',
-            createdAt: Date.now()
+            createdAt: Date.now(),
+            interviewSettings: {
+                silenceThresholdMs,
+                minTurnDurationMs
+            }
         };
 
         await saveCourseTemplate(template);
@@ -333,7 +339,8 @@ Only output valid JSON, nothing else.`
             institutionName: course.institutionName,
             sourceCourseId: course.id,
             createdByEmail: effectiveEmail || course.ownerEmail || '',
-            createdAt: Date.now()
+            createdAt: Date.now(),
+            interviewSettings: course.interviewSettings
         };
 
         await saveCourseTemplate(template);
@@ -346,6 +353,8 @@ Only output valid JSON, nothing else.`
         setCoursePrompt(template.prompt);
         setSelectedInstitutionId(template.institutionId || currentInstitution?.schoolId || '');
         setTemplateDraftName(template.name);
+        setSilenceThresholdMs(template.interviewSettings?.silenceThresholdMs || 3000);
+        setMinTurnDurationMs(template.interviewSettings?.minTurnDurationMs || 700);
         setLeftPanelMode('create');
         setFormError(null);
     };
@@ -391,6 +400,14 @@ Only output valid JSON, nothing else.`
             setFormError('AI interviewer instruction is required.');
             return;
         }
+        if (silenceThresholdMs < 1000 || silenceThresholdMs > 8000) {
+            setFormError('Silence threshold should stay between 1000ms and 8000ms.');
+            return;
+        }
+        if (minTurnDurationMs < 300 || minTurnDurationMs > 4000) {
+            setFormError('Minimum turn length should stay between 300ms and 4000ms.');
+            return;
+        }
 
         // Generate a temporary course ID for hashing
         const tempId = Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -406,7 +423,11 @@ Only output valid JSON, nothing else.`
             prompt: coursePrompt.trim(),
             ownerEmail: currentUserEmail, // Set owner for visibility control
             institutionId: selectedInstitutionId,
-            institutionName: selectedInstitution?.name || currentInstitution?.schoolName || ''
+            institutionName: selectedInstitution?.name || currentInstitution?.schoolName || '',
+            interviewSettings: {
+                silenceThresholdMs,
+                minTurnDurationMs
+            }
         });
 
         // Reset form
@@ -415,6 +436,8 @@ Only output valid JSON, nothing else.`
         setInstructorPin('');
         setCoursePassword('');
         setCoursePrompt('');
+        setSilenceThresholdMs(3000);
+        setMinTurnDurationMs(700);
         setSelectedInstitutionId(currentInstitution?.schoolId || '');
         setUploadedFiles([]);
         setExtractedQuestions([]);
@@ -671,6 +694,45 @@ Only output valid JSON, nothing else.`
                             onChange={(e) => setCoursePassword(e.target.value)}
                             aria-label="Student passcode"
                         />
+
+                        <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4 space-y-4">
+                            <div>
+                                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Interview tuning</p>
+                                <p className="text-xs text-slate-500 mt-1">Adjust how long the system waits before closing a turn and how short a captured response can be.</p>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <label className="block">
+                                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Silence threshold</span>
+                                    <div className="mt-2 flex items-center gap-3">
+                                        <input
+                                            type="range"
+                                            min={1000}
+                                            max={8000}
+                                            step={250}
+                                            value={silenceThresholdMs}
+                                            onChange={(event) => setSilenceThresholdMs(Number(event.target.value))}
+                                            className="flex-1"
+                                        />
+                                        <span className="w-16 text-right text-sm font-mono text-slate-200">{(silenceThresholdMs / 1000).toFixed(1)}s</span>
+                                    </div>
+                                </label>
+                                <label className="block">
+                                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Minimum turn length</span>
+                                    <div className="mt-2 flex items-center gap-3">
+                                        <input
+                                            type="range"
+                                            min={300}
+                                            max={4000}
+                                            step={100}
+                                            value={minTurnDurationMs}
+                                            onChange={(event) => setMinTurnDurationMs(Number(event.target.value))}
+                                            className="flex-1"
+                                        />
+                                        <span className="w-16 text-right text-sm font-mono text-slate-200">{minTurnDurationMs}ms</span>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
 
                         {/* ── Document Upload Section ────────────────────────────── */}
                         <div className="border border-dashed border-indigo-500/30 rounded-2xl p-4 space-y-3">

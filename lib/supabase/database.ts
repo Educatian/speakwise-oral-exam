@@ -38,6 +38,8 @@ function mapSubmissionRecord(record: any, reviewMap: Record<string, InstructorRe
         feedback: record.feedback,
         latencyMetrics: record.latency_metrics,
         bargeInEvents: record.barge_in_events,
+        rawTranscriptTurns: record.raw_transcript_turns || [],
+        failedTranscriptions: record.transcription_failures || [],
         dialogueMetrics: record.dialogue_metrics,
         argumentGraph: record.argument_graph,
         reasoningRubric: record.reasoning_rubric,
@@ -58,6 +60,7 @@ function normalizeCourseTemplate(record: any): CourseTemplate {
         institutionName: record.institution_name || record.institutionName || '',
         sourceCourseId: record.source_course_id || record.sourceCourseId || '',
         createdByEmail: record.created_by_email || record.createdByEmail || '',
+        interviewSettings: record.interview_settings || record.interviewSettings || undefined,
         createdAt: record.created_at
             ? new Date(record.created_at).getTime()
             : (record.createdAt || Date.now())
@@ -151,6 +154,7 @@ export async function getAllCourses(): Promise<Course[]> {
             ownerEmail: course.owner_email || '',
             institutionId: course.institution_id || '',
             institutionName: course.institution_name || '',
+            interviewSettings: course.interview_settings || undefined,
             submissions: (submissions || [])
                 .filter(s => s.course_id === course.id)
                 .map(s => mapSubmissionRecord(s, reviewMap))
@@ -178,7 +182,8 @@ export async function addCourse(course: Course): Promise<void> {
                 prompt: course.prompt,
                 owner_email: course.ownerEmail || '',
                 institution_id: course.institutionId || null,
-                institution_name: course.institutionName || null
+                institution_name: course.institutionName || null,
+                interview_settings: course.interviewSettings || null
             });
 
             if (error) throw error;
@@ -269,6 +274,8 @@ export async function addSubmissionToCourse(
                 // Learning Analytics
                 latency_metrics: submission.latencyMetrics,
                 barge_in_events: submission.bargeInEvents,
+                raw_transcript_turns: submission.rawTranscriptTurns || [],
+                transcription_failures: submission.failedTranscriptions || [],
                 // Advanced Reasoning Analytics
                 dialogue_metrics: submission.dialogueMetrics,
                 argument_graph: submission.argumentGraph,
@@ -423,6 +430,20 @@ export function subscribeToCoursesRealtime(
                 getAllCourses().then(onUpdate);
             }
         )
+        .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'submission_annotations' },
+            () => {
+                getAllCourses().then(onUpdate);
+            }
+        )
+        .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'audit_logs' },
+            () => {
+                getAllCourses().then(onUpdate);
+            }
+        )
         .subscribe();
 
     return () => {
@@ -497,6 +518,8 @@ export async function addToStudentHistory(submission: Submission): Promise<void>
             // Learning Analytics
             latency_metrics: submission.latencyMetrics,
             barge_in_events: submission.bargeInEvents,
+            raw_transcript_turns: submission.rawTranscriptTurns || [],
+            transcription_failures: submission.failedTranscriptions || [],
             // Advanced Reasoning Analytics
             dialogue_metrics: submission.dialogueMetrics,
             argument_graph: submission.argumentGraph,
@@ -720,7 +743,8 @@ export async function saveCourseTemplate(template: CourseTemplate): Promise<void
             institution_id: template.institutionId || null,
             institution_name: template.institutionName || null,
             source_course_id: template.sourceCourseId || null,
-            created_by_email: template.createdByEmail || null
+            created_by_email: template.createdByEmail || null,
+            interview_settings: template.interviewSettings || null
         });
 
         if (error) throw error;
@@ -794,6 +818,33 @@ export async function getSubmissionAnnotations(submissionId: string): Promise<Su
     }
 }
 
+export function subscribeToSubmissionAnnotationsRealtime(
+    submissionId: string,
+    onUpdate: (annotations: SubmissionAnnotation[]) => void
+): () => void {
+    if (!isSupabaseConfigured()) {
+        onUpdate(getSubmissionAnnotationsFromLocalStorage(submissionId));
+        return () => { };
+    }
+
+    getSubmissionAnnotations(submissionId).then(onUpdate);
+
+    const channel = supabase
+        .channel(`submission-annotations-${submissionId}`)
+        .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'submission_annotations', filter: `submission_id=eq.${submissionId}` },
+            () => {
+                getSubmissionAnnotations(submissionId).then(onUpdate);
+            }
+        )
+        .subscribe();
+
+    return () => {
+        supabase.removeChannel(channel);
+    };
+}
+
 export async function createSubmissionAnnotation(annotation: SubmissionAnnotation): Promise<void> {
     if (!isSupabaseConfigured()) {
         addSubmissionAnnotationToLocalStorage(annotation);
@@ -852,6 +903,33 @@ export async function getAuditLogs(limit = 40): Promise<AuditLogEntry[]> {
         console.warn('Falling back to local audit logs:', error);
         return localLogs;
     }
+}
+
+export function subscribeToAuditLogsRealtime(
+    onUpdate: (logs: AuditLogEntry[]) => void,
+    limit = 40
+): () => void {
+    if (!isSupabaseConfigured()) {
+        onUpdate(getAuditLogsFromLocalStorage().slice(0, limit));
+        return () => { };
+    }
+
+    getAuditLogs(limit).then(onUpdate);
+
+    const channel = supabase
+        .channel(`audit-logs-${limit}`)
+        .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'audit_logs' },
+            () => {
+                getAuditLogs(limit).then(onUpdate);
+            }
+        )
+        .subscribe();
+
+    return () => {
+        supabase.removeChannel(channel);
+    };
 }
 
 export async function logAuditEvent(entry: Omit<AuditLogEntry, 'id' | 'createdAt'> & { id?: string; createdAt?: number }): Promise<void> {
@@ -1339,8 +1417,10 @@ export default {
     deleteCourseTemplate,
     getSubmissionAnnotations,
     createSubmissionAnnotation,
+    subscribeToSubmissionAnnotationsRealtime,
     getAuditLogs,
     logAuditEvent,
+    subscribeToAuditLogsRealtime,
     checkInstructorStatus,
     addInstructor,
     getAllInstructors

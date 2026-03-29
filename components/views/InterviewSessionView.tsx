@@ -48,13 +48,20 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
         turnPhase,
         latencyMetrics,
         bargeInEvents,
+        rawTranscriptTurns,
+        failedTranscriptions,
         dialogueMetrics,
         argumentGraph,
         getReasoningRubric,
         startSession,
         endSession,
         stopRecording
-    } = useGeminiLive({ systemInstruction, voiceName: 'Kore' });
+    } = useGeminiLive({
+        systemInstruction,
+        voiceName: 'Kore',
+        silenceThresholdMs: course.interviewSettings?.silenceThresholdMs,
+        minTurnDurationMs: course.interviewSettings?.minTurnDurationMs
+    });
 
     const { peerCount } = usePresence(course.id, studentName, status === InterviewStatus.LIVE);
 
@@ -101,6 +108,8 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
                 transcriptions: finalTranscripts,
                 latencyMetrics,
                 bargeInEvents,
+                rawTranscriptTurns,
+                failedTranscriptions,
                 dialogueMetrics,
                 argumentGraph,
                 reasoningRubric: getReasoningRubric()
@@ -118,6 +127,8 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
                 feedback: 'Feedback generation failed. Please contact your instructor.',
                 latencyMetrics,
                 bargeInEvents,
+                rawTranscriptTurns,
+                failedTranscriptions,
                 dialogueMetrics,
                 argumentGraph,
                 reasoningRubric: getReasoningRubric()
@@ -281,6 +292,7 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
                                 <p className="text-slate-400">Reasoning score</p>
                                 <p className="text-white font-semibold mt-1">{getReasoningRubric().overallReasoningScore}/100</p>
                                 <p className="text-slate-500 mt-1">Barge-in events: {bargeInEvents.length}</p>
+                                <p className="text-slate-500 mt-1">Failed turns retained: {failedTranscriptions.length}</p>
                             </div>
                         </div>
                     </div>

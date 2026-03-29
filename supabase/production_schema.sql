@@ -140,6 +140,24 @@ create table if not exists public.course_templates (
     created_at timestamptz not null default now()
 );
 
+alter table public.courses
+add column if not exists interview_settings jsonb;
+
+alter table public.submissions
+add column if not exists raw_transcript_turns jsonb default '[]'::jsonb;
+
+alter table public.submissions
+add column if not exists transcription_failures jsonb default '[]'::jsonb;
+
+alter table public.student_history
+add column if not exists raw_transcript_turns jsonb default '[]'::jsonb;
+
+alter table public.student_history
+add column if not exists transcription_failures jsonb default '[]'::jsonb;
+
+alter table public.course_templates
+add column if not exists interview_settings jsonb;
+
 create table if not exists public.submission_annotations (
     id text primary key,
     submission_id text not null references public.submissions(id) on delete cascade,

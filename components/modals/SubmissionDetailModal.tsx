@@ -5,7 +5,7 @@ import { ArgumentGraphBuilder } from '../../lib/reasoning';
 import { generateConceptNetwork } from '../../lib/reasoning/conceptNetwork';
 import { GroupKnowledgeService } from '../../lib/services/GroupKnowledgeService';
 import { getMasteryLevel } from '../../lib/utils/scoreDisplay';
-import { createSubmissionAnnotation, getSubmissionAnnotations } from '../../lib/supabase';
+import { createSubmissionAnnotation, subscribeToSubmissionAnnotationsRealtime } from '../../lib/supabase';
 
 interface SubmissionDetailModalProps {
     submission: Submission | null;
@@ -114,25 +114,9 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
 
     useEffect(() => {
         if (!submission) return;
-
-        let isMounted = true;
-
-        getSubmissionAnnotations(submission.id)
-            .then((loadedAnnotations) => {
-                if (isMounted) {
-                    setAnnotations(loadedAnnotations);
-                }
-            })
-            .catch((error) => {
-                console.error('Failed to load submission annotations:', error);
-                if (isMounted) {
-                    setAnnotations([]);
-                }
-            });
-
-        return () => {
-            isMounted = false;
-        };
+        return subscribeToSubmissionAnnotationsRealtime(submission.id, (loadedAnnotations) => {
+            setAnnotations(loadedAnnotations);
+        });
     }, [submission]);
 
     const peerData = useMemo(() => {
@@ -212,6 +196,11 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
         });
     }, [submission]);
 
+    const selectedTurnAnnotations = useMemo(() => {
+        if (activeTranscriptIndex == null) return [];
+        return annotations.filter((annotation) => annotation.transcriptIndex === activeTranscriptIndex);
+    }, [activeTranscriptIndex, annotations]);
+
     const handleSaveAnnotation = async () => {
         if (!submission || annotationTurnIndex == null || !annotationDraft.trim()) return;
 
@@ -229,7 +218,6 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
         setIsSavingAnnotation(true);
         try {
             await createSubmissionAnnotation(annotation);
-            setAnnotations((current) => [...current, annotation]);
             setAnnotationDraft('');
         } finally {
             setIsSavingAnnotation(false);
@@ -397,6 +385,201 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                     <p className="text-slate-300 text-sm leading-relaxed italic">
                         "{submission.feedback}"
                     </p>
+                </div>
+
+                <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl space-y-4">
+                    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                        <div>
+                            <h4 className="text-slate-200 font-semibold">Speech capture archive</h4>
+                            <p className="text-sm text-slate-500 mt-1">Raw turn captures are stored separately from the final transcript so failed or very short turns can still be audited.</p>
+                        </div>
+                        <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                            <span>{submission.rawTranscriptTurns?.length || 0} raw turn{(submission.rawTranscriptTurns?.length || 0) !== 1 ? 's' : ''}</span>
+                            <span>{submission.failedTranscriptions?.length || 0} queued failure{(submission.failedTranscriptions?.length || 0) !== 1 ? 's' : ''}</span>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 space-y-3 max-h-[280px] overflow-y-auto custom-scrollbar">
+                            {(submission.rawTranscriptTurns?.length || 0) === 0 ? (
+                                <p className="text-sm text-slate-500">No raw capture turns were preserved for this submission.</p>
+                            ) : (
+                                submission.rawTranscriptTurns!.map((turn, index) => (
+                                    <div key={turn.id} className="rounded-2xl border border-slate-800 bg-slate-900/40 px-4 py-3">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <span className="text-[10px] uppercase tracking-[0.18em] font-bold text-slate-500">Raw turn {index + 1}</span>
+                                            <span className={`text-[10px] uppercase tracking-[0.18em] font-bold ${
+                                                turn.status === 'transcribed'
+                                                    ? 'text-emerald-300'
+                                                    : turn.status === 'failed'
+                                                        ? 'text-rose-300'
+                                                        : 'text-amber-300'
+                                            }`}>
+                                                {turn.status.replace('_', ' ')}
+                                            </span>
+                                        </div>
+                                        <div className="flex flex-wrap gap-3 text-[11px] text-slate-500 mt-2">
+                                            <span>{turn.durationMs}ms</span>
+                                            <span>{turn.sampleCount} samples</span>
+                                            {turn.latency != null && <span>Latency {turn.latency}ms</span>}
+                                        </div>
+                                        <p className="text-xs text-slate-400 mt-2 break-all">
+                                            {turn.transcriptText || turn.error || 'Awaiting review'}
+                                        </p>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                        <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 space-y-3 max-h-[280px] overflow-y-auto custom-scrollbar">
+                            {(submission.failedTranscriptions?.length || 0) === 0 ? (
+                                <p className="text-sm text-slate-500">No failed or short transcription turns were queued.</p>
+                            ) : (
+                                submission.failedTranscriptions!.map((turn) => (
+                                    <div key={`failed-${turn.id}`} className="rounded-2xl border border-rose-500/20 bg-rose-500/5 px-4 py-3">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <span className="text-[10px] uppercase tracking-[0.18em] font-bold text-rose-200">
+                                                {turn.status === 'too_short' ? 'Too short' : 'Failed transcription'}
+                                            </span>
+                                            <span className="text-[10px] text-rose-200">{turn.durationMs}ms</span>
+                                        </div>
+                                        <p className="text-sm text-rose-100 mt-2 leading-relaxed">
+                                            {turn.error || 'No error detail was stored.'}
+                                        </p>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl space-y-4">
+                    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                        <div>
+                            <h4 className="text-slate-200 font-semibold">Integrated analysis workspace</h4>
+                            <p className="text-sm text-slate-500 mt-1">Navigate the argument map, jump to transcript evidence, and anchor annotations without leaving the same review surface.</p>
+                        </div>
+                        <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                            <span>{argumentGraph?.nodes.length || 0} concepts</span>
+                            <span>{annotations.length} annotations</span>
+                            <span>{submission.failedTranscriptions?.length || 0} failed capture{(submission.failedTranscriptions?.length || 0) !== 1 ? 's' : ''}</span>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)] gap-4">
+                        <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
+                            {graphLoading ? (
+                                <div className="text-center py-10">
+                                    <div className="w-8 h-8 border-2 border-indigo-500/30 border-t-indigo-400 rounded-full animate-spin mx-auto mb-3" />
+                                    <p className="text-slate-400 text-sm font-medium">Analyzing concept network...</p>
+                                </div>
+                            ) : argumentGraph && argumentGraph.nodes.length > 0 ? (
+                                <ArgumentMapView
+                                    graph={argumentGraph}
+                                    transcript={submission.transcript}
+                                    activeTurnIndex={activeTranscriptIndex}
+                                    onActiveTurnIndexChange={setActiveTranscriptIndex}
+                                    onHighlightTurnsChange={setHighlightedTranscriptIndices}
+                                    storageKey={submission.id}
+                                />
+                            ) : (
+                                <div className="text-center py-8 text-slate-500">
+                                    <p className="text-sm">No concept network is available for this session.</p>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="space-y-4">
+                            <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 space-y-3 max-h-[360px] overflow-y-auto custom-scrollbar">
+                                <div className="flex items-center justify-between gap-3">
+                                    <div>
+                                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Focused transcript</p>
+                                        <p className="text-xs text-slate-600 mt-1">Select a turn from the map, evidence list, or transcript to inspect its annotations.</p>
+                                    </div>
+                                    <span className="text-[11px] text-slate-500">
+                                        {activeTranscriptIndex != null ? `Turn ${activeTranscriptIndex + 1}` : 'No turn selected'}
+                                    </span>
+                                </div>
+                                {submission.transcript.map((turn, index) => (
+                                    <button
+                                        key={`analysis-turn-${turn.timestamp}-${index}`}
+                                        type="button"
+                                        onClick={() => setActiveTranscriptIndex(index)}
+                                        className={`w-full rounded-2xl border px-4 py-3 text-left transition-all ${
+                                            activeTranscriptIndex === index
+                                                ? 'border-emerald-500/40 bg-emerald-500/10'
+                                                : highlightedTranscriptIndices.includes(index)
+                                                    ? 'border-indigo-500/30 bg-indigo-500/10'
+                                                    : 'border-slate-800 bg-slate-900/40 hover:border-slate-700'
+                                        }`}
+                                    >
+                                        <div className="flex items-center justify-between gap-3">
+                                            <span className={`text-[10px] uppercase tracking-[0.18em] font-bold ${turn.speaker === 'user' ? 'text-indigo-300' : 'text-emerald-300'}`}>
+                                                {turn.speaker === 'user' ? 'Student' : 'AI interviewer'}
+                                            </span>
+                                            <span className="text-[10px] text-slate-500">Turn {index + 1}</span>
+                                        </div>
+                                        <p className="text-sm text-slate-200 leading-relaxed mt-2">{turn.text}</p>
+                                        <div className="flex flex-wrap items-center gap-2 mt-3">
+                                            {annotations
+                                                .filter((annotation) => annotation.transcriptIndex === index)
+                                                .map((annotation) => (
+                                                    <span
+                                                        key={`analysis-annotation-${annotation.id}`}
+                                                        className={`px-2 py-1 rounded-full text-[10px] border ${ANNOTATION_COLORS[annotation.category]}`}
+                                                    >
+                                                        {annotation.category.replace('_', ' ')}
+                                                    </span>
+                                                ))}
+                                            {canEditReview && (
+                                                <span className="px-2 py-1 rounded-full text-[10px] border border-slate-700 bg-slate-950/50 text-slate-400">
+                                                    Click to annotate
+                                                </span>
+                                            )}
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+
+                            <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 space-y-3">
+                                <div className="flex items-center justify-between gap-3">
+                                    <div>
+                                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Annotation context</p>
+                                        <p className="text-xs text-slate-600 mt-1">Reviewer evidence tied to the active transcript turn.</p>
+                                    </div>
+                                    <span className="text-[11px] text-slate-500">
+                                        {selectedTurnAnnotations.length} note{selectedTurnAnnotations.length !== 1 ? 's' : ''}
+                                    </span>
+                                </div>
+                                {selectedTurnAnnotations.length === 0 ? (
+                                    <p className="text-sm text-slate-500">No annotations are attached to the selected turn yet.</p>
+                                ) : (
+                                    selectedTurnAnnotations.map((annotation) => (
+                                        <div key={`selected-${annotation.id}`} className={`rounded-2xl border px-4 py-3 ${ANNOTATION_COLORS[annotation.category]}`}>
+                                            <div className="flex items-center justify-between gap-3">
+                                                <span className="text-[10px] uppercase tracking-[0.18em] font-bold">{annotation.category.replace('_', ' ')}</span>
+                                                <span className="text-[10px] opacity-70">{annotation.authorName}</span>
+                                            </div>
+                                            <p className="text-sm mt-2 leading-relaxed">{annotation.note}</p>
+                                        </div>
+                                    ))
+                                )}
+                                {canEditReview && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            if (activeTranscriptIndex != null) {
+                                                setAnnotationTurnIndex(activeTranscriptIndex);
+                                            }
+                                        }}
+                                        className="w-full rounded-xl border border-indigo-500/20 bg-indigo-500/10 px-4 py-3 text-sm text-indigo-200 hover:border-indigo-500/40"
+                                    >
+                                        {activeTranscriptIndex != null
+                                            ? `Prepare annotation for turn ${activeTranscriptIndex + 1}`
+                                            : 'Select a transcript turn to start annotating'}
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 {evidenceTrail.length > 0 && (

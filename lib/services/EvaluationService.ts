@@ -1,6 +1,6 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import { createFeedbackPrompt } from '../prompts/interviewerSystem';
-import { TranscriptionItem, Submission, RubricBreakdown, LatencyMetrics, BargeInEvent, DialogueMetrics, ArgumentGraph, ReasoningRubric } from '../../types';
+import { TranscriptionItem, Submission, RubricBreakdown, LatencyMetrics, BargeInEvent, DialogueMetrics, ArgumentGraph, ReasoningRubric, RawTranscriptTurn } from '../../types';
 
 interface EvaluationPayload {
     courseName: string;
@@ -8,6 +8,8 @@ interface EvaluationPayload {
     transcriptions: TranscriptionItem[];
     latencyMetrics: LatencyMetrics;
     bargeInEvents: BargeInEvent[];
+    rawTranscriptTurns: RawTranscriptTurn[];
+    failedTranscriptions: RawTranscriptTurn[];
     dialogueMetrics: DialogueMetrics;
     argumentGraph: ArgumentGraph;
     reasoningRubric: ReasoningRubric;
@@ -34,6 +36,8 @@ export class EvaluationService {
             transcriptions,
             latencyMetrics,
             bargeInEvents,
+            rawTranscriptTurns,
+            failedTranscriptions,
             dialogueMetrics,
             argumentGraph,
             reasoningRubric
@@ -182,6 +186,8 @@ export class EvaluationService {
             // Learning Analytics
             latencyMetrics,
             bargeInEvents,
+            rawTranscriptTurns,
+            failedTranscriptions,
 
             // Advanced Reasoning Analytics (with merged Toulmin)
             dialogueMetrics,

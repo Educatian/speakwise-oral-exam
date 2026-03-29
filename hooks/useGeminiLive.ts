@@ -8,11 +8,12 @@ import {
     LatencyMetrics,
     BargeInEvent,
     DialogueMetrics,
-    ArgumentGraph
+    ArgumentGraph,
+    RawTranscriptTurn
 } from '../types';
 import { GeminiWebsocketClient } from '../lib/services/GeminiWebsocketClient';
 import { AudioStreamService } from '../lib/services/AudioStreamService';
-import { TranscriptionService } from '../lib/services/TranscriptionService';
+import { CapturedAudioTurn, TranscriptionService } from '../lib/services/TranscriptionService';
 import {
     analyzeReasoningPatterns,
     calculateReasoningScores,
@@ -20,7 +21,6 @@ import {
     detectTurnInitiative,
     ArgumentGraphBuilder
 } from '../lib/reasoning';
-
 import {
     DEFAULT_LATENCY_METRICS,
     DEFAULT_DIALOGUE_METRICS,
@@ -31,23 +31,19 @@ interface UseGeminiLiveOptions {
     systemInstruction: string;
     voiceName?: string;
     onTranscriptionComplete?: (transcriptions: TranscriptionItem[]) => void;
+    silenceThresholdMs?: number;
+    minTurnDurationMs?: number;
 }
 
-/**
- * Turn-Based Gemini Live Interview Hook
- * 
- * Flow:
- * 1. AI speaks (TTS audio from Gemini Live)
- * 2. turnComplete → start recording student audio
- * 3. VAD detects 3s silence → auto-stop OR student clicks "Done"
- * 4. Post-hoc transcription via Gemini Flash
- * 5. Transcribed text displayed + sent to Gemini via sendText()
- * 6. AI responds with next question → repeat
- */
 export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveReturn {
-    const { systemInstruction, voiceName = 'Kore', onTranscriptionComplete } = options;
+    const {
+        systemInstruction,
+        voiceName = 'Kore',
+        onTranscriptionComplete,
+        silenceThresholdMs = 3000,
+        minTurnDurationMs = 700
+    } = options;
 
-    // Session State
     const [status, setStatus] = useState<InterviewStatus>(InterviewStatus.IDLE);
     const [transcriptions, setTranscriptions] = useState<TranscriptionItem[]>([]);
     const transcriptionsRef = useRef<TranscriptionItem[]>([]);
@@ -59,18 +55,17 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
     const [error, setError] = useState<string | null>(null);
     const [turnPhase, setTurnPhase] = useState<TurnPhase>('idle');
 
-    // Learning Analytics State
     const [latencyMetrics, setLatencyMetrics] = useState<LatencyMetrics>(DEFAULT_LATENCY_METRICS);
-    const [bargeInEvents] = useState<BargeInEvent[]>([]);
+    const [bargeInEvents, setBargeInEvents] = useState<BargeInEvent[]>([]);
+    const [rawTranscriptTurns, setRawTranscriptTurns] = useState<RawTranscriptTurn[]>([]);
+    const [failedTranscriptions, setFailedTranscriptions] = useState<RawTranscriptTurn[]>([]);
     const [dialogueMetrics, setDialogueMetrics] = useState<DialogueMetrics>(DEFAULT_DIALOGUE_METRICS);
     const [argumentGraph, setArgumentGraph] = useState<ArgumentGraph>({ nodes: [], edges: [], coherenceScore: 0, complexity: 0 });
 
-    // Services
     const audioServiceRef = useRef<AudioStreamService | null>(null);
     const sessionRef = useRef<GeminiWebsocketClient | null>(null);
     const transcriptionServiceRef = useRef<TranscriptionService | null>(null);
 
-    // Analytics Refs
     const lastTurnEndTimeRef = useRef<number>(0);
     const userSpeakingTimeRef = useRef<number>(0);
     const interviewerSpeakingTimeRef = useRef<number>(0);
@@ -78,20 +73,59 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
     const argumentGraphBuilderRef = useRef<ArgumentGraphBuilder>(new ArgumentGraphBuilder());
     const lastQuestionIdRef = useRef<string>('');
     const previousUserTextRef = useRef<string>('');
+    const rawTranscriptTurnsRef = useRef<RawTranscriptTurn[]>([]);
+    const failedTranscriptionsRef = useRef<RawTranscriptTurn[]>([]);
+    const pendingBargeInRef = useRef<BargeInEvent | null>(null);
 
-    // Turn management refs
     const aiTextBufferRef = useRef<string>('');
     const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
     const recordingStartTimeRef = useRef<number>(0);
     const audioEndTimerRef = useRef<NodeJS.Timeout | null>(null);
     const turnPhaseRef = useRef<TurnPhase>('idle');
 
-    // Keep ref in sync with state
     useEffect(() => {
         turnPhaseRef.current = turnPhase;
     }, [turnPhase]);
 
-    // Cleanup function
+    const syncRawTurns = useCallback((next: RawTranscriptTurn[]) => {
+        rawTranscriptTurnsRef.current = next;
+        setRawTranscriptTurns(next);
+    }, []);
+
+    const syncFailedTurns = useCallback((next: RawTranscriptTurn[]) => {
+        failedTranscriptionsRef.current = next;
+        setFailedTranscriptions(next);
+    }, []);
+
+    const appendTranscription = useCallback((item: TranscriptionItem) => {
+        transcriptionsRef.current = [...transcriptionsRef.current, item];
+        setTranscriptions(transcriptionsRef.current);
+    }, []);
+
+    const appendRawTurn = useCallback((turn: RawTranscriptTurn) => {
+        syncRawTurns([...rawTranscriptTurnsRef.current, turn]);
+    }, [syncRawTurns]);
+
+    const patchRawTurn = useCallback((turnId: string, updates: Partial<RawTranscriptTurn>) => {
+        syncRawTurns(
+            rawTranscriptTurnsRef.current.map((turn) =>
+                turn.id === turnId ? { ...turn, ...updates } : turn
+            )
+        );
+    }, [syncRawTurns]);
+
+    const queueFailedTurn = useCallback((turn: RawTranscriptTurn) => {
+        syncFailedTurns([turn, ...failedTranscriptionsRef.current.filter((item) => item.id !== turn.id)]);
+    }, [syncFailedTurns]);
+
+    const updateLatencyMetrics = useCallback(() => {
+        return calculateLatencyMetrics(
+            latencyListRef.current,
+            userSpeakingTimeRef.current,
+            interviewerSpeakingTimeRef.current
+        );
+    }, []);
+
     const cleanup = useCallback(() => {
         if (silenceTimerRef.current) {
             clearTimeout(silenceTimerRef.current);
@@ -106,156 +140,229 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
             audioServiceRef.current = null;
         }
         if (sessionRef.current) {
-            try { sessionRef.current.disconnect(); } catch (e) { /* */ }
+            try {
+                sessionRef.current.disconnect();
+            } catch {
+                // no-op
+            }
             sessionRef.current = null;
         }
         transcriptionsRef.current = [];
     }, []);
 
-    // Helper to add transcription
-    const addTranscription = useCallback((item: TranscriptionItem) => {
-        transcriptionsRef.current = [...transcriptionsRef.current, item];
-        setTranscriptions(transcriptionsRef.current);
+    const noteBargeInIfNeeded = useCallback(() => {
+        if (pendingBargeInRef.current) return;
+
+        const interruptedContent = (pendingAIText || aiTextBufferRef.current)
+            .replace('[END_INTERVIEW]', '')
+            .trim();
+
+        pendingBargeInRef.current = {
+            timestamp: Date.now(),
+            interruptedContent: interruptedContent || 'AI response in progress',
+            studentUtterance: '',
+            interpretationType: 'unknown',
+            recoveredFromTranscript: false
+        };
+    }, [pendingAIText]);
+
+    const processCapturedTurn = useCallback(async (
+        capturedTurn: CapturedAudioTurn,
+        latency?: number
+    ): Promise<{ text: string | null; isBargeIn: boolean }> => {
+        const isBargeIn = !!pendingBargeInRef.current;
+        const rawTurnBase: RawTranscriptTurn = {
+            id: capturedTurn.id,
+            speaker: 'user',
+            timestamp: capturedTurn.createdAt,
+            durationMs: capturedTurn.durationMs,
+            sampleCount: capturedTurn.sampleCount,
+            audioBase64: capturedTurn.wavBase64,
+            status: 'pending',
+            latency,
+            isBargeIn
+        };
+
+        appendRawTurn(rawTurnBase);
+
+        if (capturedTurn.durationMs < minTurnDurationMs) {
+            const tooShortTurn: RawTranscriptTurn = {
+                ...rawTurnBase,
+                status: 'too_short',
+                error: `Captured audio was shorter than the ${minTurnDurationMs}ms minimum turn length.`
+            };
+            patchRawTurn(capturedTurn.id, tooShortTurn);
+            queueFailedTurn(tooShortTurn);
+            if (pendingBargeInRef.current) {
+                setBargeInEvents((current) => [
+                    ...current,
+                    {
+                        ...pendingBargeInRef.current,
+                        studentUtterance: '[too short to transcribe]',
+                        recoveredFromTranscript: false
+                    }
+                ]);
+                pendingBargeInRef.current = null;
+            }
+            return { text: null, isBargeIn };
+        }
+
+        const result = await transcriptionServiceRef.current!.transcribeCapturedTurn(capturedTurn);
+        if (result.text && result.text.trim()) {
+            const userText = result.text.trim();
+            patchRawTurn(capturedTurn.id, {
+                status: 'transcribed',
+                transcriptText: userText
+            });
+
+            if (pendingBargeInRef.current) {
+                const completedBargeIn: BargeInEvent = {
+                    ...pendingBargeInRef.current,
+                    studentUtterance: userText,
+                    interpretationType: userText.endsWith('?') ? 'correction' : 'confidence',
+                    recoveredFromTranscript: true
+                };
+                setBargeInEvents((current) => [...current, completedBargeIn]);
+                pendingBargeInRef.current = null;
+            }
+
+            return { text: userText, isBargeIn };
+        }
+
+        const failedTurn: RawTranscriptTurn = {
+            ...rawTurnBase,
+            status: 'failed',
+            error: result.error || 'Transcription returned no usable text.'
+        };
+        patchRawTurn(capturedTurn.id, failedTurn);
+        queueFailedTurn(failedTurn);
+        if (pendingBargeInRef.current) {
+            setBargeInEvents((current) => [
+                ...current,
+                {
+                    ...pendingBargeInRef.current,
+                    studentUtterance: '[transcription failed]',
+                    recoveredFromTranscript: false
+                }
+            ]);
+            pendingBargeInRef.current = null;
+        }
+        return { text: null, isBargeIn };
+    }, [appendRawTurn, minTurnDurationMs, patchRawTurn, queueFailedTurn]);
+
+    const startRecordingPhase = useCallback(() => {
+        setTurnPhase('recording');
+        recordingStartTimeRef.current = Date.now();
+        setPendingUserText('');
+
+        if (transcriptionServiceRef.current) {
+            transcriptionServiceRef.current.startAccumulating();
+        }
     }, []);
 
-    // Calculate latency metrics
-    const updateLatencyMetrics = useCallback(() => {
-        return calculateLatencyMetrics(
-            latencyListRef.current,
-            userSpeakingTimeRef.current,
-            interviewerSpeakingTimeRef.current
-        );
-    }, []);
-
-    // ─── Stop Recording & Transcribe ───────────────────────────────────────
     const stopRecording = useCallback(() => {
-        console.log('[TurnBased] stopRecording called, current phase:', turnPhaseRef.current);
-        // Only stop if we're in recording (or idle, for safety)
         if (turnPhaseRef.current !== 'recording' && turnPhaseRef.current !== 'idle') {
-            console.log('[TurnBased] Not in recording phase, ignoring stop');
             return;
         }
 
-        console.log('[TurnBased] Stopping recording, starting transcription...');
         setTurnPhase('transcribing');
 
-        // Clear silence timer
         if (silenceTimerRef.current) {
             clearTimeout(silenceTimerRef.current);
             silenceTimerRef.current = null;
         }
 
-        // Stop audio accumulation
         if (transcriptionServiceRef.current) {
             transcriptionServiceRef.current.stopAccumulating();
         }
 
-        // Calculate speaking duration
         const speakingDuration = Date.now() - recordingStartTimeRef.current;
         userSpeakingTimeRef.current += speakingDuration;
 
-        // Transcribe accumulated audio
-        if (transcriptionServiceRef.current && transcriptionServiceRef.current.hasAudio()) {
-            transcriptionServiceRef.current.transcribe().then((text) => {
-                if (text && text.trim()) {
-                    const now = Date.now();
-                    const userText = text.trim();
+        if (!transcriptionServiceRef.current || !transcriptionServiceRef.current.hasAudio()) {
+            startRecordingPhase();
+            return;
+        }
 
-                    console.log('[TurnBased] Transcription result:', userText.substring(0, 60));
+        const latency = lastTurnEndTimeRef.current > 0
+            ? recordingStartTimeRef.current - lastTurnEndTimeRef.current
+            : 0;
+        const normalizedLatency = latency > 0 && latency < 60000 ? latency : undefined;
+        const capturedTurn = transcriptionServiceRef.current.consumeCurrentTurn();
 
-                    // Show the transcribed text
-                    setPendingUserText(userText);
+        if (!capturedTurn) {
+            startRecordingPhase();
+            return;
+        }
 
-                    // Calculate latency
-                    const latency = lastTurnEndTimeRef.current > 0
-                        ? recordingStartTimeRef.current - lastTurnEndTimeRef.current : 0;
-                    if (latency > 0 && latency < 60000) {
-                        latencyListRef.current.push(latency);
-                    }
-
-                    // Add to transcript
-                    addTranscription({
-                        speaker: 'user',
-                        text: userText,
-                        timestamp: now,
-                        latency: latency > 0 ? latency : undefined,
-                        duration: speakingDuration
-                    });
-
-                    // Process for argument graph
-                    try {
-                        argumentGraphBuilderRef.current.processUserUtterance(
-                            userText, now, lastQuestionIdRef.current || undefined
-                        );
-                        setArgumentGraph(argumentGraphBuilderRef.current.getGraph());
-                    } catch (e) {
-                        console.error('Argument graph error:', e);
-                    }
-
-                    // Update dialogue metrics
-                    const isRephrasing = detectRephrasing(userText, previousUserTextRef.current);
-                    const isInitiative = detectTurnInitiative(userText, '');
-
-                    setDialogueMetrics(prev => ({
-                        ...prev,
-                        turnInitiatives: prev.turnInitiatives + (isInitiative ? 1 : 0),
-                        rephrasingEvents: prev.rephrasingEvents + (isRephrasing ? 1 : 0),
-                        followUpDepth: [...prev.followUpDepth, userText.length],
-                        avgFollowUpDepth: Math.round(
-                            [...prev.followUpDepth, userText.length].reduce((a, b) => a + b, 0) /
-                            (prev.followUpDepth.length + 1)
-                        )
-                    }));
-
-                    previousUserTextRef.current = userText;
-                    setLatencyMetrics(updateLatencyMetrics());
-
-                    // Clear pending text after a brief display period, then send to Gemini
-                    setTimeout(() => {
-                        setPendingUserText('');
-
-                        // Send transcribed text to Gemini for next response
-                        if (sessionRef.current) {
-                            console.log('[TurnBased] Sending text to Gemini:', userText.substring(0, 60));
-                            setTurnPhase('ai_speaking');
-                            sessionRef.current.sendText(userText);
-                        }
-                    }, 1500); // Show transcription for 1.5s before AI responds
-
-                } else {
-                    // No speech detected — go back to recording
-                    console.log('[TurnBased] No speech detected, returning to recording');
+        processCapturedTurn(capturedTurn, normalizedLatency)
+            .then(({ text, isBargeIn }) => {
+                if (!text) {
                     startRecordingPhase();
+                    return;
                 }
-            }).catch((err) => {
-                console.error('[TurnBased] Transcription failed:', err);
-                // Retry recording
+
+                const now = Date.now();
+                setPendingUserText(text);
+
+                if (normalizedLatency) {
+                    latencyListRef.current.push(normalizedLatency);
+                }
+
+                appendTranscription({
+                    speaker: 'user',
+                    text,
+                    timestamp: now,
+                    latency: normalizedLatency,
+                    duration: speakingDuration,
+                    isBargeIn
+                });
+
+                try {
+                    argumentGraphBuilderRef.current.processUserUtterance(
+                        text,
+                        now,
+                        lastQuestionIdRef.current || undefined
+                    );
+                    setArgumentGraph(argumentGraphBuilderRef.current.getGraph());
+                } catch (graphError) {
+                    console.error('Argument graph error:', graphError);
+                }
+
+                const isRephrasing = detectRephrasing(text, previousUserTextRef.current);
+                const isInitiative = detectTurnInitiative(text, '');
+
+                setDialogueMetrics((current) => {
+                    const nextFollowUpDepth = [...current.followUpDepth, text.length];
+                    return {
+                        ...current,
+                        turnInitiatives: current.turnInitiatives + (isInitiative ? 1 : 0),
+                        rephrasingEvents: current.rephrasingEvents + (isRephrasing ? 1 : 0),
+                        followUpDepth: nextFollowUpDepth,
+                        avgFollowUpDepth: Math.round(
+                            nextFollowUpDepth.reduce((sum, value) => sum + value, 0) / nextFollowUpDepth.length
+                        )
+                    };
+                });
+
+                previousUserTextRef.current = text;
+                setLatencyMetrics(updateLatencyMetrics());
+
+                setTimeout(() => {
+                    setPendingUserText('');
+
+                    if (sessionRef.current) {
+                        setTurnPhase('ai_speaking');
+                        sessionRef.current.sendText(text);
+                    }
+                }, 1500);
+            })
+            .catch((transcriptionError) => {
+                console.error('[TurnBased] Transcription failed:', transcriptionError);
                 startRecordingPhase();
             });
-        } else {
-            // No audio accumulated — go back to recording
-            console.log('[TurnBased] No audio accumulated, returning to recording');
-            startRecordingPhase();
-        }
-    }, [addTranscription, updateLatencyMetrics]);
+    }, [appendTranscription, processCapturedTurn, startRecordingPhase, updateLatencyMetrics]);
 
-    // ─── Start Recording Phase ─────────────────────────────────────────────
-    const startRecordingPhase = useCallback(() => {
-        console.log('[TurnBased] Starting recording phase...');
-        setTurnPhase('recording');
-        recordingStartTimeRef.current = Date.now();
-        setPendingUserText('');
-
-        // Start audio accumulation for post-hoc transcription
-        if (transcriptionServiceRef.current) {
-            transcriptionServiceRef.current.startAccumulating();
-        }
-
-        // Set up silence detection timer (reset on each voice activity)
-        // The actual silence detection happens in the VAD callback below
-    }, []);
-
-    // ─── Start Session ─────────────────────────────────────────────────────
     const startSession = useCallback(async () => {
         try {
             setStatus(InterviewStatus.CONNECTING);
@@ -263,13 +370,20 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
             setTranscriptions([]);
             setTurnPhase('idle');
             setLatencyMetrics(DEFAULT_LATENCY_METRICS);
+            setBargeInEvents([]);
+            setDialogueMetrics(DEFAULT_DIALOGUE_METRICS);
+            setArgumentGraph({ nodes: [], edges: [], coherenceScore: 0, complexity: 0 });
+            syncRawTurns([]);
+            syncFailedTurns([]);
 
-            // Reset analytics refs
             lastTurnEndTimeRef.current = Date.now();
             userSpeakingTimeRef.current = 0;
             interviewerSpeakingTimeRef.current = 0;
             latencyListRef.current = [];
             argumentGraphBuilderRef.current = new ArgumentGraphBuilder();
+            pendingBargeInRef.current = null;
+            previousUserTextRef.current = '';
+            aiTextBufferRef.current = '';
 
             const wsClient = new GeminiWebsocketClient({
                 apiKey: process.env.API_KEY as string,
@@ -278,130 +392,115 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                 onOpen: async () => {
                     setStatus(InterviewStatus.LIVE);
 
-                    // Initialize audio service (for VAD + level display only, NOT streaming to Gemini)
                     audioServiceRef.current = new AudioStreamService();
                     await audioServiceRef.current.initialize({
                         onAudioLevel: (level) => setAudioLevel(level),
                         onVoiceActivity: (isSpeaking) => {
                             setIsUserSpeaking(isSpeaking);
 
-                            // Silence detection: when user stops speaking during recording phase
-                            if (turnPhaseRef.current === 'recording') {
-                                if (isSpeaking) {
-                                    // User is speaking — clear silence timer
-                                    if (silenceTimerRef.current) {
-                                        clearTimeout(silenceTimerRef.current);
-                                        silenceTimerRef.current = null;
-                                    }
-                                } else {
-                                    // User stopped — start 3s silence timer to auto-stop
-                                    if (!silenceTimerRef.current) {
-                                        silenceTimerRef.current = setTimeout(() => {
-                                            console.log('[TurnBased] 3s silence detected, auto-stopping recording');
-                                            silenceTimerRef.current = null;
-                                            stopRecording();
-                                        }, 3000);
-                                    }
+                            if (turnPhaseRef.current === 'ai_speaking' && isSpeaking) {
+                                noteBargeInIfNeeded();
+                            }
+
+                            if (turnPhaseRef.current !== 'recording') {
+                                return;
+                            }
+
+                            if (isSpeaking) {
+                                if (silenceTimerRef.current) {
+                                    clearTimeout(silenceTimerRef.current);
+                                    silenceTimerRef.current = null;
                                 }
+                            } else if (!silenceTimerRef.current) {
+                                silenceTimerRef.current = setTimeout(() => {
+                                    silenceTimerRef.current = null;
+                                    stopRecording();
+                                }, silenceThresholdMs);
                             }
                         },
                         onPCMData: (pcmBlob) => {
-                            // DON'T send audio to Gemini — only accumulate for post-hoc transcription
-                            if (transcriptionServiceRef.current && turnPhaseRef.current === 'recording') {
-                                const binaryString = atob(pcmBlob.data);
-                                const bytes = new Uint8Array(binaryString.length);
-                                for (let i = 0; i < binaryString.length; i++) {
-                                    bytes[i] = binaryString.charCodeAt(i);
-                                }
-                                transcriptionServiceRef.current.addChunk(bytes.buffer);
+                            if (!transcriptionServiceRef.current || turnPhaseRef.current !== 'recording') {
+                                return;
                             }
+
+                            const binaryString = atob(pcmBlob.data);
+                            const bytes = new Uint8Array(binaryString.length);
+                            for (let index = 0; index < binaryString.length; index += 1) {
+                                bytes[index] = binaryString.charCodeAt(index);
+                            }
+                            transcriptionServiceRef.current.addChunk(bytes.buffer);
                         },
                         onCalibration: (noiseFloor, threshold) => {
                             console.log(`[Audio] Calibrated - Noise: ${noiseFloor.toFixed(4)}, Threshold: ${threshold.toFixed(4)}`);
                         }
                     });
 
-                    // Initialize transcription service
                     transcriptionServiceRef.current = new TranscriptionService(process.env.API_KEY as string);
                 },
                 onMessage: async (message: LiveServerMessage) => {
-                    const sc = message.serverContent;
+                    const serverContent = message.serverContent;
 
-                    // ── Handle AI audio output ──
-                    const base64Audio = sc?.modelTurn?.parts?.[0]?.inlineData?.data;
+                    const base64Audio = serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
                     if (base64Audio) {
                         setIsInterviewerSpeaking(true);
                         setTurnPhase('ai_speaking');
                         if (audioServiceRef.current) {
                             audioServiceRef.current.playAudioChunk(base64Audio);
                         }
-                        // Debounced safety: 2s after last chunk → clear speaking state
-                        if (audioEndTimerRef.current) clearTimeout(audioEndTimerRef.current);
+                        if (audioEndTimerRef.current) {
+                            clearTimeout(audioEndTimerRef.current);
+                        }
                         audioEndTimerRef.current = setTimeout(() => {
                             setIsInterviewerSpeaking(false);
                         }, 2000);
                     }
 
-                    // ── Handle AI text transcription ──
-                    if (sc?.outputTranscription?.text) {
-                        const aiText = sc.outputTranscription.text;
-                        aiTextBufferRef.current += aiText;
+                    if (serverContent?.outputTranscription?.text) {
+                        aiTextBufferRef.current += serverContent.outputTranscription.text;
                         const displayText = aiTextBufferRef.current.replace('[END_INTERVIEW]', '').trim();
                         setPendingAIText(displayText);
 
-                        // Check for interview end
                         if (aiTextBufferRef.current.includes('[END_INTERVIEW]')) {
-                            console.log('[TurnBased] AI signaled interview end');
-                            // DON'T call cleanup() here — it wipes transcriptions!
-                            // Just signal ENDED status; InterviewSessionView will call
-                            // endSession() which properly preserves transcripts.
                             setTimeout(() => {
                                 setStatus(InterviewStatus.ENDED);
                             }, 5000);
                         }
                     }
 
-                    // ── Handle turnComplete → start recording ──
-                    if (sc?.turnComplete) {
+                    if (serverContent?.turnComplete) {
                         const now = Date.now();
                         const aiText = aiTextBufferRef.current.trim();
 
-                        console.log('[TurnBased] AI turn complete, switching to recording phase');
-
                         if (aiText) {
-                            // Commit AI text to transcript
                             const cleanText = aiText.replace('[END_INTERVIEW]', '').trim();
                             if (cleanText) {
-                                addTranscription({
+                                appendTranscription({
                                     speaker: 'interviewer',
                                     text: cleanText,
                                     timestamp: now
                                 });
 
-                                // Add to argument graph if question
                                 if (cleanText.includes('?')) {
                                     try {
-                                        const qId = argumentGraphBuilderRef.current.addQuestion(cleanText, now);
-                                        lastQuestionIdRef.current = qId;
-                                    } catch (e) {
-                                        console.error('Argument graph error:', e);
+                                        const questionId = argumentGraphBuilderRef.current.addQuestion(cleanText, now);
+                                        lastQuestionIdRef.current = questionId;
+                                    } catch (graphError) {
+                                        console.error('Argument graph error:', graphError);
                                     }
                                 }
                             }
                         }
 
-                        // Reset AI buffer
                         aiTextBufferRef.current = '';
                         setPendingAIText('');
                         setIsInterviewerSpeaking(false);
-                        if (audioEndTimerRef.current) clearTimeout(audioEndTimerRef.current);
+                        if (audioEndTimerRef.current) {
+                            clearTimeout(audioEndTimerRef.current);
+                        }
 
-                        // Track turn timing
                         lastTurnEndTimeRef.current = now;
                         setLatencyMetrics(updateLatencyMetrics());
 
-                        // Start recording phase (student's turn)
-                        // Small delay to let audio playback finish
                         setTimeout(() => {
                             startRecordingPhase();
                         }, 500);
@@ -414,8 +513,8 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                         onTranscriptionComplete(transcriptionsRef.current);
                     }
                 },
-                onError: (err: any) => {
-                    console.error('Gemini Live error:', err);
+                onError: (connectionError: unknown) => {
+                    console.error('Gemini Live error:', connectionError);
                     setError('Connection error occurred. Please try again.');
                     setStatus(InterviewStatus.ERROR);
                     cleanup();
@@ -425,20 +524,17 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
             sessionRef.current = wsClient;
             await wsClient.connect();
 
-            // Auto-greet: make AI speak first
             setTimeout(() => {
                 if (sessionRef.current) {
-                    console.log('[TurnBased] Sending init ping to trigger AI greeting...');
                     setTurnPhase('ai_speaking');
                     sessionRef.current.sendText("Hello! I'm ready for the interview. Please introduce yourself and start with the first question.");
                 }
             }, 1000);
-
-        } catch (err: any) {
-            console.error('Failed to start session:', err);
-            if (err.name === 'NotAllowedError') {
+        } catch (sessionError: any) {
+            console.error('Failed to start session:', sessionError);
+            if (sessionError?.name === 'NotAllowedError') {
                 setError('Microphone access denied. Please allow microphone access and try again.');
-            } else if (err.name === 'NotFoundError') {
+            } else if (sessionError?.name === 'NotFoundError') {
                 setError('No microphone found. Please connect a microphone and try again.');
             } else {
                 setError('Failed to start interview session. Please check your connection and try again.');
@@ -446,39 +542,57 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
             setStatus(InterviewStatus.IDLE);
             cleanup();
         }
-    }, [systemInstruction, voiceName, cleanup, onTranscriptionComplete, updateLatencyMetrics, addTranscription, startRecordingPhase, stopRecording]);
+    }, [
+        cleanup,
+        noteBargeInIfNeeded,
+        onTranscriptionComplete,
+        silenceThresholdMs,
+        startRecordingPhase,
+        stopRecording,
+        syncFailedTurns,
+        syncRawTurns,
+        systemInstruction,
+        updateLatencyMetrics,
+        voiceName,
+        appendTranscription
+    ]);
 
-    // End session — transcribe any pending audio first
     const endSession = useCallback(async () => {
         const now = Date.now();
 
-        // If we're recording, transcribe pending audio before cleanup
         if (turnPhaseRef.current === 'recording' || turnPhaseRef.current === 'idle') {
             if (transcriptionServiceRef.current) {
                 transcriptionServiceRef.current.stopAccumulating();
                 if (transcriptionServiceRef.current.hasAudio()) {
-                    console.log('[TurnBased] End session: transcribing pending audio...');
                     setTurnPhase('transcribing');
                     try {
-                        const text = await transcriptionServiceRef.current.transcribe();
-                        if (text && text.trim()) {
-                            addTranscription({
-                                speaker: 'user',
-                                text: text.trim(),
-                                timestamp: now
-                            });
-                            console.log('[TurnBased] Pending audio transcribed:', text.trim().substring(0, 60));
+                        const capturedTurn = transcriptionServiceRef.current.consumeCurrentTurn();
+                        const latency = lastTurnEndTimeRef.current > 0
+                            ? recordingStartTimeRef.current - lastTurnEndTimeRef.current
+                            : undefined;
+
+                        if (capturedTurn) {
+                            const { text, isBargeIn } = await processCapturedTurn(capturedTurn, latency);
+                            if (text) {
+                                appendTranscription({
+                                    speaker: 'user',
+                                    text,
+                                    timestamp: now,
+                                    latency,
+                                    duration: capturedTurn.durationMs,
+                                    isBargeIn
+                                });
+                            }
                         }
-                    } catch (e) {
-                        console.error('[TurnBased] Failed to transcribe pending audio:', e);
+                    } catch (transcriptionError) {
+                        console.error('[TurnBased] Failed to transcribe pending audio:', transcriptionError);
                     }
                 }
             }
         }
 
-        // Flush pending AI text
         if (aiTextBufferRef.current.trim()) {
-            addTranscription({
+            appendTranscription({
                 speaker: 'interviewer',
                 text: aiTextBufferRef.current.trim(),
                 timestamp: now
@@ -488,7 +602,6 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
         setLatencyMetrics(updateLatencyMetrics());
         setArgumentGraph(argumentGraphBuilderRef.current.getGraph());
 
-        // CRITICAL: save transcriptions BEFORE cleanup (cleanup clears them!)
         const finalTranscripts = [...transcriptionsRef.current];
 
         cleanup();
@@ -496,23 +609,22 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
         setTurnPhase('idle');
         setIsInterviewerSpeaking(false);
 
-        console.log('[TurnBased] Session ended with', finalTranscripts.length, 'transcriptions');
         return finalTranscripts;
-    }, [cleanup, updateLatencyMetrics, addTranscription]);
+    }, [appendTranscription, cleanup, processCapturedTurn, updateLatencyMetrics]);
 
-    // Calculate reasoning rubric
     const getReasoningRubric = useCallback(() => {
         const userText = transcriptions
-            .filter(t => t.speaker === 'user')
-            .map(t => t.text)
+            .filter((item) => item.speaker === 'user')
+            .map((item) => item.text)
             .join(' ');
         const patterns = analyzeReasoningPatterns(userText);
         return calculateReasoningScores(patterns, userText);
     }, [transcriptions]);
 
-    // Cleanup on unmount
     useEffect(() => {
-        return () => { cleanup(); };
+        return () => {
+            cleanup();
+        };
     }, [cleanup]);
 
     return {
@@ -525,14 +637,13 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
         pendingAIText,
         error,
         turnPhase,
-        // Learning Analytics
         latencyMetrics,
         bargeInEvents,
-        // Advanced Analytics
+        rawTranscriptTurns,
+        failedTranscriptions,
         dialogueMetrics,
         argumentGraph,
         getReasoningRubric,
-        // Session control
         startSession,
         endSession,
         stopRecording

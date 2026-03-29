@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Button, Input } from '../ui';
 import { ADMIN_EMAIL, AuditLogEntry, Course, Institution, UserProfile, UserRole } from '../../types';
-import { getAllCourses, getAuditLogs, getInstitutions, getUserProfiles, updateUserRole } from '../../lib/supabase';
+import { getAllCourses, getAuditLogs, getInstitutions, getUserProfiles, subscribeToAuditLogsRealtime, updateUserRole } from '../../lib/supabase';
 
 interface AdminPanelViewProps {
     currentUserEmail?: string;
@@ -53,6 +53,13 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
         return () => {
             isMounted = false;
         };
+    }, [isAdmin]);
+
+    useEffect(() => {
+        if (!isAdmin) return;
+        return subscribeToAuditLogsRealtime((logs) => {
+            setAuditLogs(logs);
+        }, 20);
     }, [isAdmin]);
 
     const filteredUsers = useMemo(() => users.filter((user) =>

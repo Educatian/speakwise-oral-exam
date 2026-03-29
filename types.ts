@@ -105,6 +105,23 @@ export interface BargeInEvent {
   interruptedContent: string;   // What AI was saying
   studentUtterance: string;     // What student said
   interpretationType: 'confidence' | 'hasty_generalization' | 'correction' | 'unknown';
+  recoveredFromTranscript?: boolean;
+}
+
+export type RawTranscriptTurnStatus = 'pending' | 'transcribed' | 'failed' | 'too_short';
+
+export interface RawTranscriptTurn {
+  id: string;
+  speaker: 'user';
+  timestamp: number;
+  durationMs: number;
+  sampleCount: number;
+  audioBase64: string;
+  status: RawTranscriptTurnStatus;
+  transcriptText?: string;
+  error?: string;
+  latency?: number;
+  isBargeIn?: boolean;
 }
 
 /** Response latency metrics */
@@ -262,6 +279,12 @@ export interface CourseTemplate {
   sourceCourseId?: string;
   createdByEmail?: string;
   createdAt: number;
+  interviewSettings?: CourseInterviewSettings;
+}
+
+export interface CourseInterviewSettings {
+  silenceThresholdMs: number;
+  minTurnDurationMs: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -282,6 +305,8 @@ export interface Submission {
   latencyMetrics?: LatencyMetrics;
   bargeInEvents?: BargeInEvent[];
   scaffoldingEvents?: ScaffoldingEvent[];
+  rawTranscriptTurns?: RawTranscriptTurn[];
+  failedTranscriptions?: RawTranscriptTurn[];
 
   // Human-in-the-Loop
   confidenceScore?: number;         // AI's confidence in evaluation (0.0-1.0)
@@ -313,6 +338,7 @@ export interface Course {
   institutionId?: string;      // Institution workspace this course belongs to
   institutionName?: string;
   templateId?: string;
+  interviewSettings?: CourseInterviewSettings;
 }
 
 export interface InterviewSummary {
@@ -391,6 +417,8 @@ export interface UseGeminiLiveReturn {
   // Learning Analytics (Basic)
   latencyMetrics: LatencyMetrics;
   bargeInEvents: BargeInEvent[];
+  rawTranscriptTurns: RawTranscriptTurn[];
+  failedTranscriptions: RawTranscriptTurn[];
 
   // Advanced Analytics
   dialogueMetrics: DialogueMetrics;

@@ -145,6 +145,7 @@ export function useCourseStorage(): UseCourseStorageReturn {
                 if (updates.password !== undefined) supabaseUpdates.password = updates.password;
                 if (updates.institutionId !== undefined) supabaseUpdates.institution_id = updates.institutionId;
                 if (updates.institutionName !== undefined) supabaseUpdates.institution_name = updates.institutionName;
+                if (updates.interviewSettings !== undefined) supabaseUpdates.interview_settings = updates.interviewSettings;
 
                 const { error } = await supabase
                     .from('courses')

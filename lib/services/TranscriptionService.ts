@@ -11,6 +11,19 @@ const SAMPLE_RATE = 16000;
 const NUM_CHANNELS = 1;
 const BITS_PER_SAMPLE = 16;
 
+export interface CapturedAudioTurn {
+    id: string;
+    wavBase64: string;
+    durationMs: number;
+    sampleCount: number;
+    createdAt: number;
+}
+
+export interface TranscriptionAttemptResult {
+    text: string | null;
+    error?: string;
+}
+
 /**
  * Wraps raw PCM Int16 data in a WAV container for Gemini API compatibility.
  */
@@ -102,19 +115,50 @@ export class TranscriptionService {
         return totalSamples > SAMPLE_RATE * 0.5; // At least 0.5 seconds
     }
 
-    /**
-     * Transcribe the accumulated audio via Gemini API.
-     * Returns the transcription text, or null if failed.
-     */
-    async transcribe(): Promise<string | null> {
+    getSampleCount(): number {
+        return this.pcmChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+    }
+
+    getDurationMs(): number {
+        return Math.round((this.getSampleCount() / SAMPLE_RATE) * 1000);
+    }
+
+    clear(): void {
+        this.pcmChunks = [];
+    }
+
+    getCurrentTurn(): CapturedAudioTurn | null {
         if (!this.hasAudio()) {
-            console.log('[Transcription] Not enough audio to transcribe');
             return null;
         }
 
+        return {
+            id: `raw_turn_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`,
+            wavBase64: pcmToWav(this.pcmChunks),
+            durationMs: this.getDurationMs(),
+            sampleCount: this.getSampleCount(),
+            createdAt: Date.now()
+        };
+    }
+
+    consumeCurrentTurn(): CapturedAudioTurn | null {
+        const turn = this.getCurrentTurn();
+        this.clear();
+        return turn;
+    }
+
+    /**
+     * Transcribe a captured turn via Gemini API.
+     * Returns the transcription text, or null if failed.
+     */
+    async transcribeCapturedTurn(turn: CapturedAudioTurn | null): Promise<TranscriptionAttemptResult> {
+        if (!turn) {
+            console.log('[Transcription] Not enough audio to transcribe');
+            return { text: null, error: 'No captured audio turn was available.' };
+        }
+
         try {
-            const wavBase64 = pcmToWav(this.pcmChunks);
-            const durationSec = this.pcmChunks.reduce((sum, c) => sum + c.length, 0) / SAMPLE_RATE;
+            const durationSec = turn.durationMs / 1000;
             console.log(`[Transcription] Sending ${durationSec.toFixed(1)}s of audio for transcription`);
 
             const response = await this.ai.models.generateContent({
@@ -125,7 +169,7 @@ export class TranscriptionService {
                         {
                             inlineData: {
                                 mimeType: 'audio/wav',
-                                data: wavBase64,
+                                data: turn.wavBase64,
                             },
                         },
                         {
@@ -137,14 +181,11 @@ export class TranscriptionService {
 
             const text = response?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null;
             console.log(`[Transcription] Result: "${text?.substring(0, 60)}..."`);
-
-            // Clear buffer after transcription
-            this.pcmChunks = [];
-            return text;
+            return { text };
         } catch (err) {
             console.error('[Transcription] Failed:', err);
-            this.pcmChunks = [];
-            return null;
+            const error = err instanceof Error ? err.message : 'Transcription request failed.';
+            return { text: null, error };
         }
     }
 }
