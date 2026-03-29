@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArgumentGraph, InstructorReview, InstructorReviewStatus, Submission } from '../../types';
 import { Modal, Button, ArgumentMapView } from '../ui';
 import { ArgumentGraphBuilder } from '../../lib/reasoning';
@@ -35,6 +35,9 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
     const [graphLoading, setGraphLoading] = useState(false);
     const [reviewDraft, setReviewDraft] = useState<InstructorReview | null>(null);
     const [isSavingReview, setIsSavingReview] = useState(false);
+    const [activeTranscriptIndex, setActiveTranscriptIndex] = useState<number | null>(null);
+    const [highlightedTranscriptIndices, setHighlightedTranscriptIndices] = useState<number[]>([]);
+    const transcriptRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
     useEffect(() => {
         if (!submission) {
@@ -89,6 +92,8 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                 notes: ''
             }
         );
+        setActiveTranscriptIndex(null);
+        setHighlightedTranscriptIndices([]);
     }, [submission, currentReviewerEmail, currentReviewerName]);
 
     const peerData = useMemo(() => {
@@ -97,6 +102,20 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
         }
         return GroupKnowledgeService.getPeerClaims([submission, ...peerSubmissions], submission.studentName);
     }, [peerSubmissions, submission]);
+
+    useEffect(() => {
+        const targetIndex = activeTranscriptIndex ?? highlightedTranscriptIndices[0];
+        if (targetIndex == null) return;
+
+        const target = transcriptRefs.current[targetIndex];
+        if (!target) return;
+
+        target.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center'
+        });
+        target.focus({ preventScroll: true });
+    }, [activeTranscriptIndex, highlightedTranscriptIndices]);
 
     if (!submission) return null;
 
@@ -298,7 +317,14 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                             <p className="text-xs text-slate-600 mt-1">The model is reconstructing semantic relationships from the conversation.</p>
                         </div>
                     ) : argumentGraph && argumentGraph.nodes.length > 0 ? (
-                        <ArgumentMapView graph={argumentGraph} />
+                        <ArgumentMapView
+                            graph={argumentGraph}
+                            transcript={submission.transcript}
+                            activeTurnIndex={activeTranscriptIndex}
+                            onActiveTurnIndexChange={setActiveTranscriptIndex}
+                            onHighlightTurnsChange={setHighlightedTranscriptIndices}
+                            storageKey={submission.id}
+                        />
                     ) : (
                         <div className="text-center py-6 text-slate-500">
                             <h4 className="text-slate-400 font-bold text-sm mb-1">Concept network</h4>
@@ -351,7 +377,12 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                         {submission.transcript.map((turn, index) => (
                             <div
                                 key={`${turn.timestamp}-${index}`}
-                                className={`flex gap-3 ${turn.speaker === 'user' ? 'flex-row-reverse' : ''}`}
+                                ref={(element) => {
+                                    transcriptRefs.current[index] = element;
+                                }}
+                                tabIndex={-1}
+                                className={`flex gap-3 cursor-pointer ${turn.speaker === 'user' ? 'flex-row-reverse' : ''}`}
+                                onClick={() => setActiveTranscriptIndex(index)}
                             >
                                 <div
                                     className={`text-[10px] font-bold uppercase mt-1 flex-shrink-0 w-16 ${turn.speaker === 'user' ? 'text-indigo-400 text-right' : 'text-emerald-400'
@@ -363,7 +394,12 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                                     className={`flex-1 px-4 py-3 rounded-xl text-sm ${turn.speaker === 'user'
                                         ? 'bg-indigo-600/20 text-indigo-100 rounded-tr-sm'
                                         : 'bg-slate-800 text-slate-300 rounded-tl-sm'
-                                        }`}
+                                        } ${activeTranscriptIndex === index
+                                            ? 'ring-2 ring-emerald-400/70 shadow-lg shadow-emerald-500/10'
+                                            : highlightedTranscriptIndices.includes(index)
+                                                ? 'ring-1 ring-indigo-400/60 shadow-md shadow-indigo-500/10'
+                                                : ''
+                                        } transition-all duration-300 outline-none`}
                                 >
                                     {turn.text}
                                 </div>
