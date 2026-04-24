@@ -17,11 +17,13 @@
   "dependencies": {
     "@google/genai": "^1.38.0",
     "@supabase/supabase-js": "^2.93.2",
+    "d3": "^7.9.0",
     "mammoth": "^1.11.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3"
   },
   "devDependencies": {
+    "@types/d3": "^7.4.3",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
     "typescript": "~5.8.2",

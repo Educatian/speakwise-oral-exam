@@ -1,4 +1,15 @@
 import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import {
+    forceCenter,
+    forceCollide,
+    forceLink,
+    forceManyBody,
+    forceSimulation,
+    forceX,
+    forceY,
+    type SimulationLinkDatum,
+    type SimulationNodeDatum
+} from 'd3-force';
 import { ArgumentEdge, ArgumentGraph, ArgumentNode } from '../../types';
 
 interface TranscriptTurn {
@@ -106,53 +117,90 @@ function buildRadialLayout(nodes: ArgumentNode[], edges: ArgumentEdge[]): Record
     return positions;
 }
 
-function buildForceLayout(nodes: ArgumentNode[], edges: ArgumentEdge[], seed: Record<string, Position>): Record<string, Position> {
-    const positions = Object.fromEntries(nodes.map((node) => [node.id, seed[node.id] || { x: VIEW_WIDTH / 2, y: VIEW_HEIGHT / 2 }])) as Record<string, Position>;
+// d3-force based one-shot simulation. Runs synchronously on layout switch
+// and returns settled positions. The root (level-0) node is pinned at center
+// so the whole graph orbits a stable anchor. Level-aware tuning: deeper
+// nodes have tighter collision radius and weaker repulsion so hubs breathe.
+interface SimNodeDatum extends SimulationNodeDatum {
+    id: string;
+    level: number;
+}
+
+type SimLinkDatum = SimulationLinkDatum<SimNodeDatum>;
+
+function buildForceLayout(
+    nodes: ArgumentNode[],
+    edges: ArgumentEdge[],
+    seed: Record<string, Position>
+): Record<string, Position> {
+    if (nodes.length === 0) return {};
+
     const root = nodes.find((node) => node.metadata?.level === 0) || nodes[0];
-    const area = VIEW_WIDTH * VIEW_HEIGHT;
-    const k = Math.sqrt(area / Math.max(nodes.length, 1)) * 0.64;
 
-    for (let step = 0; step < 180; step += 1) {
-        const delta = Object.fromEntries(nodes.map((node) => [node.id, { x: 0, y: 0 }])) as Record<string, Position>;
-
-        for (let i = 0; i < nodes.length; i += 1) {
-            for (let j = i + 1; j < nodes.length; j += 1) {
-                const a = nodes[i];
-                const b = nodes[j];
-                const dx = positions[b.id].x - positions[a.id].x;
-                const dy = positions[b.id].y - positions[a.id].y;
-                const dist = Math.max(28, Math.sqrt(dx * dx + dy * dy));
-                const force = (k * k) / dist;
-                delta[a.id].x -= (dx / dist) * force;
-                delta[a.id].y -= (dy / dist) * force;
-                delta[b.id].x += (dx / dist) * force;
-                delta[b.id].y += (dy / dist) * force;
-            }
+    const simNodes: SimNodeDatum[] = nodes.map((node) => {
+        const seeded = seed[node.id];
+        const level = (node.metadata?.level as number | undefined) ?? 2;
+        const base: SimNodeDatum = {
+            id: node.id,
+            level,
+            x: seeded?.x ?? VIEW_WIDTH / 2,
+            y: seeded?.y ?? VIEW_HEIGHT / 2
+        };
+        if (node.id === root.id) {
+            base.fx = VIEW_WIDTH / 2;
+            base.fy = VIEW_HEIGHT / 2;
         }
+        return base;
+    });
 
-        edges.forEach((edge) => {
-            const dx = positions[edge.to].x - positions[edge.from].x;
-            const dy = positions[edge.to].y - positions[edge.from].y;
-            const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
-            const force = (dist * dist) / (k * 5.4);
-            delta[edge.from].x += (dx / dist) * force;
-            delta[edge.from].y += (dy / dist) * force;
-            delta[edge.to].x -= (dx / dist) * force;
-            delta[edge.to].y -= (dy / dist) * force;
-        });
+    const simLinks: SimLinkDatum[] = edges
+        .filter((edge) => simNodes.some((n) => n.id === edge.from) && simNodes.some((n) => n.id === edge.to))
+        .map((edge) => ({ source: edge.from, target: edge.to }));
 
-        nodes.forEach((node) => {
-            if (node.id === root.id) {
-                positions[node.id] = { x: VIEW_WIDTH / 2, y: VIEW_HEIGHT / 2 };
-                return;
-            }
-            const damping = node.metadata?.level === 2 ? 0.028 : 0.02;
-            positions[node.id].x = clamp(positions[node.id].x + delta[node.id].x * damping, 80, VIEW_WIDTH - 80);
-            positions[node.id].y = clamp(positions[node.id].y + delta[node.id].y * damping, 64, VIEW_HEIGHT - 64);
-        });
-    }
+    const simulation = forceSimulation<SimNodeDatum>(simNodes)
+        .force(
+            'link',
+            forceLink<SimNodeDatum, SimLinkDatum>(simLinks)
+                .id((d) => d.id)
+                .distance((link) => {
+                    const src = link.source as SimNodeDatum;
+                    const tgt = link.target as SimNodeDatum;
+                    if (src.level === 0 || tgt.level === 0) return 170;
+                    if (src.level === 1 || tgt.level === 1) return 130;
+                    return 110;
+                })
+                .strength(0.45)
+        )
+        .force(
+            'charge',
+            forceManyBody<SimNodeDatum>().strength((d) =>
+                d.level === 0 ? -800 : d.level === 1 ? -520 : -320
+            )
+        )
+        .force(
+            'collide',
+            forceCollide<SimNodeDatum>().radius((d) =>
+                d.level === 0 ? 68 : d.level === 1 ? 54 : 44
+            )
+        )
+        .force('center', forceCenter(VIEW_WIDTH / 2, VIEW_HEIGHT / 2).strength(0.6))
+        .force('x', forceX<SimNodeDatum>(VIEW_WIDTH / 2).strength(0.04))
+        .force('y', forceY<SimNodeDatum>(VIEW_HEIGHT / 2).strength(0.04))
+        .stop();
 
-    return positions;
+    // Run enough ticks for the system to settle. D3's default alpha decay
+    // (0.0228) converges well within 300 ticks for graphs of this size.
+    for (let i = 0; i < 300; i += 1) simulation.tick();
+
+    const result: Record<string, Position> = {};
+    simNodes.forEach((node) => {
+        result[node.id] = {
+            x: clamp(node.x ?? VIEW_WIDTH / 2, 64, VIEW_WIDTH - 64),
+            y: clamp(node.y ?? VIEW_HEIGHT / 2, 56, VIEW_HEIGHT - 56)
+        };
+    });
+
+    return result;
 }
 
 export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
@@ -348,6 +396,75 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
     const focusedNode = focusedNodeId ? nodesById[focusedNodeId] || null : null;
     const focusedTurns = focusedNode ? (mentionMap.get(focusedNode.id) || []) : [];
     const focusedEdges = focusedNode ? graph.edges.filter((edge) => edge.from === focusedNode.id || edge.to === focusedNode.id) : [];
+
+    // Track which node ids just transitioned into the visible set — these get
+    // an enter animation (CSS). Wiped after the animation window so the class
+    // doesn't keep retriggering layout paints.
+    const previouslyVisibleRef = useRef<Set<string>>(new Set());
+    const [newlyVisibleIds, setNewlyVisibleIds] = useState<Set<string>>(new Set());
+    useEffect(() => {
+        const prev = previouslyVisibleRef.current;
+        const entered = new Set<string>();
+        visibleNodeIds.forEach((id) => {
+            if (!prev.has(id)) entered.add(id);
+        });
+        previouslyVisibleRef.current = new Set(visibleNodeIds);
+        if (entered.size === 0) return;
+        setNewlyVisibleIds(entered);
+        const timer = window.setTimeout(() => setNewlyVisibleIds(new Set()), 700);
+        return () => window.clearTimeout(timer);
+    }, [visibleNodeIds]);
+
+    // Keyboard shortcuts for scrubbing the timeline. Skip when the user is
+    // typing in an input or similar (e.g. the search box above).
+    useEffect(() => {
+        if (transcript.length === 0) return;
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+            const target = event.target as HTMLElement | null;
+            if (target) {
+                const tag = target.tagName;
+                if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) return;
+            }
+
+            const current = activeTurnIndex ?? -1;
+            const last = transcript.length - 1;
+            switch (event.key) {
+                case 'ArrowLeft':
+                    event.preventDefault();
+                    onActiveTurnIndexChange?.(current <= 0 ? null : current - 1);
+                    setIsPlaying(false);
+                    break;
+                case 'ArrowRight':
+                    event.preventDefault();
+                    onActiveTurnIndexChange?.(Math.min(last, current + 1));
+                    setIsPlaying(false);
+                    break;
+                case 'Home':
+                    event.preventDefault();
+                    onActiveTurnIndexChange?.(0);
+                    setIsPlaying(false);
+                    break;
+                case 'End':
+                    event.preventDefault();
+                    onActiveTurnIndexChange?.(last);
+                    setIsPlaying(false);
+                    break;
+                case ' ':
+                    event.preventDefault();
+                    if (activeTurnIndex == null) {
+                        onActiveTurnIndexChange?.(0);
+                        setIsPlaying(true);
+                    } else {
+                        setIsPlaying((prev) => !prev);
+                    }
+                    break;
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [activeTurnIndex, onActiveTurnIndexChange, transcript.length]);
 
     useEffect(() => {
         if (onHighlightTurnsChange) {
@@ -545,12 +662,13 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
                                 const visual = getNodeVisual(node);
                                 const isFocused = focusedNodeId === node.id;
                                 const isMentioned = activeTurnIndex != null && (mentionMap.get(node.id) || []).includes(activeTurnIndex);
+                                const isEntering = newlyVisibleIds.has(node.id);
                                 return (
                                     <g
                                         key={node.id}
                                         data-node="true"
                                         transform={`translate(${position.x} ${position.y})`}
-                                        className="cursor-pointer"
+                                        className={`cursor-pointer arg-node${isEntering ? ' arg-node-enter' : ''}${isMentioned ? ' arg-node-active' : ''}`}
                                         onPointerDown={(event) => {
                                             event.stopPropagation();
                                             const point = clientToWorld(event.clientX, event.clientY);
