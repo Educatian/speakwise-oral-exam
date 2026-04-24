@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Course, Submission } from '../../types';
 import { Button, Input, Textarea, Modal, PinVerifyModal } from '../ui';
 import { createCoursePromptGenerator } from '../../lib/prompts/interviewerSystem';
@@ -114,6 +114,48 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
     // Class analytics collapsible + per-course filter.
     const [showAnalytics, setShowAnalytics] = useState(true);
     const [analyticsCourseFilter, setAnalyticsCourseFilter] = useState<string | null>(null);
+
+    // The `prompt` column on public.courses is revoked from the authenticated
+    // role, so `getAllCourses()` returns rows without it. When the instructor
+    // opens a course's modal, fetch the full row (including prompt) via the
+    // instructor-course-get Edge Function.
+    const [promptLoading, setPromptLoading] = useState(false);
+    const [promptFetchError, setPromptFetchError] = useState<string | null>(null);
+    useEffect(() => {
+        if (!viewingCourse) {
+            setPromptFetchError(null);
+            return;
+        }
+        if (viewingCourse.prompt) return; // already populated
+        let cancelled = false;
+        setPromptLoading(true);
+        setPromptFetchError(null);
+        supabase.functions
+            .invoke('instructor-course-get', { body: { courseId: viewingCourse.id } })
+            .then(({ data, error }) => {
+                if (cancelled) return;
+                if (error) {
+                    setPromptFetchError(error.message || 'Could not load course prompt.');
+                    return;
+                }
+                const remote = data?.course;
+                if (!remote || typeof remote.prompt !== 'string') {
+                    setPromptFetchError('Course prompt not returned.');
+                    return;
+                }
+                setViewingCourse((prev) => (prev && prev.id === remote.id ? { ...prev, prompt: remote.prompt } : prev));
+            })
+            .catch((e) => {
+                if (cancelled) return;
+                setPromptFetchError(e?.message || 'Could not load course prompt.');
+            })
+            .finally(() => {
+                if (!cancelled) setPromptLoading(false);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [viewingCourse]);
     const [extractedQuestions, setExtractedQuestions] = useState<string[]>([]);
     const [extractedContext, setExtractedContext] = useState('');
     const [showQuestionReview, setShowQuestionReview] = useState(false);
@@ -779,7 +821,13 @@ Only output valid JSON, nothing else.`
                             />
                         ) : (
                             <div className="p-4 bg-slate-950/50 border border-slate-800 rounded-xl text-slate-300 text-sm leading-relaxed whitespace-pre-wrap font-mono max-h-[30vh] overflow-y-auto custom-scrollbar">
-                                {viewingCourse?.prompt || <span className="text-slate-600 italic">No prompt set</span>}
+                                {promptLoading ? (
+                                    <span className="text-slate-500 italic">Loading prompt…</span>
+                                ) : promptFetchError ? (
+                                    <span className="text-rose-400 italic">{promptFetchError}</span>
+                                ) : (
+                                    viewingCourse?.prompt || <span className="text-slate-600 italic">No prompt set</span>
+                                )}
                             </div>
                         )}
                     </div>

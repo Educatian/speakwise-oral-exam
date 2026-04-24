@@ -140,12 +140,14 @@ After migrations + function deploys are live, the smoke test is:
   Consumed via `_shared/rate-limit.ts`. `course-login` is gated at
   10 attempts / minute per (caller, course) + 60 / minute per IP.
   `submit-exam` is gated at 5 submissions / hour per authenticated user.
+- `20260424000006_revoke_prompt_grant.sql` revokes `SELECT (prompt)` on
+  `public.courses` from anon/authenticated. Students receive the prompt
+  through `course-login` after passcode validation; instructors/admins
+  through `instructor-course-get` when opening the course modal. Neither
+  path exposes the column to direct PostgREST reads.
 
 Deferred Track A follow-ups (not blocking but queued):
 
-- Revoking SELECT on `courses.prompt` from anon/authenticated needs a
-  matching `instructor-course-get` Edge Function so the dashboard edit
-  flow still works.
 - Data retention (`delete_old_submissions(months int)` SQL function) —
   manual invocation only until admin UI exists.
 - Right-to-deletion endpoint for GDPR / FERPA requests.
