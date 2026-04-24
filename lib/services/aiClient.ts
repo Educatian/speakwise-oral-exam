@@ -20,7 +20,8 @@ export interface ChatMessage {
 
 export type ChatContentPart =
     | { type: 'text'; text: string }
-    | { type: 'image_url'; image_url: { url: string } };
+    | { type: 'image_url'; image_url: { url: string } }
+    | { type: 'input_audio'; input_audio: { data: string; format: 'wav' | 'mp3' } };
 
 export interface ChatCompleteOptions {
     messages: ChatMessage[];
@@ -29,9 +30,18 @@ export interface ChatCompleteOptions {
     responseFormat?: 'json_object' | null;
     temperature?: number;
     maxTokens?: number;
+    /** Tell the provider which modalities the RESPONSE should include.
+     *  Default omitted — most chat responses are text. Pass ['text'] when
+     *  sending audio input so the provider doesn't try to also return audio. */
+    modalities?: Array<'text' | 'audio'>;
 }
 
 const ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
+
+/** Model used for audio transcription. gpt-4o-audio-preview accepts wav/mp3
+ *  input and returns text. Tested to work through OpenRouter (unlike the
+ *  Gemini-family audio inputs, which OpenRouter silently strips). */
+export const AUDIO_TRANSCRIPTION_MODEL = 'openai/gpt-4o-audio-preview';
 
 function getKey(): string {
     const key = import.meta.env.VITE_OPENROUTER_API_KEY;
@@ -54,6 +64,7 @@ export async function chatComplete(options: ChatCompleteOptions): Promise<string
     }
     if (options.temperature != null) payload.temperature = options.temperature;
     if (options.maxTokens != null) payload.max_tokens = options.maxTokens;
+    if (options.modalities) payload.modalities = options.modalities;
 
     const res = await fetch(ENDPOINT, {
         method: 'POST',
@@ -101,6 +112,39 @@ export async function chatCompleteJson<T>(
         const stripped = raw.replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
         return JSON.parse(stripped) as T;
     }
+}
+
+/**
+ * Transcribe a WAV or MP3 audio clip to text.
+ *
+ * Routes through OpenRouter to OpenAI's gpt-4o-audio-preview. The OpenRouter
+ * gateway passes the audio content block through to OpenAI untouched, unlike
+ * Gemini-family models on OpenRouter which drop audio silently.
+ *
+ * @param audioBase64 base64-encoded audio bytes (no data-url prefix)
+ * @param format      'wav' (default) or 'mp3'
+ * @param instruction optional system-like instruction. Default asks for a
+ *                    verbatim transcription and an empty string on silence.
+ */
+export async function transcribeAudio(
+    audioBase64: string,
+    format: 'wav' | 'mp3' = 'wav',
+    instruction = 'Transcribe this audio exactly as spoken. Return ONLY the transcription text, nothing else. If the audio is silent or unintelligible, return an empty string.'
+): Promise<string> {
+    const text = await chatComplete({
+        model: AUDIO_TRANSCRIPTION_MODEL,
+        modalities: ['text'],
+        messages: [
+            {
+                role: 'user',
+                content: [
+                    { type: 'text', text: instruction },
+                    { type: 'input_audio', input_audio: { data: audioBase64, format } }
+                ]
+            }
+        ]
+    });
+    return text.trim();
 }
 
 export default chatComplete;
