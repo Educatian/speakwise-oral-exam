@@ -16,8 +16,21 @@ import {
 import { getCaller } from "../_shared/auth.ts";
 import { writeAudit } from "../_shared/audit.ts";
 import { getSupabaseAdmin } from "../_shared/supabase-admin.ts";
+import {
+  bucketKey,
+  checkRateLimit,
+  clientIp,
+} from "../_shared/rate-limit.ts";
 
 const MAX_PASSCODE_LEN = 200;
+
+// Rate-limit tuning. A 6-digit numeric passcode has 1M possibilities, so
+// 10/min per (user, course) makes an online exhaust take ~69 days.
+// Paired with per-IP 60/min to bound cross-user attempts.
+const PER_CALLER_WINDOW_SECONDS = 60;
+const PER_CALLER_LIMIT = 10;
+const PER_IP_WINDOW_SECONDS = 60;
+const PER_IP_LIMIT = 60;
 
 Deno.serve(async (req) => {
   const pf = preflight(req);
@@ -36,6 +49,40 @@ Deno.serve(async (req) => {
 
   const courseId = body.courseId;
   const passcode = body.passcode;
+
+  // Rate-limit before hitting the database so brute-force attempts are
+  // cheap for us and expensive for the caller.
+  const perCaller = await checkRateLimit(
+    bucketKey("course-login", caller.userId, typeof courseId === "string" ? courseId : ""),
+    PER_CALLER_WINDOW_SECONDS,
+    PER_CALLER_LIMIT,
+  );
+  if (!perCaller.ok) {
+    await writeAudit(req, caller, {
+      action: "course_login.rate_limited",
+      resourceType: "course",
+      resourceId: typeof courseId === "string" ? courseId : null,
+      details: { scope: "caller" },
+    });
+    return errorResponse(req, 429, "too many attempts; try later");
+  }
+  const ip = clientIp(req);
+  if (ip) {
+    const perIp = await checkRateLimit(
+      bucketKey("course-login-ip", ip),
+      PER_IP_WINDOW_SECONDS,
+      PER_IP_LIMIT,
+    );
+    if (!perIp.ok) {
+      await writeAudit(req, caller, {
+        action: "course_login.rate_limited",
+        resourceType: "course",
+        resourceId: typeof courseId === "string" ? courseId : null,
+        details: { scope: "ip" },
+      });
+      return errorResponse(req, 429, "too many attempts; try later");
+    }
+  }
   if (typeof courseId !== "string" || courseId.length === 0) {
     return errorResponse(req, 400, "courseId required");
   }

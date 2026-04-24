@@ -16,8 +16,14 @@ import { getCaller } from "../_shared/auth.ts";
 import { writeAudit } from "../_shared/audit.ts";
 import { getSupabaseAdmin } from "../_shared/supabase-admin.ts";
 import { scoreTranscript, validateTranscript } from "../_shared/gemini-score.ts";
+import { bucketKey, checkRateLimit } from "../_shared/rate-limit.ts";
 
 const MAX_PASSWORD_LEN = 200;
+
+// Spam defense. One student shouldn't submit more than ~3 exams/hour in
+// any realistic flow — real submissions are 5–10 min apart.
+const PER_CALLER_WINDOW_SECONDS = 3600;
+const PER_CALLER_LIMIT = 5;
 // Server-generated id; we do not trust a client-supplied id.
 function newId(): string {
   return crypto.randomUUID();
@@ -46,6 +52,19 @@ Deno.serve(async (req) => {
 
   const apiKey = Deno.env.get("GEMINI_API_KEY");
   if (!apiKey) return errorResponse(req, 500, "server misconfigured");
+
+  const rl = await checkRateLimit(
+    bucketKey("submit-exam", caller.userId),
+    PER_CALLER_WINDOW_SECONDS,
+    PER_CALLER_LIMIT,
+  );
+  if (!rl.ok) {
+    await writeAudit(req, caller, {
+      action: "submit_exam.rate_limited",
+      resourceType: "submission",
+    });
+    return errorResponse(req, 429, "too many submissions; wait and retry");
+  }
 
   let body: Record<string, unknown>;
   try {
