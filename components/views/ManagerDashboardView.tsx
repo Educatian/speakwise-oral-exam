@@ -3,6 +3,7 @@ import { Course, Submission } from '../../types';
 import { Button, Input, Textarea, Modal, PinVerifyModal } from '../ui';
 import { createCoursePromptGenerator } from '../../lib/prompts/interviewerSystem';
 import { supabase } from '../../lib/supabase/client';
+import { ClassAnalyticsView } from './ClassAnalyticsView';
 
 import { hashPin, isValidPin } from '../../lib/utils/pinHash';
 import { getMasteryLevel } from '../../lib/utils/scoreDisplay';
@@ -109,6 +110,10 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
     const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
     const [isDragging, setIsDragging] = useState(false);
     const [isExtracting, setIsExtracting] = useState(false);
+
+    // Class analytics collapsible + per-course filter.
+    const [showAnalytics, setShowAnalytics] = useState(true);
+    const [analyticsCourseFilter, setAnalyticsCourseFilter] = useState<string | null>(null);
     const [extractedQuestions, setExtractedQuestions] = useState<string[]>([]);
     const [extractedContext, setExtractedContext] = useState('');
     const [showQuestionReview, setShowQuestionReview] = useState(false);
@@ -373,6 +378,31 @@ Only output valid JSON, nothing else.`
                     </svg>
                     Switch to Student Portal
                 </Button>
+            </div>
+
+            {/* Class Analytics — collapsible so the existing course roster
+                 stays the default focus on first load once the section grows. */}
+            <div className="space-y-3">
+                <button
+                    type="button"
+                    className="text-xs font-bold uppercase tracking-widest text-slate-400 hover:text-slate-200 flex items-center gap-2"
+                    onClick={() => setShowAnalytics((v) => !v)}
+                    aria-expanded={showAnalytics}
+                >
+                    <span>{showAnalytics ? '▾' : '▸'}</span>
+                    Class Analytics
+                    <span className="text-slate-600 font-normal normal-case tracking-normal">
+                        {totalSubmissions} submission{totalSubmissions === 1 ? '' : 's'}
+                    </span>
+                </button>
+                {showAnalytics && (
+                    <ClassAnalyticsView
+                        courses={visibleCourses}
+                        selectedCourseId={analyticsCourseFilter}
+                        onSelectCourse={setAnalyticsCourseFilter}
+                        onSelectSubmission={onSelectSubmission}
+                    />
+                )}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
