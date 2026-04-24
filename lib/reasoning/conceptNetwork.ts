@@ -8,7 +8,7 @@
  *   Level 2 (EVIDENCE): 3-8 nodes — concrete examples, applications, tools
  */
 
-import { GoogleGenAI } from '@google/genai';
+import { chatCompleteJson } from '../services/aiClient';
 import { ArgumentGraph, ArgumentNode, ArgumentEdge } from '../../types';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -106,21 +106,10 @@ export async function generateConceptNetwork(
     }
 
     try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.0-flash',
-            contents: CONCEPT_NETWORK_PROMPT + transcriptText,
-            config: {
-                responseMimeType: 'application/json',
-            }
-        });
+        const result = await chatCompleteJson<HierarchicalNetwork>(
+            CONCEPT_NETWORK_PROMPT + transcriptText
+        );
 
-        const text = response.text?.trim();
-        if (!text) throw new Error('Empty response from Gemini');
-
-        const result: HierarchicalNetwork = JSON.parse(text);
-
-        // Validate structure
         if (!result.nodes || !Array.isArray(result.nodes) || result.nodes.length === 0) {
             throw new Error('Invalid network structure: no nodes');
         }
