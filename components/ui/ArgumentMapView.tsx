@@ -75,6 +75,29 @@ function getNodeVisual(node: ArgumentNode) {
     }
 }
 
+// Toulmin-lens colouring. The argument-graph builder already tags each node
+// with a Toulmin-adjacent `type` (claim / evidence / justification /
+// counterargument / question); this maps that tag to a colour so researchers
+// can see the discourse structure directly without reading every label.
+type ToulminType = ArgumentNode['type'];
+const TOULMIN_LABELS: Record<ToulminType, string> = {
+    claim: 'Claim',
+    evidence: 'Evidence',
+    justification: 'Warrant',
+    counterargument: 'Rebuttal',
+    question: 'Question'
+};
+const TOULMIN_VISUALS: Record<ToulminType, { fill: string; stroke: string; text: string }> = {
+    claim:          { fill: '#2b0f14', stroke: '#f87171', text: '#fecaca' },
+    evidence:       { fill: '#052118', stroke: '#34d399', text: '#d1fae5' },
+    justification:  { fill: '#2a1d05', stroke: '#fbbf24', text: '#fde68a' },
+    counterargument:{ fill: '#1e1333', stroke: '#a78bfa', text: '#ddd6fe' },
+    question:       { fill: '#0f1b31', stroke: '#60a5fa', text: '#dbeafe' }
+};
+function getToulminVisual(node: ArgumentNode) {
+    return TOULMIN_VISUALS[node.type] || { fill: '#1e293b', stroke: '#64748b', text: '#e2e8f0' };
+}
+
 function buildRadialLayout(nodes: ArgumentNode[], edges: ArgumentEdge[]): Record<string, Position> {
     const positions: Record<string, Position> = {};
     const root = nodes.find((node) => node.metadata?.level === 0) || nodes[0];
@@ -213,6 +236,8 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
 }) => {
     const svgRef = useRef<SVGSVGElement | null>(null);
     const [layoutMode, setLayoutMode] = useState<LayoutMode>('radial');
+    const [colorMode, setColorMode] = useState<'concept' | 'toulmin'>('concept');
+    const [toulminFilter, setToulminFilter] = useState<ToulminType | null>(null);
     const [viewport, setViewport] = useState<ViewportState>(DEFAULT_VIEWPORT);
     const [positions, setPositions] = useState<Record<string, Position>>(() => buildRadialLayout(graph.nodes, graph.edges));
     const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
@@ -377,20 +402,28 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
     }), [graph.edges, hiddenNodeIds, searchedNodeIds, selectedRelation, visibleTimelineNodeIds]);
 
     const visibleNodeIds = useMemo(() => {
+        const passesToulmin = (node: ArgumentNode) =>
+            !toulminFilter || node.type === toulminFilter;
+
         if (!selectedRelation) {
             return new Set(graph.nodes
                 .filter((node) => visibleTimelineNodeIds.has(node.id) && !hiddenNodeIds.has(node.id))
                 .filter((node) => !searchedNodeIds || searchedNodeIds.has(node.id))
+                .filter(passesToulmin)
                 .map((node) => node.id));
         }
         const relationNodes = new Set<string>();
         filteredEdges.forEach((edge) => {
-            relationNodes.add(edge.from);
-            relationNodes.add(edge.to);
+            const fromNode = nodesById[edge.from];
+            const toNode = nodesById[edge.to];
+            if (fromNode && passesToulmin(fromNode)) relationNodes.add(edge.from);
+            if (toNode && passesToulmin(toNode)) relationNodes.add(edge.to);
         });
-        if (focusedNodeId) relationNodes.add(focusedNodeId);
+        if (focusedNodeId && nodesById[focusedNodeId] && passesToulmin(nodesById[focusedNodeId])) {
+            relationNodes.add(focusedNodeId);
+        }
         return relationNodes;
-    }, [filteredEdges, focusedNodeId, graph.nodes, hiddenNodeIds, searchedNodeIds, selectedRelation, visibleTimelineNodeIds]);
+    }, [filteredEdges, focusedNodeId, graph.nodes, hiddenNodeIds, nodesById, searchedNodeIds, selectedRelation, toulminFilter, visibleTimelineNodeIds]);
 
     const visibleNodes = useMemo(() => graph.nodes.filter((node) => visibleNodeIds.has(node.id)), [graph.nodes, visibleNodeIds]);
     const focusedNode = focusedNodeId ? nodesById[focusedNodeId] || null : null;
@@ -574,8 +607,16 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
                     />
                     <button type="button" onClick={() => { setLayoutMode('radial'); setPositions(radialPositions); }} className={`px-3 py-2 rounded-xl text-xs border ${layoutMode === 'radial' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-slate-700 bg-slate-900/60 text-slate-400'}`}>Radial</button>
                     <button type="button" onClick={() => { setLayoutMode('force'); setPositions((current) => buildForceLayout(graph.nodes, graph.edges, current)); }} className={`px-3 py-2 rounded-xl text-xs border ${layoutMode === 'force' ? 'border-indigo-500/30 bg-indigo-500/10 text-indigo-300' : 'border-slate-700 bg-slate-900/60 text-slate-400'}`}>Force</button>
+                    <button
+                        type="button"
+                        onClick={() => setColorMode((m) => (m === 'concept' ? 'toulmin' : 'concept'))}
+                        className={`px-3 py-2 rounded-xl text-xs border ${colorMode === 'toulmin' ? 'border-amber-500/30 bg-amber-500/10 text-amber-300' : 'border-slate-700 bg-slate-900/60 text-slate-400'}`}
+                        title="Toggle between concept-type and Toulmin colouring"
+                    >
+                        {colorMode === 'toulmin' ? 'Color: Toulmin' : 'Color: Concept'}
+                    </button>
                     <button type="button" onClick={() => setViewport(DEFAULT_VIEWPORT)} className="px-3 py-2 rounded-xl text-xs border border-slate-700 bg-slate-900/60 text-slate-400">Reset view</button>
-                    <button type="button" onClick={() => { setSelectedRelation(null); setSelectedEdgeKey(null); }} className="px-3 py-2 rounded-xl text-xs border border-slate-700 bg-slate-900/60 text-slate-400">Clear filter</button>
+                    <button type="button" onClick={() => { setSelectedRelation(null); setSelectedEdgeKey(null); setToulminFilter(null); }} className="px-3 py-2 rounded-xl text-xs border border-slate-700 bg-slate-900/60 text-slate-400">Clear filter</button>
                     <button type="button" onClick={handleExportJson} className="px-3 py-2 rounded-xl text-xs border border-slate-700 bg-slate-900/60 text-slate-400">Export JSON</button>
                     <button type="button" onClick={handleExportSvg} className="px-3 py-2 rounded-xl text-xs border border-slate-700 bg-slate-900/60 text-slate-400">Export SVG</button>
                 </div>
@@ -594,6 +635,35 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
                     </button>
                 ))}
             </div>
+
+            {/* Toulmin component filter. Click a chip to isolate nodes of that
+                 discourse role; click again to clear. The chip's colour matches
+                 the node's stroke so the legend is the filter. */}
+            {colorMode === 'toulmin' && (
+                <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[10px] uppercase tracking-[0.18em] text-slate-600 font-bold pr-1">Toulmin</span>
+                    {(Object.keys(TOULMIN_LABELS) as ToulminType[]).map((t) => {
+                        const v = TOULMIN_VISUALS[t];
+                        const active = toulminFilter === t;
+                        return (
+                            <button
+                                key={t}
+                                type="button"
+                                onClick={() => setToulminFilter((current) => (current === t ? null : t))}
+                                className={`px-3 py-1.5 rounded-full text-[11px] border flex items-center gap-1.5 ${active ? 'bg-slate-900/70 text-slate-100' : 'bg-slate-900/40 text-slate-400'}`}
+                                style={active ? { borderColor: v.stroke } : { borderColor: 'rgba(100, 116, 139, 0.35)' }}
+                            >
+                                <span
+                                    aria-hidden="true"
+                                    className="inline-block w-2.5 h-2.5 rounded-full"
+                                    style={{ backgroundColor: v.stroke }}
+                                />
+                                {TOULMIN_LABELS[t]}
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
 
             {Array.from(clusterMap.keys()).length > 0 && (
                 <div className="flex flex-wrap gap-2">
@@ -659,7 +729,7 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
                                 const position = positions[node.id];
                                 if (!position) return null;
                                 const size = getNodeSize(node);
-                                const visual = getNodeVisual(node);
+                                const visual = colorMode === 'toulmin' ? getToulminVisual(node) : getNodeVisual(node);
                                 const isFocused = focusedNodeId === node.id;
                                 const isMentioned = activeTurnIndex != null && (mentionMap.get(node.id) || []).includes(activeTurnIndex);
                                 const isEntering = newlyVisibleIds.has(node.id);
@@ -699,7 +769,7 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
                         </div>
                         <svg viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`} className="w-full h-auto rounded-lg bg-slate-900/80">
                             {graph.edges.map((edge) => <line key={`${edge.from}-${edge.to}-${edge.relation}`} x1={positions[edge.from]?.x || 0} y1={positions[edge.from]?.y || 0} x2={positions[edge.to]?.x || 0} y2={positions[edge.to]?.y || 0} stroke="#334155" strokeWidth="1" opacity="0.5" />)}
-                            {graph.nodes.map((node) => <circle key={node.id} cx={positions[node.id]?.x || 0} cy={positions[node.id]?.y || 0} r={node.metadata?.level === 0 ? 10 : node.metadata?.level === 1 ? 7 : 5} fill={focusedNodeId === node.id ? '#f8fafc' : getNodeVisual(node).stroke} opacity={visibleNodeIds.has(node.id) ? 0.95 : 0.24} />)}
+                            {graph.nodes.map((node) => <circle key={node.id} cx={positions[node.id]?.x || 0} cy={positions[node.id]?.y || 0} r={node.metadata?.level === 0 ? 10 : node.metadata?.level === 1 ? 7 : 5} fill={focusedNodeId === node.id ? '#f8fafc' : (colorMode === 'toulmin' ? getToulminVisual(node).stroke : getNodeVisual(node).stroke)} opacity={visibleNodeIds.has(node.id) ? 0.95 : 0.24} />)}
                             <rect x={minimapViewport.x} y={minimapViewport.y} width={minimapViewport.width} height={minimapViewport.height} fill="none" stroke="#22d3ee" strokeWidth="8" opacity="0.75" />
                         </svg>
                     </div>
