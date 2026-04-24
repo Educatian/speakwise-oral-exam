@@ -209,6 +209,8 @@ Toulmin 모드에서만 나타나는 칩 행. 각 칩에 해당 색 점이 찍�
 
 ## 6. Instructor Review — 점수 검증·오버라이드
 
+![Review panel](screenshots/instructor/24-submission-review-panel.png)
+
 Submission 상세 하단에는 **instructor review** 영역이 있습니다 (upstream 기능).
 
 - **Validated** — AI 점수를 그대로 확정
@@ -220,6 +222,8 @@ Submission 상세 하단에는 **instructor review** 영역이 있습니다 (ups
 ---
 
 ## 7. Annotation — 특정 턴에 메모 남기기
+
+![Annotation editor](screenshots/instructor/25-annotation-editor.png)
 
 transcript 각 턴 옆의 **"Click to annotate"** 클릭 → 카테고리 선택 (strength / concern / evidence / follow_up) + 노트 작성 → Save.
 
@@ -234,6 +238,8 @@ annotation은 `submission_annotations` 테이블에 저장되어 **다른 강사
 ---
 
 ## 8. 코스 만들기 (왼쪽 패널)
+
+![Build Course form](screenshots/instructor/22-build-course-form.png)
 
 대시보드 하단 왼쪽의 **Build Course** 탭에서 신규 코스를 생성합니다.
 
@@ -267,12 +273,16 @@ annotation은 `submission_annotations` 테이블에 저장되어 **다른 강사
 
 ## 10. Admin Panel (관리자 전용)
 
+![Admin panel](screenshots/instructor/23-admin-panel.png)
+
 `jewoong.moon@gmail.com`(ADMIN_EMAIL)로 로그인한 경우 헤더 우상단에 **👑 Admin Panel** 버튼이 노출됩니다. 여기서:
 
-- 모든 기관 관리 (생성/수정/access code 변경)
-- 모든 user_profile 관리 (역할 승격/강등)
-- 전역 audit log 뷰 (P1·P2 이후로는 서버측 트리거로 자동 기록되는 tamper-evident log)
-- 전체 코스·제출 cross-institution 뷰
+- Institution Operations Console — 기관 coverage, 역할 mix
+- User Access 검색 / 역할 변경
+- Recent Activity — P2 마이그레이션으로 설치된 DB 트리거가 submission.created 이벤트를 자동 기록한 실시간 스트림
+- 기관 관리 (생성/수정/access code 변경)
+
+> **현재 한계**: app-managed auth 하에서 `is_admin_role()` 헬퍼가 Supabase-Auth JWT를 전제로 동작하기 때문에 일부 카운트(Institutions, Users, Courses)가 0으로 보입니다. P3 세션 토큰 도입 후 이 디스플레이 갭이 닫힙니다.
 
 ---
 

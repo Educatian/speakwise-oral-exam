@@ -64,21 +64,27 @@ SpeakWise는 음성으로 진행되는 **AI 구술 인터뷰 플랫폼**입니�
 
 기관에 입장하면 해당 기관이 운영하는 **코스 목록**이 보입니다.
 
-![Course list](screenshots/student/44-course-list.png)
+![Available courses](screenshots/student/46-available-courses.png)
 
 - 각 코스 카드에 이름, 담당 강사, 제출 수가 표시됩니다.
 - 본인이 참여할 코스를 **클릭**하세요.
+
+> **목록이 비어 있으면**: 본인이 맞는 기관 access code로 들어왔는지, 그리고 강사가 해당 기관에 코스를 등록했는지 확인하세요.
 
 ---
 
 ## 5. 코스 입장 — Passcode 확인 + 마이크 테스트
 
-코스를 클릭하면 **코스 login** 화면이 열립니다.
+코스를 클릭하면 **Join Interview** 화면이 열립니다.
+
+![Join form](screenshots/student/47-join-interview-form.png)
 
 여기에서:
 1. **Your Full Name** — 본인 이름 입력 (결과 리포트에 사용됩니다)
 2. **Entry Code** — 강사로부터 받은 **코스 passcode** 입력 (기관 코드와는 다릅니다)
 3. **마이크 테스트** — "Test Microphone" 버튼 클릭해서 녹음이 되는지 확인
+
+![Name filled](screenshots/student/48-name-filled-mic-test.png)
 
 > **마이크 안 잡히면**:
 > - 브라우저 주소창 왼쪽 자물쇠 아이콘 → 마이크 권한 "허용"
