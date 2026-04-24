@@ -6,6 +6,7 @@ import { generateConceptNetwork } from '../../lib/reasoning/conceptNetwork';
 import { GroupKnowledgeService } from '../../lib/services/GroupKnowledgeService';
 import { getMasteryLevel } from '../../lib/utils/scoreDisplay';
 import { createSubmissionAnnotation, subscribeToSubmissionAnnotationsRealtime } from '../../lib/supabase';
+import { SubmissionAnalyticsSection } from './SubmissionAnalyticsPanels';
 
 interface SubmissionDetailModalProps {
     submission: Submission | null;
@@ -385,7 +386,25 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                     <p className="text-slate-300 text-sm leading-relaxed italic">
                         "{submission.feedback}"
                     </p>
+                    {typeof submission.confidenceScore === 'number' && (
+                        <div className="mt-3 pt-3 border-t border-indigo-500/20 flex items-center justify-between text-xs">
+                            <span className="text-slate-500 uppercase tracking-widest">AI Confidence</span>
+                            <span className="text-indigo-300 font-bold tabular-nums">
+                                {(submission.confidenceScore * 100).toFixed(0)}%
+                            </span>
+                        </div>
+                    )}
+                    {submission.confidenceRationale && (
+                        <p className="text-slate-500 text-xs mt-2 italic">
+                            {submission.confidenceRationale}
+                        </p>
+                    )}
                 </div>
+
+                {/* Analytics panels — rubric radar, reasoning bars, timing,
+                     barge-in list. Complements the integrated workspace below
+                     by rendering the dimensions those panels don't visualize. */}
+                <SubmissionAnalyticsSection submission={submission} />
 
                 <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl space-y-4">
                     <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
@@ -613,6 +632,9 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                     </div>
                 )}
 
+                {/* Argument Map fallback — shown when the integrated workspace
+                    above doesn't have a graph. Kept for parity with legacy
+                    submissions that only have the minimal ArgumentGraph. */}
                 <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
                     {graphLoading ? (
                         <div className="text-center py-10">
