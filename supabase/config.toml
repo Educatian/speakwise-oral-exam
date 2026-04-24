@@ -61,3 +61,6 @@ verify_jwt = true
 
 [functions.instructor-gemini]
 verify_jwt = true
+
+[functions.recording-upload-url]
+verify_jwt = true
