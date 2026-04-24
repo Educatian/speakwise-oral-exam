@@ -3,6 +3,7 @@ import { Submission, ArgumentGraph } from '../../types';
 import { Modal, Button, ArgumentMapView } from '../ui';
 import { ArgumentGraphBuilder } from '../../lib/reasoning';
 import { getMasteryLevel } from '../../lib/utils/scoreDisplay';
+import { SubmissionAnalyticsSection } from './SubmissionAnalyticsPanels';
 
 interface SubmissionDetailModalProps {
     submission: Submission | null;
@@ -102,7 +103,23 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                     <p className="text-slate-300 text-sm leading-relaxed italic">
                         "{submission.feedback}"
                     </p>
+                    {typeof submission.confidenceScore === 'number' && (
+                        <div className="mt-3 pt-3 border-t border-indigo-500/20 flex items-center justify-between text-xs">
+                            <span className="text-slate-500 uppercase tracking-widest">AI Confidence</span>
+                            <span className="text-indigo-300 font-bold tabular-nums">
+                                {(submission.confidenceScore * 100).toFixed(0)}%
+                            </span>
+                        </div>
+                    )}
+                    {submission.confidenceRationale && (
+                        <p className="text-slate-500 text-xs mt-2 italic">
+                            {submission.confidenceRationale}
+                        </p>
+                    )}
                 </div>
+
+                {/* Analytics panels — surfaces data the app already collects. */}
+                <SubmissionAnalyticsSection submission={submission} />
 
                 {/* Argument Map - Always visible with fallback */}
                 <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
