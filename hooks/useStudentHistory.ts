@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { Submission } from '../types';
 import {
     getStudentHistory,
-    addToStudentHistory,
     isSupabaseConfigured
 } from '../lib/supabase';
 
@@ -67,19 +66,11 @@ export function useStudentHistory(): UseStudentHistoryReturn {
         }
     }, [history, loading]);
 
-    // Add a submission to history
+    // Optimistic UI update only. Persistence happens server-side in the
+    // submit-exam Edge Function; `getStudentHistory()` on next load will
+    // return the authoritative row.
     const addToHistory = useCallback(async (submission: Submission): Promise<void> => {
-        try {
-            if (isSupabaseConfigured()) {
-                await addToStudentHistory(submission);
-            }
-            // Always update local state for immediate UI feedback
-            setHistory(prev => [submission, ...prev]);
-        } catch (e) {
-            console.error('Failed to add to history:', e);
-            // Still add locally as fallback
-            setHistory(prev => [submission, ...prev]);
-        }
+        setHistory(prev => [submission, ...prev]);
     }, []);
 
     // Clear local history (localStorage only for privacy)

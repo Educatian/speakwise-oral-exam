@@ -1,9 +1,21 @@
-import { GoogleGenAI, Type } from '@google/genai';
-import { createFeedbackPrompt } from '../prompts/interviewerSystem';
-import { TranscriptionItem, Submission, RubricBreakdown, LatencyMetrics, BargeInEvent, DialogueMetrics, ArgumentGraph, ReasoningRubric } from '../../types';
+import { supabase, isSupabaseConfigured } from '../supabase/client';
+import {
+    TranscriptionItem,
+    Submission,
+    LatencyMetrics,
+    BargeInEvent,
+    DialogueMetrics,
+    ArgumentGraph,
+    ReasoningRubric,
+} from '../../types';
 
-interface EvaluationPayload {
+// All scoring + persistence now happens server-side in the submit-exam Edge
+// Function. The client no longer needs a Gemini API key.
+
+interface SubmitExamPayload {
+    courseId: string;
     courseName: string;
+    coursePassword: string;
     studentName: string;
     transcriptions: TranscriptionItem[];
     latencyMetrics: LatencyMetrics;
@@ -11,110 +23,40 @@ interface EvaluationPayload {
     dialogueMetrics: DialogueMetrics;
     argumentGraph: ArgumentGraph;
     reasoningRubric: ReasoningRubric;
+    deviceId?: string;
 }
-
-const sanitizeTranscript = (text: string) => {
-    return text.replace(/\[\/?(thought|reflection)\]/g, '').trim();
-};
 
 export class EvaluationService {
-    static async evaluateTranscripts(payload: EvaluationPayload): Promise<Submission> {
-        const {
-            courseName,
-            studentName,
-            transcriptions,
-            latencyMetrics,
-            bargeInEvents,
-            dialogueMetrics,
-            argumentGraph,
-            reasoningRubric
-        } = payload;
+    static async submitExam(payload: SubmitExamPayload): Promise<Submission> {
+        if (!isSupabaseConfigured()) {
+            throw new Error('Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
+        }
 
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-        const transcriptStr = transcriptions
-            .map((t: TranscriptionItem) => `${t.speaker}: ${sanitizeTranscript(t.text)}`)
-            .join('\n');
-
-        const feedbackPrompt = createFeedbackPrompt(courseName, transcriptStr);
-
-        const res = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
-            contents: feedbackPrompt,
-            config: {
-                responseMimeType: 'application/json',
-                responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                        score: { type: Type.NUMBER },
-                        feedback: { type: Type.STRING },
-                        confidenceScore: { type: Type.NUMBER },
-                        confidenceRationale: { type: Type.STRING },
-                        rubricBreakdown: {
-                            type: Type.OBJECT,
-                            properties: {
-                                conceptualUnderstanding: {
-                                    type: Type.OBJECT,
-                                    properties: {
-                                        score: { type: Type.NUMBER },
-                                        evidence: { type: Type.ARRAY, items: { type: Type.STRING } }
-                                    }
-                                },
-                                communicationClarity: {
-                                    type: Type.OBJECT,
-                                    properties: {
-                                        score: { type: Type.NUMBER },
-                                        evidence: { type: Type.ARRAY, items: { type: Type.STRING } }
-                                    }
-                                },
-                                criticalThinking: {
-                                    type: Type.OBJECT,
-                                    properties: {
-                                        score: { type: Type.NUMBER },
-                                        evidence: { type: Type.ARRAY, items: { type: Type.STRING } }
-                                    }
-                                },
-                                engagement: {
-                                    type: Type.OBJECT,
-                                    properties: {
-                                        score: { type: Type.NUMBER },
-                                        evidence: { type: Type.ARRAY, items: { type: Type.STRING } }
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    required: ['score', 'feedback']
-                }
-            }
+        const { data, error } = await supabase.functions.invoke('submit-exam', {
+            body: {
+                courseId: payload.courseId,
+                coursePassword: payload.coursePassword,
+                courseName: payload.courseName,
+                studentName: payload.studentName,
+                transcriptions: payload.transcriptions,
+                latencyMetrics: payload.latencyMetrics,
+                bargeInEvents: payload.bargeInEvents,
+                dialogueMetrics: payload.dialogueMetrics,
+                argumentGraph: payload.argumentGraph,
+                reasoningRubric: payload.reasoningRubric,
+                deviceId: payload.deviceId,
+            },
         });
 
-        const analysis = JSON.parse(res.text || '{}');
-
-        // Build extended submission with LA data
-        const submission: Submission = {
-            id: Math.random().toString(36).substr(2, 9),
-            studentName,
-            courseName: courseName,
-            timestamp: Date.now(),
-            transcript: transcriptions,
-            score: Math.min(100, Math.max(0, Math.round(analysis.score || 0))),
-            feedback: analysis.feedback || 'No feedback generated.',
-
-            // Learning Analytics
-            latencyMetrics,
-            bargeInEvents,
-
-            // Advanced Reasoning Analytics
-            dialogueMetrics,
-            argumentGraph,
-            reasoningRubric,
-
-            // AI Confidence & Rubric
-            confidenceScore: analysis.confidenceScore,
-            confidenceRationale: analysis.confidenceRationale,
-            rubricBreakdown: analysis.rubricBreakdown as RubricBreakdown
-        };
-
-        return submission;
+        if (error) {
+            throw new Error(error.message || 'submit-exam failed');
+        }
+        const sub = data?.submission;
+        if (!sub) {
+            throw new Error('submit-exam returned no submission');
+        }
+        return sub as Submission;
     }
 }
+
+export default EvaluationService;

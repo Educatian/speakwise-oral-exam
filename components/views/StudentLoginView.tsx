@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Course } from '../../types';
 import { Button, Input, MicTest } from '../ui';
 import { sanitizeStudentName } from '../../lib/security/sanitize';
+import { supabase, isSupabaseConfigured } from '../../lib/supabase/client';
 
 interface StudentLoginViewProps {
     courses: Course[];
@@ -50,31 +51,64 @@ export const StudentLoginView: React.FC<StudentLoginViewProps> = ({
             return;
         }
 
-        setIsLoading(true);
-
-        // Simplified mode: verify passcode against selected course
+        // Resolve the course id we want to validate against. In simplified
+        // mode the course was pre-selected; in full mode the student typed a
+        // 6-digit course number.
+        let courseId: string | null = null;
         if (isSimplifiedMode && selectedCourse) {
-            if (selectedCourse.password === passcode) {
-                onLogin(selectedCourse, trimmedName);
-            } else {
-                setError('Invalid entry code. Please try again.');
-            }
+            courseId = selectedCourse.id;
         } else {
-            // Full mode: find course by number and passcode
             if (!courseNumber || courseNumber.length !== 6) {
                 setError('Course number must be 6 digits.');
-                setIsLoading(false);
                 return;
             }
-            const course = courses.find(c => c.id === courseNumber && c.password === passcode);
-            if (course) {
-                onLogin(course, trimmedName);
-            } else {
-                setError('Invalid course number or passcode.');
-            }
+            courseId = courseNumber;
         }
 
-        setIsLoading(false);
+        if (!isSupabaseConfigured()) {
+            setError('Backend not configured. Ask your instructor.');
+            return;
+        }
+
+        setIsLoading(true);
+        try {
+            // Passcode is validated server-side by the course-login Edge
+            // Function. The `password` column is not readable from the
+            // browser anymore, so this is the only supported path.
+            const { data, error: fnError } = await supabase.functions.invoke(
+                'course-login',
+                { body: { courseId, passcode } },
+            );
+            if (fnError) {
+                setError('Invalid course number or passcode.');
+                return;
+            }
+            const remote = data?.course;
+            if (!remote) {
+                setError('Course not found.');
+                return;
+            }
+            // We attach the passcode to the Course object in memory so the
+            // downstream submit-exam call can re-present it. It is never
+            // persisted.
+            const enriched: Course = {
+                id: remote.id,
+                name: remote.name,
+                prompt: remote.prompt,
+                instructorName: remote.instructorName ?? 'Instructor',
+                instructorPinHash: '',
+                ownerEmail: remote.ownerEmail ?? '',
+                password: passcode,
+                createdAt: Date.now(),
+                submissions: [],
+            };
+            onLogin(enriched, trimmedName);
+        } catch (err) {
+            console.error('[course-login] failed', err);
+            setError('Login failed. Please try again.');
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const handleKeyDown = (e: React.KeyboardEvent) => {

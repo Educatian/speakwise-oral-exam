@@ -25,6 +25,22 @@ import {
     calculateLatencyMetrics,
     detectBargeInEvent
 } from '../lib/voice/analyticsUtils';
+import { supabase, isSupabaseConfigured } from '../lib/supabase/client';
+
+// Fetches a short-lived Gemini Live auth token from the server. The
+// long-lived API key never leaves the Edge Function.
+async function fetchGeminiLiveToken(): Promise<string> {
+    if (!isSupabaseConfigured()) {
+        throw new Error('Supabase is not configured; cannot mint Gemini Live token');
+    }
+    const { data, error } = await supabase.functions.invoke('gemini-live-token', {
+        body: {},
+    });
+    if (error) throw new Error(error.message || 'gemini-live-token failed');
+    const token = data?.token;
+    if (typeof token !== 'string' || !token) throw new Error('gemini-live-token missing');
+    return token;
+}
 
 interface UseGeminiLiveOptions {
     systemInstruction: string;
@@ -144,9 +160,14 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
             interviewerSpeakingTimeRef.current = 0;
             latencyListRef.current = [];
 
+            // Exchange the Supabase session JWT for an ephemeral Gemini Live
+            // auth token. Token is single-use and expires in 30 min; session
+            // must begin within the first minute after issue.
+            const liveToken = await fetchGeminiLiveToken();
+
             // Wrap and initialize logic in GeminiWebsocketClient
             const wsClient = new GeminiWebsocketClient({
-                apiKey: process.env.API_KEY as string,
+                apiKey: liveToken,
                 systemInstruction,
                 voiceName,
                 onOpen: async () => {

@@ -4,7 +4,6 @@ import {
     getAllCourses,
     addCourse as addCourseToSupabase,
     deleteCourse as deleteCourseFromSupabase,
-    addSubmissionToCourse,
     deleteSubmission as deleteSubmissionFromSupabase,
     subscribeToCoursesRealtime,
     isSupabaseConfigured
@@ -158,32 +157,18 @@ export function useCourseStorage(): UseCourseStorageReturn {
         }
     }, []);
 
-    // Add a submission to a course
+    // Optimistic UI update only. The row itself is persisted server-side by
+    // the submit-exam Edge Function; the Supabase realtime subscription will
+    // reconcile authoritative state shortly after.
     const addSubmission = useCallback(async (
         courseId: string,
         submission: Submission
     ): Promise<void> => {
-        try {
-            if (isSupabaseConfigured()) {
-                await addSubmissionToCourse(courseId, submission);
-                // Real-time subscription will update the state
-            } else {
-                setCourses(prev => prev.map(c =>
-                    c.id === courseId
-                        ? { ...c, submissions: [submission, ...c.submissions] }
-                        : c
-                ));
-            }
-        } catch (e) {
-            console.error('Failed to add submission:', e);
-            setError('Failed to save submission. Please try again.');
-            // Still add locally as fallback
-            setCourses(prev => prev.map(c =>
-                c.id === courseId
-                    ? { ...c, submissions: [submission, ...c.submissions] }
-                    : c
-            ));
-        }
+        setCourses(prev => prev.map(c =>
+            c.id === courseId
+                ? { ...c, submissions: [submission, ...c.submissions] }
+                : c
+        ));
     }, []);
 
     // Delete a submission from a course

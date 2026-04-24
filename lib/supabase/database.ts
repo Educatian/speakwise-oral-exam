@@ -108,53 +108,6 @@ export async function deleteCourse(courseId: string): Promise<void> {
 }
 
 /**
- * Add a submission to a course in Supabase
- */
-export async function addSubmissionToCourse(
-    courseId: string,
-    submission: Submission
-): Promise<void> {
-    if (!isSupabaseConfigured()) {
-        addSubmissionToLocalStorage(courseId, submission);
-        return;
-    }
-
-    try {
-        const { error } = await supabase.from('submissions').insert({
-            id: submission.id,
-            course_id: courseId,
-            student_name: submission.studentName,
-            course_name: submission.courseName,
-            timestamp: submission.timestamp,
-            transcript: submission.transcript,
-            score: submission.score,
-            feedback: submission.feedback,
-            // Learning Analytics
-            latency_metrics: submission.latencyMetrics,
-            barge_in_events: submission.bargeInEvents,
-            // Advanced Reasoning Analytics
-            dialogue_metrics: submission.dialogueMetrics,
-            argument_graph: submission.argumentGraph,
-            reasoning_rubric: submission.reasoningRubric,
-            // AI Confidence
-            confidence_score: submission.confidenceScore,
-            rubric_breakdown: submission.rubricBreakdown
-        });
-
-        if (error) throw error;
-
-        console.log('[Supabase] Submission saved with analytics:', {
-            id: submission.id,
-            hasArgumentGraph: !!submission.argumentGraph,
-            argumentGraphNodes: submission.argumentGraph?.nodes?.length || 0
-        });
-    } catch (error) {
-        console.error('Error adding submission to Supabase:', error);
-        addSubmissionToLocalStorage(courseId, submission);
-    }
-}
-
-/**
  * Delete a submission from Supabase
  */
 export async function deleteSubmission(
@@ -254,34 +207,6 @@ export async function getStudentHistory(): Promise<Submission[]> {
     }
 }
 
-/**
- * Add a submission to student history
- */
-export async function addToStudentHistory(submission: Submission): Promise<void> {
-    if (!isSupabaseConfigured()) {
-        addToHistoryLocalStorage(submission);
-        return;
-    }
-
-    try {
-        const deviceId = getDeviceId();
-        const { error } = await supabase.from('student_history').insert({
-            id: submission.id,
-            device_id: deviceId,
-            student_name: submission.studentName,
-            course_name: submission.courseName,
-            timestamp: submission.timestamp,
-            transcript: submission.transcript,
-            score: submission.score,
-            feedback: submission.feedback
-        });
-
-        if (error) throw error;
-    } catch (error) {
-        console.error('Error adding to student history in Supabase:', error);
-        addToHistoryLocalStorage(submission);
-    }
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Device ID Helper (for anonymous student history)
@@ -326,15 +251,6 @@ function deleteCourseFromLocalStorage(courseId: string): void {
     localStorage.setItem(COURSES_KEY, JSON.stringify(courses));
 }
 
-function addSubmissionToLocalStorage(courseId: string, submission: Submission): void {
-    const courses = getCoursesFromLocalStorage().map(c =>
-        c.id === courseId
-            ? { ...c, submissions: [submission, ...c.submissions] }
-            : c
-    );
-    localStorage.setItem(COURSES_KEY, JSON.stringify(courses));
-}
-
 function deleteSubmissionFromLocalStorage(submissionId: string): void {
     const courses = getCoursesFromLocalStorage().map(c => ({
         ...c,
@@ -350,12 +266,6 @@ function getHistoryFromLocalStorage(): Submission[] {
     } catch (e) {
         return [];
     }
-}
-
-function addToHistoryLocalStorage(submission: Submission): void {
-    const history = getHistoryFromLocalStorage();
-    history.unshift(submission);
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -466,10 +376,8 @@ export default {
     getAllCourses,
     addCourse,
     deleteCourse,
-    addSubmissionToCourse,
     subscribeToCoursesRealtime,
     getStudentHistory,
-    addToStudentHistory,
     checkInstructorStatus,
     addInstructor,
     getAllInstructors

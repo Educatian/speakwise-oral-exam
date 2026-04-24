@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { GoogleGenAI } from '@google/genai';
 import { Course, Submission } from '../../types';
 import { Button, Input, Textarea, Modal, PinVerifyModal } from '../ui';
 import { createCoursePromptGenerator } from '../../lib/prompts/interviewerSystem';
+import { supabase } from '../../lib/supabase/client';
 
 import { hashPin, isValidPin } from '../../lib/utils/pinHash';
 import { getMasteryLevel } from '../../lib/utils/scoreDisplay';
@@ -151,15 +151,13 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
         setFormError(null);
 
         try {
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-
-            // Read files as text/base64
+            // Read files as text/base64 (base64 of binary payloads is forwarded
+            // to Gemini as inlineData).
             const fileContents = await Promise.all(
                 uploadedFiles.map(async (file) => {
                     if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
                         return { name: file.name, text: await file.text() };
                     }
-                    // For PDF/DOCX, send as inline data
                     const arrayBuffer = await file.arrayBuffer();
                     const base64 = btoa(
                         new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
@@ -168,8 +166,9 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
                 })
             );
 
-            // Build multimodal content parts
-            const parts: any[] = [];
+            const parts: Array<
+                { text: string } | { inlineData: { data: string; mimeType: string } }
+            > = [];
             for (const fc of fileContents) {
                 if ('text' in fc && fc.text) {
                     parts.push({ text: `--- File: ${fc.name} ---\n${fc.text}` });
@@ -196,13 +195,12 @@ Course name context: "${courseName || 'Unknown Course'}"
 Only output valid JSON, nothing else.`
             });
 
-            const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: [{ role: 'user', parts }]
-            });
-
-            const text = response.text || '';
-            // Parse JSON from response (handle markdown code blocks)
+            const { data, error } = await supabase.functions.invoke(
+                'instructor-gemini',
+                { body: { kind: 'extract_questions', parts } },
+            );
+            if (error) throw new Error(error.message || 'instructor-gemini failed');
+            const text = typeof data?.text === 'string' ? data.text : '';
             const jsonMatch = text.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
                 const parsed = JSON.parse(jsonMatch[0]);
@@ -316,15 +314,18 @@ Only output valid JSON, nothing else.`
         setFormError(null);
 
         try {
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-            const response = await ai.models.generateContent({
-                model: 'gemini-3-flash-preview',
-                contents: createCoursePromptGenerator(courseName)
-            });
-
-            if (response.text) {
-                setCoursePrompt(response.text);
-            }
+            const { data, error } = await supabase.functions.invoke(
+                'instructor-gemini',
+                {
+                    body: {
+                        kind: 'generate_prompt',
+                        parts: [{ text: createCoursePromptGenerator(courseName) }],
+                    },
+                },
+            );
+            if (error) throw new Error(error.message || 'instructor-gemini failed');
+            const text = typeof data?.text === 'string' ? data.text : '';
+            if (text) setCoursePrompt(text);
         } catch (err) {
             console.error('Prompt generation failed:', err);
             setFormError('Failed to generate prompt. Please try again.');

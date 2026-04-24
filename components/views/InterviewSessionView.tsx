@@ -105,45 +105,61 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({
         }
     }, [isUserSpeaking, isInterviewerSpeaking, pendingUserText, pendingAIText]);
 
-    // Generate feedback and submit when session ends
+    // Generate feedback and submit when session ends. All scoring + persistence
+    // happens server-side now; the course passcode is what authorizes the
+    // insert, so it must still be in-memory on the Course object here.
     const handleEndAndSubmit = async () => {
         const finalTranscripts = endSession();
 
-        try {
-            const submission = await EvaluationService.evaluateTranscripts({
+        if (!course.password) {
+            console.error('[submit] course passcode missing on Course object');
+            onComplete({
+                id: crypto.randomUUID(),
+                studentName,
                 courseName: course.name,
+                timestamp: Date.now(),
+                transcript: finalTranscripts,
+                score: 0,
+                feedback: 'Could not submit: session expired. Please log in again.',
+                latencyMetrics,
+                bargeInEvents,
+                dialogueMetrics,
+                argumentGraph,
+                reasoningRubric: getReasoningRubric(),
+            });
+            return;
+        }
+
+        try {
+            const submission = await EvaluationService.submitExam({
+                courseId: course.id,
+                courseName: course.name,
+                coursePassword: course.password,
                 studentName,
                 transcriptions: finalTranscripts,
                 latencyMetrics,
                 bargeInEvents,
                 dialogueMetrics,
                 argumentGraph,
-                reasoningRubric: getReasoningRubric()
+                reasoningRubric: getReasoningRubric(),
             });
-
             onComplete(submission);
         } catch (e) {
-            console.error('Failed to generate feedback:', e);
-
-            // Still submit with default values if feedback generation fails
-            const submission: Submission = {
-                id: Math.random().toString(36).substr(2, 9),
+            console.error('Failed to submit exam:', e);
+            onComplete({
+                id: crypto.randomUUID(),
                 studentName,
                 courseName: course.name,
                 timestamp: Date.now(),
                 transcript: finalTranscripts,
                 score: 0,
-                feedback: 'Feedback generation failed. Please contact your instructor.',
-                latencyMetrics: latencyMetrics,
-                bargeInEvents: bargeInEvents,
-
-                // Advanced Reasoning Analytics (still capture even on failure)
-                dialogueMetrics: dialogueMetrics,
-                argumentGraph: argumentGraph,
-                reasoningRubric: getReasoningRubric()
-            };
-
-            onComplete(submission);
+                feedback: 'Submission failed. Please contact your instructor.',
+                latencyMetrics,
+                bargeInEvents,
+                dialogueMetrics,
+                argumentGraph,
+                reasoningRubric: getReasoningRubric(),
+            });
         }
     };
 
