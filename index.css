@@ -1400,3 +1400,61 @@ button:focus-visible,
     border-width: 2px;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Print stylesheet: instructors export a single submission as a PDF via the
+   browser's Print to PDF. Only the .printable-submission subtree stays
+   visible. Dark-mode backgrounds are flipped to white so the export is
+   ink-friendly and legible on paper.
+   ───────────────────────────────────────────────────────────────────────────── */
+@media print {
+  @page {
+    margin: 0.5in;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+  .printable-submission,
+  .printable-submission * {
+    visibility: visible;
+  }
+
+  /* Re-flow the printable region to the top of the page, out of the modal
+     overlay which was clipping it to viewport height. */
+  .printable-submission {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+
+  .printable-submission,
+  .printable-submission * {
+    background: transparent !important;
+    color: black !important;
+    border-color: #cbd5e1 !important;
+    box-shadow: none !important;
+  }
+
+  /* Charts use stroke+fill SVG attributes, so polygons/lines survive the
+     flatten. Axis labels use CSS color — force them black. */
+  .printable-submission svg text {
+    fill: black !important;
+  }
+
+  /* Drop scroll caps the modal imposes on the transcript and disclosures. */
+  .printable-submission .custom-scrollbar,
+  .printable-submission .max-h-\[40vh\] {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  /* Toolbar + chrome the report reader doesn't need. */
+  .printable-submission .print-hide,
+  .printable-submission button {
+    display: none !important;
+  }
+}
