@@ -299,15 +299,9 @@ export async function addSubmissionToCourse(
         }
     }
 
-    await logAuditEvent({
-        action: 'submission.created',
-        description: `${submission.studentName} completed an interview in ${submission.courseName || 'a course'}.`,
-        targetType: 'submission',
-        targetId: submission.id,
-        actorName: submission.studentName,
-        institutionId: institutionId || undefined,
-        metadata: { courseId, score: submission.score }
-    });
+    // submission.created audit row is now written by the DB trigger
+    // `audit_submission_insert_trigger` (server-side, trusted). The client
+    // call used to live here; dropping it avoids a duplicate row.
 }
 
 /**
@@ -897,11 +891,11 @@ export async function getAuditLogs(limit = 40): Promise<AuditLogEntry[]> {
     }
 
     try {
-        const { data, error } = await supabase
-            .from('audit_logs')
-            .select('*')
-            .order('created_at', { ascending: false })
-            .limit(limit);
+        // audit_logs direct SELECT is revoked from anon/authenticated; go
+        // through the limit-capped SECURITY DEFINER RPC.
+        const { data, error } = await supabase.rpc('list_recent_audit_logs', {
+            limit_input: limit
+        });
 
         if (error) throw error;
 
@@ -952,20 +946,19 @@ export async function logAuditEvent(entry: Omit<AuditLogEntry, 'id' | 'createdAt
     }
 
     try {
-        const { error } = await supabase
-            .from('audit_logs')
-            .insert({
-                id: normalizedEntry.id,
-                action: normalizedEntry.action,
-                description: normalizedEntry.description,
-                target_type: normalizedEntry.targetType,
-                target_id: normalizedEntry.targetId,
-                actor_name: normalizedEntry.actorName || null,
-                actor_email: normalizedEntry.actorEmail || null,
-                institution_id: normalizedEntry.institutionId || null,
-                created_at: new Date(normalizedEntry.createdAt).toISOString(),
-                metadata: normalizedEntry.metadata || null
-            });
+        // Direct INSERT on audit_logs is revoked from anon/authenticated.
+        // Route through the log_audit_event RPC so every audit write goes
+        // through a single server-side entry point.
+        const { error } = await supabase.rpc('log_audit_event', {
+            action_input: normalizedEntry.action,
+            description_input: normalizedEntry.description,
+            target_type_input: normalizedEntry.targetType,
+            target_id_input: normalizedEntry.targetId,
+            actor_email_input: normalizedEntry.actorEmail || null,
+            actor_name_input: normalizedEntry.actorName || null,
+            institution_id_input: normalizedEntry.institutionId || null,
+            metadata_input: normalizedEntry.metadata || null
+        });
 
         if (error) throw error;
     } catch (error) {
