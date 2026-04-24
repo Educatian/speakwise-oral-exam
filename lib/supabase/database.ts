@@ -630,21 +630,28 @@ export async function getUserProfiles(): Promise<UserProfile[]> {
     }
 
     try {
-        const { data, error } = await supabase
-            .from('app_users')
-            .select('id, email, display_name, role, school_id, school_name, created_at')
-            .order('created_at', { ascending: false });
+        // email column is grant-revoked on app_users; route through the
+        // SECURITY DEFINER RPC so admin UI keeps working.
+        const { data, error } = await supabase.rpc('list_app_users_for_admin');
 
         if (error) throw error;
 
-        return (data || []).map((profile) => ({
+        return (data || []).map((profile: {
+            id: string;
+            email: string;
+            display_name: string | null;
+            role: string | null;
+            school_id: string | null;
+            school_name: string | null;
+            created_at: string | number | null;
+        }) => ({
             id: profile.id,
             email: profile.email,
             displayName: profile.display_name || profile.email,
             role: (profile.role || UserRole.STUDENT) as UserRole,
             schoolId: profile.school_id || '',
             schoolName: profile.school_name || '',
-            createdAt: profile.created_at
+            createdAt: profile.created_at as string
         }));
     } catch (error) {
         console.error('Error fetching user profiles:', error);
@@ -1285,13 +1292,13 @@ export async function checkInstructorStatus(email: string): Promise<boolean> {
     }
 
     try {
-        const { data: profile, error: profileError } = await supabase
-            .from('app_users')
-            .select('role')
-            .eq('email', normalizedEmail)
-            .single();
+        // Direct .eq('email', ...) fails under the new column grants; use RPC.
+        const { data: staffFlag, error: profileError } = await supabase.rpc(
+            'is_email_staff',
+            { email_input: normalizedEmail }
+        );
 
-        if (!profileError && profile && ['instructor', 'moderator', 'admin'].includes(profile.role)) {
+        if (!profileError && staffFlag === true) {
             return true;
         }
 
@@ -1325,13 +1332,14 @@ export async function addInstructor(email: string, addedBy: string): Promise<boo
 
     try {
         const normalizedEmail = email.toLowerCase().trim();
-        const { data: existingProfile, error: profileLookupError } = await supabase
-            .from('app_users')
-            .select('id')
-            .eq('email', normalizedEmail)
-            .maybeSingle();
+        // Column grants block .eq('email', ...). Use the SECURITY DEFINER RPC
+        // that returns just the id (no email exposure) for lookup.
+        const { data: existingId, error: profileLookupError } = await supabase.rpc(
+            'get_app_user_id_by_email',
+            { email_input: normalizedEmail }
+        );
 
-        if (!profileLookupError && existingProfile?.id) {
+        if (!profileLookupError && existingId) {
             const { error: profileError } = await supabase.rpc('set_app_user_role_by_email', {
                 email_input: normalizedEmail,
                 role_input: UserRole.INSTRUCTOR
@@ -1369,13 +1377,12 @@ export async function getAllInstructors(): Promise<string[]> {
     }
 
     try {
-        const { data: profiles, error: profilesError } = await supabase
-            .from('app_users')
-            .select('email, role')
-            .in('role', ['instructor', 'moderator', 'admin']);
+        // Direct select of email is blocked by column grants. Use the RPC
+        // that returns staff emails via SECURITY DEFINER.
+        const { data: profiles, error: profilesError } = await supabase.rpc('list_staff_emails');
 
         if (!profilesError && profiles && profiles.length > 0) {
-            const emailsFromProfiles = profiles.map((profile) => profile.email);
+            const emailsFromProfiles = (profiles as { email: string }[]).map((p) => p.email);
             return [...new Set([...FALLBACK_INSTRUCTORS, ...emailsFromProfiles])];
         }
 

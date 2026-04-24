@@ -78,17 +78,20 @@ async function fetchAppUserById(userId: string): Promise<AuthUser | null> {
         return null;
     }
 
-    const { data, error } = await supabase
-        .from('app_users')
-        .select('id, email, display_name, role, school_id, school_name')
-        .eq('id', userId)
-        .maybeSingle();
+    // app_users.email is column-grant-revoked from anon/authenticated, so
+    // direct SELECT on email would fail. Go through the SECURITY DEFINER RPC.
+    const { data, error } = await supabase.rpc('get_app_user_by_id', {
+        user_id_input: userId
+    });
 
-    if (error || !data) {
+    if (error) {
         return null;
     }
-
-    return mapAppUser(data);
+    const record = Array.isArray(data) ? data[0] : data;
+    if (!record) {
+        return null;
+    }
+    return mapAppUser(record);
 }
 
 export async function signUp(
