@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SpeakWise Student Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+KR:wght@400;500;600;700&family=Noto+Serif+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --paper: #fbfaf6;
+  --ink: #181515;
+  --ink-mute: #6b6260;
+  --ink-faint: #9a9290;
+  --rule: #e3dfd6;
+  --accent: #8a4b1c;
+  --accent-soft: #f3ead6;
+  --code-bg: #f1ecdf;
+  --shadow: 0 4px 18px -6px rgba(20, 18, 16, 0.12);
+  --max-body: 720px;
+}
+* { box-sizing: border-box; }
+html { -webkit-font-smoothing: antialiased; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: 'Charter', 'Georgia', 'Noto Serif KR', serif;
+  font-size: 17px;
+  line-height: 1.7;
+  font-feature-settings: 'kern' 1, 'liga' 1;
+}
+.app {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 48px;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 40px 32px 120px;
+}
+@media (max-width: 920px) {
+  .app { grid-template-columns: 1fr; gap: 16px; }
+}
+
+/* TOC sidebar */
+.toc {
+  position: sticky;
+  top: 32px;
+  align-self: start;
+  font-family: 'Inter', 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  color: var(--ink-mute);
+  border-right: 1px solid var(--rule);
+  padding-right: 20px;
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+}
+.toc .brand {
+  font-family: 'Charter', 'Georgia', serif;
+  font-style: italic;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+.toc .sub {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 14px;
+}
+.toc .switcher {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--rule);
+  flex-wrap: wrap;
+}
+.toc .switcher a {
+  color: var(--ink-mute);
+  text-decoration: none;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transition: border-color 150ms ease, color 150ms ease;
+}
+.toc .switcher a:hover { border-color: var(--accent); color: var(--accent); }
+.toc .switcher a.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.toc ul {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 12px;
+}
+.toc li { margin: 2px 0; }
+.toc a {
+  color: var(--ink-mute);
+  text-decoration: none;
+  display: block;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border-left: 2px solid transparent;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  line-height: 1.4;
+}
+.toc a:hover { background: var(--accent-soft); color: var(--accent); }
+.toc a.level-3 { padding-left: 20px; font-size: 12px; }
+.toc a.active { border-left-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+
+/* Main content */
+main {
+  max-width: var(--max-body);
+}
+h1, h2, h3, h4 {
+  font-family: 'Inter', 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: var(--ink);
+  letter-spacing: -0.012em;
+  line-height: 1.25;
+  font-weight: 600;
+  margin-top: 2em;
+  margin-bottom: 0.6em;
+}
+h1 {
+  font-size: 2.4rem;
+  margin-top: 0;
+  margin-bottom: 0.2em;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+h1 + blockquote {
+  margin-top: 0;
+  font-family: 'Charter', 'Georgia', serif;
+  font-style: italic;
+  font-size: 0.95rem;
+  color: var(--ink-mute);
+  background: transparent;
+  border-left: 3px solid var(--accent);
+  padding: 4px 16px;
+}
+h2 {
+  font-size: 1.55rem;
+  border-top: 1px solid var(--rule);
+  padding-top: 2.2em;
+}
+h2:first-of-type { border-top: 0; padding-top: 0; }
+h3 { font-size: 1.15rem; }
+h4 { font-size: 1rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-mute); }
+
+p, li { color: var(--ink); }
+p { margin: 0 0 1em; }
+ul, ol { padding-left: 1.5em; }
+li { margin: 0.35em 0; }
+a { color: var(--accent); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+a:hover { text-decoration-thickness: 2px; }
+
+blockquote {
+  margin: 1.4em 0;
+  padding: 16px 20px;
+  background: var(--accent-soft);
+  border-left: 3px solid var(--accent);
+  color: var(--ink);
+  font-size: 0.95em;
+  border-radius: 0 8px 8px 0;
+}
+blockquote p:last-child { margin-bottom: 0; }
+
+code {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  background: var(--code-bg);
+  color: var(--ink);
+  font-size: 0.88em;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+pre {
+  background: var(--code-bg);
+  padding: 14px 18px;
+  border-radius: 10px;
+  overflow-x: auto;
+  line-height: 1.5;
+  font-size: 0.88em;
+  border: 1px solid var(--rule);
+}
+pre code { background: transparent; padding: 0; border-radius: 0; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1em 0;
+  font-size: 0.93em;
+}
+th, td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+  vertical-align: top;
+}
+th {
+  font-family: 'Inter', 'Noto Sans KR', sans-serif;
+  font-weight: 600;
+  font-size: 0.78em;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-mute);
+}
+
+hr {
+  border: 0;
+  height: 1px;
+  background: var(--rule);
+  margin: 2.5em 0;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 10px;
+  border: 1px solid var(--rule);
+  box-shadow: var(--shadow);
+  margin: 1.2em 0;
+}
+img + em {
+  display: block;
+  text-align: center;
+  font-size: 0.85em;
+  color: var(--ink-mute);
+  margin-top: -0.6em;
+  margin-bottom: 2em;
+}
+
+/* Footer line */
+main > p > em:only-child {
+  display: block;
+  border-top: 1px solid var(--rule);
+  padding-top: 20px;
+  color: var(--ink-faint);
+  font-size: 0.85em;
+  margin-top: 4em;
+}
+
+/* Print */
+@media print {
+  .toc { display: none; }
+  .app { grid-template-columns: 1fr; padding: 0; max-width: none; }
+  main { max-width: none; }
+  img { box-shadow: none; border-radius: 4px; page-break-inside: avoid; }
+  h2, h3 { page-break-after: avoid; }
+  pre, blockquote { page-break-inside: avoid; }
+  @page { margin: 0.6in; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="toc">
+    <div class="brand">speakwise</div>
+    <div class="sub">STUDENT · ENGLISH</div>
+    <nav class="switcher" aria-label="Guide switcher"><a href="./instructor_ko.html" class="">강사 (KO)</a><a href="./instructor_en.html" class="">Instructor (EN)</a><a href="./student_ko.html" class="">학생 (KO)</a><a href="./student_en.html" class="active">Student (EN)</a></nav>
+    <nav aria-label="Table of contents">
+      <ul>
+<li><a class="level-2" href="#what-is-speakwise-and-what-will-i-actually-do">What is SpeakWise, and what will I actually do?</a></li>
+<li><a class="level-2" href="#signing-in">Signing in</a></li>
+<li><a class="level-3" href="#the-landing-page">The landing page</a></li>
+<li><a class="level-3" href="#create-an-account-or-sign-in">Create an account or sign in</a></li>
+<li><a class="level-2" href="#institution-access-code">Institution access code</a></li>
+<li><a class="level-2" href="#finding-your-course">Finding your course</a></li>
+<li><a class="level-2" href="#joining-an-interview-passcode-microphone-test">Joining an interview — passcode + microphone test</a></li>
+<li><a class="level-2" href="#how-to-handle-the-interview">How to handle the interview</a></li>
+<li><a class="level-3" href="#the-first-moment">The first moment</a></li>
+<li><a class="level-3" href="#how-to-answer">How to answer</a></li>
+<li><a class="level-3" href="#when-youre-stuck-the-hint-ladder">When you're stuck — the hint ladder</a></li>
+<li><a class="level-3" href="#is-interrupting-the-ai-okay">Is interrupting the AI okay?</a></li>
+<li><a class="level-3" href="#which-language">Which language?</a></li>
+<li><a class="level-3" href="#ending-the-interview">Ending the interview</a></li>
+<li><a class="level-2" href="#understanding-your-results">Understanding your results</a></li>
+<li><a class="level-3" href="#replaying-your-own-interview">Replaying your own interview</a></li>
+<li><a class="level-3" href="#saving-the-report">Saving the report</a></li>
+<li><a class="level-2" href="#history-revisiting-earlier-sessions">History — revisiting earlier sessions</a></li>
+<li><a class="level-2" href="#common-worries">Common worries</a></li>
+<li><a class="level-3" href="#what-if-the-ai-mishears-me">"What if the AI mishears me?"</a></li>
+<li><a class="level-3" href="#the-mic-cut-out-midway">"The mic cut out midway."</a></li>
+<li><a class="level-3" href="#why-was-my-score-low">"Why was my score low?"</a></li>
+<li><a class="level-3" href="#i-realised-i-said-something-wrong">"I realised I said something wrong"</a></li>
+<li><a class="level-2" href="#research-participation-notice">Research participation notice</a></li>
+</ul>
+    </nav>
+  </aside>
+  <main>
+    <h1 id="speakwise-student-guide">SpeakWise — Student Guide</h1>
+<blockquote>
+<p><strong>Audience</strong>: Students taking an oral interview on SpeakWise.
+<strong>What you&#39;ll need</strong>: a laptop or desktop with a working microphone, a quiet space for 5 to 10 minutes, and the <strong>institution access code</strong> and <strong>course passcode</strong> your instructor gave you.</p>
+</blockquote>
+<hr>
+<h2 id="what-is-speakwise-and-what-will-i-actually-do">1. What is SpeakWise, and what will I actually do?</h2>
+<p>SpeakWise is a <strong>voice-driven AI oral interview platform</strong>. Your instructor sets up a topic, and an AI interviewer called &quot;Dr. SpeakWise&quot; asks you four to five questions out loud. You <strong>answer by speaking</strong>, and the system transcribes your answers automatically. When the interview ends, you get a score and personalised feedback right away.</p>
+<p>It&#39;s not a one-way exam — it&#39;s a conversation. If you get stuck, the AI will offer a graduated hint. You don&#39;t need to panic if you don&#39;t know the answer.</p>
+<hr>
+<h2 id="signing-in">2. Signing in</h2>
+<h3 id="the-landing-page">2.1 The landing page</h3>
+<p><img src="../screenshots/shared/01-landing.png" alt="Landing" loading="lazy"></p>
+<p>Visit the URL your instructor shared (for example <code>https://speakwise-oral-exam.vercel.app/</code>). You&#39;ll see two big buttons.</p>
+<ul>
+<li><strong>Student Workspace</strong> — this is you.</li>
+<li>Instructor Workspace — for faculty and assistants. Don&#39;t click it.</li>
+</ul>
+<h3 id="create-an-account-or-sign-in">2.2 Create an account or sign in</h3>
+<p>First time here? Switch the form to sign-up mode.</p>
+<p><img src="../screenshots/student/40-auth.png" alt="Sign in" loading="lazy"></p>
+<p><strong>Sign-up needs</strong>:</p>
+<ul>
+<li>Email (use one you check regularly)</li>
+<li>A password you&#39;ll remember</li>
+<li>Your display name</li>
+<li><strong>Role: Student</strong></li>
+<li>Your <strong>institution</strong> from the dropdown (e.g. University of Alabama)</li>
+</ul>
+<p>After signing up you&#39;ll be logged in automatically.</p>
+<blockquote>
+<p><strong>Already have an account?</strong> Just enter your email and password. If you forgot your password, ask your instructor — automated password reset isn&#39;t available in this deployment.</p>
+</blockquote>
+<hr>
+<h2 id="institution-access-code">3. Institution access code</h2>
+<p>The first time you sign in you&#39;ll see the <strong>institution access gate</strong>.</p>
+<p><img src="../screenshots/student/43-institution-access.png" alt="Institution access" loading="lazy"></p>
+<ul>
+<li>A list of institutions appears on the left. Click your school.</li>
+<li>A box titled <strong>&quot;ENTER THE ACCESS CODE&quot;</strong> appears on the right.</li>
+<li>Type the code your instructor shared (all caps — for example <code>ROLL2025</code>).</li>
+<li>Click <strong>Continue to Courses</strong>.</li>
+</ul>
+<blockquote>
+<p><strong>Don&#39;t have a code?</strong> Ask your instructor or teaching assistant. SpeakWise only shows courses inside an institution you can prove you belong to — you can&#39;t skip this step.</p>
+</blockquote>
+<p>The code is remembered on your device, so you won&#39;t be prompted again next time.</p>
+<hr>
+<h2 id="finding-your-course">4. Finding your course</h2>
+<p>Once inside, you&#39;ll see a list of available courses.</p>
+<p><img src="../screenshots/student/46-available-courses.png" alt="Available courses" loading="lazy"></p>
+<p>Each card shows the course name, instructor, and submission count. Click the one you&#39;re joining.</p>
+<hr>
+<h2 id="joining-an-interview-passcode-microphone-test">5. Joining an interview — passcode + microphone test</h2>
+<p>Clicking a course opens a <strong>join screen</strong>.</p>
+<p><img src="../screenshots/student/47-join-interview-form.png" alt="Join form" loading="lazy"></p>
+<ol>
+<li><strong>Your Full Name</strong> — used in the report your instructor sees.</li>
+<li><strong>Entry Code</strong> — the <strong>course passcode</strong> (not the same as the institution access code).</li>
+<li><strong>Microphone test</strong> — click the test button and speak; confirm that audio is being captured.</li>
+</ol>
+<p><img src="../screenshots/student/48-name-filled-mic-test.png" alt="Name filled + mic test" loading="lazy"></p>
+<blockquote>
+<p><strong>Mic not working?</strong></p>
+<ul>
+<li>Click the lock icon in your browser&#39;s address bar → set Microphone to Allow.</li>
+<li>macOS: System Settings → Privacy &amp; Security → Microphone → turn on for your browser.</li>
+<li>Close other tabs that might be holding the mic (Zoom, Teams, etc.).</li>
+</ul>
+</blockquote>
+<p>When the mic is confirmed, the <strong>Start Interview</strong> button activates.</p>
+<hr>
+<h2 id="how-to-handle-the-interview">6. How to handle the interview</h2>
+<h3 id="the-first-moment">6.1 The first moment</h3>
+<p>When you press <strong>Start Interview</strong>, the AI speaks first:</p>
+<blockquote>
+<p><em>&quot;Hello there! I am Dr. SpeakWise, and I&#39;ll be your examiner today…&quot;</em></p>
+</blockquote>
+<p>It introduces itself, breaks the ice with a simple question, then moves into four or five substantive questions, and ends with a closing line.</p>
+<h3 id="how-to-answer">6.2 How to answer</h3>
+<ul>
+<li><strong>Speak naturally.</strong> You don&#39;t need to form perfect sentences.</li>
+<li><strong>Aim for 30 seconds to a minute per answer</strong> rather than a single line — the rubric rewards depth.</li>
+<li><strong>Use concrete examples.</strong> A single sentence starting with <em>&quot;For example…&quot;</em> usually lifts your score.</li>
+<li><strong>Be ready for follow-ups.</strong> The AI often asks <em>&quot;Could you explain why?&quot;</em> Prepare a quick rationale.</li>
+<li><strong>Pause ~3 seconds when finished.</strong> The system uses silence as the signal to switch turns.</li>
+</ul>
+<h3 id="when-you39re-stuck-the-hint-ladder">6.3 When you&#39;re stuck — the hint ladder</h3>
+<p>If you don&#39;t know, the AI offers three levels of scaffolding automatically:</p>
+<ol>
+<li><strong>Level 1 — conceptual hint</strong>: <em>&quot;What&#39;s the main characteristic of X?&quot;</em> (no answer revealed)</li>
+<li><strong>Level 2 — example hint</strong>: <em>&quot;Consider a situation where… what happens?&quot;</em></li>
+<li><strong>Level 3 — decomposed sub-question</strong>: breaks the original prompt into smaller pieces.</li>
+</ol>
+<p>If you still can&#39;t answer after level 3, the AI gracefully moves on. <strong>Not knowing is not a penalty by itself</strong> — the attempt is scored, but silence is not. Keep talking.</p>
+<h3 id="is-interrupting-the-ai-okay">6.4 Is interrupting the AI okay?</h3>
+<p>Yes. If you start speaking while the AI is talking, it&#39;s logged as a <em>barge-in</em> event. Barge-ins are generally read as <strong>confidence signals</strong> and tend to help your engagement score. That said, try to hear the full question the first time so you don&#39;t miss context.</p>
+<h3 id="which-language">6.5 Which language?</h3>
+<p><strong>Either English or Korean is fine.</strong> The AI follows your language lead. Mixing is also handled.</p>
+<h3 id="ending-the-interview">6.6 Ending the interview</h3>
+<p>Most interviews end automatically after the fourth or fifth question. You can also end early by clicking <strong>End Interview</strong>. When you end:</p>
+<ol>
+<li>Your full transcript is sent to Gemini for evaluation (~10–20 seconds).</li>
+<li>A score, feedback, and rubric breakdown are computed.</li>
+<li>You land on the results view.</li>
+</ol>
+<hr>
+<h2 id="understanding-your-results">7. Understanding your results</h2>
+<table>
+<thead>
+<tr>
+<th>Section</th>
+<th>What it means</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Score</strong></td>
+<td>A 0–100 number plus a mastery level (with emoji).</td>
+</tr>
+<tr>
+<td><strong>AI Feedback</strong></td>
+<td>Three to five sentences summarising strengths, gaps, and suggestions.</td>
+</tr>
+<tr>
+<td><strong>Rubric (four axes)</strong></td>
+<td>Conceptual / Communication / Critical Thinking / Engagement, each on 0–25, with the AI&#39;s quoted evidence for each.</td>
+</tr>
+<tr>
+<td><strong>Reasoning Quality</strong></td>
+<td>Explicit Justification, Causal Explanation, Counter-Argument Handling, Abstraction — linguistic patterns the system detected.</td>
+</tr>
+<tr>
+<td><strong>Concept Map</strong></td>
+<td>A network of concepts extracted from your answers. Clicking a node highlights the transcript line that produced it.</td>
+</tr>
+<tr>
+<td><strong>Transcript</strong></td>
+<td>The full back-and-forth you had with the AI.</td>
+</tr>
+</tbody></table>
+<h3 id="replaying-your-own-interview">7.1 Replaying your own interview</h3>
+<p>The Concept Map has a <strong>Timeline playback</strong> control. Pressing play rebuilds the graph turn by turn — you can literally watch where you made a claim, where you supported it with evidence, and where you jumped without backing it up.</p>
+<p>Keyboard shortcuts:</p>
+<ul>
+<li><code>←</code> / <code>→</code> — step back or forward one turn</li>
+<li><code>Space</code> — play or pause</li>
+<li><code>Home</code> / <code>End</code> — jump to the first or last turn</li>
+</ul>
+<h3 id="saving-the-report">7.2 Saving the report</h3>
+<ul>
+<li><strong>Print report</strong> button → print to PDF → save. You can paste it into a portfolio or a reflection journal.</li>
+<li>Or just bookmark the page URL — you can reopen any past session from the <strong>View My History</strong> menu.</li>
+</ul>
+<hr>
+<h2 id="history-revisiting-earlier-sessions">8. History — revisiting earlier sessions</h2>
+<p>The side menu has a <strong>View My History</strong> link that shows every session you&#39;ve completed, newest first. Useful if you took the same course more than once, or if you&#39;re across multiple courses.</p>
+<blockquote>
+<p>Whether you are allowed to retake a course depends on your instructor. If retakes are allowed, every attempt saves as a new submission.</p>
+</blockquote>
+<hr>
+<h2 id="common-worries">9. Common worries</h2>
+<h3 id="quotwhat-if-the-ai-mishears-mequot">&quot;What if the AI mishears me?&quot;</h3>
+<p>Speech recognition is good but not perfect. You can inspect the transcript on the results screen. If a mis-hearing was significant, <strong>tell your instructor</strong> — they can override the score manually.</p>
+<h3 id="quotthe-mic-cut-out-midwayquot">&quot;The mic cut out midway.&quot;</h3>
+<p>For now a network interruption ends the session (improving this is on the roadmap, Track R3). Prefer a <strong>wired or stable Wi-Fi</strong> connection during the interview. If it does drop, reach out to your instructor immediately and ask for a retry.</p>
+<h3 id="quotwhy-was-my-score-lowquot">&quot;Why was my score low?&quot;</h3>
+<p>Usually one of:</p>
+<ol>
+<li><strong>Answers were too short</strong> — under ten seconds tends to score near zero on rubric dimensions.</li>
+<li><strong>No explicit justification or examples</strong> — lacking &quot;Because…&quot; or &quot;For example…&quot; hurts Causal Explanation and Explicit Justification.</li>
+<li><strong>Follow-ups answered only &quot;yes&quot; / &quot;no&quot;</strong> — Engagement drops sharply.</li>
+<li><strong>Topic drift</strong> — Conceptual Understanding drops when answers go off-topic.</li>
+</ol>
+<h3 id="quoti-realised-i-said-something-wrongquot">&quot;I realised I said something wrong&quot;</h3>
+<p>You can&#39;t rewind, but you can course-correct on the next turn: <em>&quot;Wait, earlier I meant to say…&quot;</em> The system reads this as self-correction, which is <strong>positive</strong> for the Counter-Argument Handling dimension.</p>
+<hr>
+<h2 id="research-participation-notice">10. Research participation notice</h2>
+<p>If this course is part of a study (e.g. an IRB-approved self-regulated learning study), your instructor will give you a separate <strong>consent form</strong>. Personal identifiers are only used as research data with your consent. Questions go directly to the instructor or the study&#39;s PI.</p>
+<hr>
+<p><em>This guide is kept in sync with the app by re-running <code>node playwright/capture.mjs</code> and <code>node playwright/capture-extra.mjs</code>.</em></p>
+
+  </main>
+</div>
+<script>
+// Highlight the TOC entry for the section currently in view.
+(function () {
+  const links = document.querySelectorAll('.toc a[href^="#"]');
+  const targets = Array.from(links).map((a) => {
+    const id = a.getAttribute('href').slice(1);
+    return { link: a, el: document.getElementById(id) };
+  }).filter((x) => x.el);
+  if (targets.length === 0) return;
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      const id = entry.target.id;
+      links.forEach((l) => l.classList.remove('active'));
+      const link = document.querySelector('.toc a[href="#' + id + '"]');
+      if (link) link.classList.add('active');
+    });
+  }, { rootMargin: '-20% 0% -70% 0%' });
+  targets.forEach((t) => observer.observe(t.el));
+})();
+</script>
+</body>
+</html>

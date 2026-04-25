@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { GoogleGenAI } from '@google/genai';
+import { chatComplete, chatCompleteJson } from '../../lib/services/aiClient';
 import mammoth from 'mammoth';
 import { Course, CourseTemplate, Institution, Submission } from '../../types';
 import { GroupKnowledgeService } from '../../lib/services/GroupKnowledgeService';
@@ -204,68 +204,56 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
         setFormError(null);
 
         try {
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-
-            // Read files as text/base64
+            // Convert every upload to text client-side. The OpenRouter-based
+            // aiClient doesn't pipe raw binaries for PDF; users with PDF-only
+            // sources can either convert to DOCX/TXT, or we'll drop in a
+            // client-side pdf-parse pass when that feature is funded.
             const fileContents = await Promise.all(
                 uploadedFiles.map(async (file) => {
                     if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
                         return { name: file.name, text: await file.text() };
                     }
-                    // DOCX → extract text via mammoth (Gemini doesn't support DOCX MIME)
-                    if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || file.name.endsWith('.docx')) {
+                    if (
+                        file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+                        file.name.endsWith('.docx')
+                    ) {
                         const arrayBuffer = await file.arrayBuffer();
                         const result = await mammoth.extractRawText({ arrayBuffer });
                         return { name: file.name, text: result.value };
                     }
-                    // For PDF, send as inline data (Gemini supports PDF natively)
-                    const arrayBuffer = await file.arrayBuffer();
-                    const base64 = btoa(
-                        new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
-                    );
-                    return { name: file.name, base64, mimeType: file.type };
+                    // PDF: skipped for now with a clear note embedded into the
+                    // prompt so the model knows that file was unreadable.
+                    return {
+                        name: file.name,
+                        text: `[PDF content unavailable — this deployment of SpeakWise extracts text from TXT and DOCX only. Please convert the PDF or ask the platform admin to enable PDF extraction.]`
+                    };
                 })
             );
 
-            // Build multimodal content parts
-            const parts: any[] = [];
-            for (const fc of fileContents) {
-                if ('text' in fc && fc.text) {
-                    parts.push({ text: `--- File: ${fc.name} ---\n${fc.text}` });
-                } else if ('base64' in fc && fc.base64) {
-                    parts.push({
-                        inlineData: { data: fc.base64, mimeType: fc.mimeType }
-                    });
-                }
-            }
+            const joinedSources = fileContents
+                .map((fc) => `--- File: ${fc.name} ---\n${fc.text}`)
+                .join('\n\n');
 
-            parts.push({
-                text: `You are analyzing course materials for an oral examination platform.
-Based on the uploaded document(s), extract:
+            const extractionPrompt = `You are analyzing course materials for an oral examination platform.
+Based on the uploaded document(s) below, extract:
 1. A concise knowledge base summary (2-3 paragraphs) covering the key concepts, topics, and learning objectives.
 2. A list of 5-7 high-quality interview questions that an AI interviewer should ask students. Questions should test understanding, not just recall.
 
-Respond in this exact JSON format:
+Course name context: "${courseName || 'Unknown Course'}"
+
+Return ONLY this JSON shape (no markdown fences):
 {
   "knowledgeBase": "...",
   "questions": ["Question 1?", "Question 2?", ...]
 }
 
-Course name context: "${courseName || 'Unknown Course'}"
-Only output valid JSON, nothing else.`
-            });
+${joinedSources}`;
 
-            const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: [{ role: 'user', parts }]
-            });
-
-            const text = response.text || '';
-            // Parse JSON from response (handle markdown code blocks)
-            const jsonMatch = text.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-                const parsed = JSON.parse(jsonMatch[0]);
-                setExtractedQuestions(parsed.questions || []);
+            const parsed = await chatCompleteJson<{ knowledgeBase?: string; questions?: string[] }>(
+                extractionPrompt
+            );
+            if (Array.isArray(parsed.questions) && parsed.questions.length > 0) {
+                setExtractedQuestions(parsed.questions);
                 setExtractedContext(parsed.knowledgeBase || '');
                 setShowQuestionReview(true);
             } else {
@@ -461,14 +449,13 @@ Only output valid JSON, nothing else.`
         setFormError(null);
 
         try {
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-            const response = await ai.models.generateContent({
-                model: 'gemini-3-flash-preview',
-                contents: createCoursePromptGenerator(courseName)
+            const generated = await chatComplete({
+                messages: [
+                    { role: 'user', content: createCoursePromptGenerator(courseName) }
+                ]
             });
-
-            if (response.text) {
-                setCoursePrompt(response.text);
+            if (generated.trim()) {
+                setCoursePrompt(generated.trim());
             }
         } catch (err) {
             console.error('Prompt generation failed:', err);

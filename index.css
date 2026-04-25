@@ -1563,3 +1563,56 @@ button:focus-visible,
     border-width: 2px;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Argument / concept map: node entry + active pulse animations. Used by
+   ArgumentMapView during timeline replay. Kept scoped to .arg-node classes
+   so no other SVGs inherit these transforms.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.arg-node {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes arg-node-enter-keyframes {
+  from {
+    opacity: 0;
+    transform: scale(0.72);
+  }
+  65% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.arg-node-enter {
+  animation: arg-node-enter-keyframes 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes arg-node-active-pulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 0 rgba(34, 197, 94, 0));
+  }
+  50% {
+    filter: drop-shadow(0 0 14px rgba(34, 197, 94, 0.55));
+  }
+}
+
+.arg-node-active {
+  animation: arg-node-active-pulse 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arg-node,
+  .arg-node-enter,
+  .arg-node-active {
+    animation: none !important;
+    transition: none !important;
+  }
+}

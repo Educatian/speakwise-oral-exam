@@ -1,6 +1,16 @@
-import { GoogleGenAI, Type } from '@google/genai';
 import { createFeedbackPrompt } from '../prompts/interviewerSystem';
-import { TranscriptionItem, Submission, RubricBreakdown, LatencyMetrics, BargeInEvent, DialogueMetrics, ArgumentGraph, ReasoningRubric, RawTranscriptTurn } from '../../types';
+import {
+    TranscriptionItem,
+    Submission,
+    RubricBreakdown,
+    LatencyMetrics,
+    BargeInEvent,
+    DialogueMetrics,
+    ArgumentGraph,
+    ReasoningRubric,
+    RawTranscriptTurn
+} from '../../types';
+import { chatCompleteJson } from './aiClient';
 
 interface EvaluationPayload {
     courseName: string;
@@ -15,18 +25,45 @@ interface EvaluationPayload {
     reasoningRubric: ReasoningRubric;
 }
 
+interface FeedbackResponse {
+    score?: number;
+    feedback?: string;
+    confidenceScore?: number;
+    confidenceRationale?: string;
+    rubricBreakdown?: RubricBreakdown;
+    toulminClassification?: {
+        claim?: { count?: number; examples?: string[] };
+        data?: { count?: number; examples?: string[] };
+        warrant?: { count?: number; examples?: string[] };
+        backing?: { count?: number; examples?: string[] };
+        qualifier?: { count?: number; examples?: string[] };
+        rebuttal?: { count?: number; examples?: string[] };
+    };
+}
+
 const sanitizeTranscript = (text: string) => {
     return text.replace(/\[\/?(thought|reflection)\]/g, '').trim();
 };
 
-/** Schema for a single Toulmin component in LLM response */
-const TOULMIN_COMPONENT_SCHEMA = {
-    type: Type.OBJECT,
-    properties: {
-        count: { type: Type.NUMBER },
-        examples: { type: Type.ARRAY, items: { type: Type.STRING } }
-    }
-};
+// OpenRouter's json_object mode enforces valid JSON but does not enforce a
+// schema. The structured instruction lives in the prompt itself — the base
+// prompt in interviewerSystem.ts already lists score / feedback /
+// rubricBreakdown; we only append the Toulmin block.
+const TOULMIN_PROMPT_ADDENDUM = `
+
+Additionally, include a "toulminClassification" field with these six keys, each containing detected examples and counts from the transcript:
+{
+  "toulminClassification": {
+    "claim":     { "count": <int>, "examples": ["quote", ...] },
+    "data":      { "count": <int>, "examples": ["quote", ...] },
+    "warrant":   { "count": <int>, "examples": ["quote", ...] },
+    "backing":   { "count": <int>, "examples": ["quote", ...] },
+    "qualifier": { "count": <int>, "examples": ["quote", ...] },
+    "rebuttal":  { "count": <int>, "examples": ["quote", ...] }
+  }
+}
+
+Return the full object (score, feedback, confidenceScore, confidenceRationale, rubricBreakdown, toulminClassification) as one valid JSON document. Do not wrap it in markdown fences.`;
 
 export class EvaluationService {
     static async evaluateTranscripts(payload: EvaluationPayload): Promise<Submission> {
@@ -43,77 +80,13 @@ export class EvaluationService {
             reasoningRubric
         } = payload;
 
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
         const transcriptStr = transcriptions
             .map((t: TranscriptionItem) => `${t.speaker}: ${sanitizeTranscript(t.text)}`)
             .join('\n');
 
-        const feedbackPrompt = createFeedbackPrompt(courseName, transcriptStr);
+        const feedbackPrompt = createFeedbackPrompt(courseName, transcriptStr) + TOULMIN_PROMPT_ADDENDUM;
 
-        const res = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
-            contents: feedbackPrompt,
-            config: {
-                responseMimeType: 'application/json',
-                responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                        score: { type: Type.NUMBER },
-                        feedback: { type: Type.STRING },
-                        confidenceScore: { type: Type.NUMBER },
-                        confidenceRationale: { type: Type.STRING },
-                        rubricBreakdown: {
-                            type: Type.OBJECT,
-                            properties: {
-                                conceptualUnderstanding: {
-                                    type: Type.OBJECT,
-                                    properties: {
-                                        score: { type: Type.NUMBER },
-                                        evidence: { type: Type.ARRAY, items: { type: Type.STRING } }
-                                    }
-                                },
-                                communicationClarity: {
-                                    type: Type.OBJECT,
-                                    properties: {
-                                        score: { type: Type.NUMBER },
-                                        evidence: { type: Type.ARRAY, items: { type: Type.STRING } }
-                                    }
-                                },
-                                criticalThinking: {
-                                    type: Type.OBJECT,
-                                    properties: {
-                                        score: { type: Type.NUMBER },
-                                        evidence: { type: Type.ARRAY, items: { type: Type.STRING } }
-                                    }
-                                },
-                                engagement: {
-                                    type: Type.OBJECT,
-                                    properties: {
-                                        score: { type: Type.NUMBER },
-                                        evidence: { type: Type.ARRAY, items: { type: Type.STRING } }
-                                    }
-                                }
-                            }
-                        },
-                        // Toulmin 2nd-pass classification by LLM
-                        toulminClassification: {
-                            type: Type.OBJECT,
-                            properties: {
-                                claim: TOULMIN_COMPONENT_SCHEMA,
-                                data: TOULMIN_COMPONENT_SCHEMA,
-                                warrant: TOULMIN_COMPONENT_SCHEMA,
-                                backing: TOULMIN_COMPONENT_SCHEMA,
-                                qualifier: TOULMIN_COMPONENT_SCHEMA,
-                                rebuttal: TOULMIN_COMPONENT_SCHEMA
-                            }
-                        }
-                    },
-                    required: ['score', 'feedback']
-                }
-            }
-        });
-
-        const analysis = JSON.parse(res.text || '{}');
+        const analysis = await chatCompleteJson<FeedbackResponse>(feedbackPrompt);
 
         // ── Merge LLM Toulmin with pattern-based Toulmin ──
         // LLM provides context-aware classification; pattern-based provides real-time baseline
@@ -123,7 +96,6 @@ export class EvaluationService {
             const llmToulmin = analysis.toulminClassification;
             const patternToulmin = reasoningRubric.toulminAnalysis;
 
-            // Build merged Toulmin: prefer LLM counts (context-aware) but keep pattern examples as fallback
             const mergeComponent = (
                 llmComp: { count?: number; examples?: string[] } | undefined,
                 patternComp: { detected: boolean; count: number; examples: string[] } | undefined
@@ -133,7 +105,7 @@ export class EvaluationService {
                 examples: [
                     ...(llmComp?.examples || []),
                     ...(patternComp?.examples || [])
-                ].slice(0, 5) // Limit to 5 examples
+                ].slice(0, 5)
             });
 
             const mergedClaim = mergeComponent(llmToulmin.claim, patternToulmin?.claim);
@@ -143,7 +115,6 @@ export class EvaluationService {
             const mergedQualifier = mergeComponent(llmToulmin.qualifier, patternToulmin?.qualifier);
             const mergedRebuttal = mergeComponent(llmToulmin.rebuttal, patternToulmin?.rebuttal);
 
-            // Recalculate completeness with merged data
             const weights = { claim: 0.10, data: 0.25, warrant: 0.25, backing: 0.15, qualifier: 0.10, rebuttal: 0.15 };
             const completenessScore = Math.round(
                 ((mergedClaim.detected ? weights.claim : 0) +
@@ -173,28 +144,24 @@ export class EvaluationService {
             };
         }
 
-        // Build extended submission with LA data
         const submission: Submission = {
             id: Math.random().toString(36).substr(2, 9),
             studentName,
-            courseName: courseName,
+            courseName,
             timestamp: Date.now(),
             transcript: transcriptions,
             score: Math.min(100, Math.max(0, Math.round(analysis.score || 0))),
             feedback: analysis.feedback || 'No feedback generated.',
 
-            // Learning Analytics
             latencyMetrics,
             bargeInEvents,
             rawTranscriptTurns,
             failedTranscriptions,
 
-            // Advanced Reasoning Analytics (with merged Toulmin)
             dialogueMetrics,
             argumentGraph,
             reasoningRubric: mergedRubric,
 
-            // AI Confidence & Rubric
             confidenceScore: analysis.confidenceScore,
             confidenceRationale: analysis.confidenceRationale,
             rubricBreakdown: analysis.rubricBreakdown as RubricBreakdown
@@ -203,3 +170,5 @@ export class EvaluationService {
         return submission;
     }
 }
+
+export default EvaluationService;

@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SpeakWise Instructor Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+KR:wght@400;500;600;700&family=Noto+Serif+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --paper: #fbfaf6;
+  --ink: #181515;
+  --ink-mute: #6b6260;
+  --ink-faint: #9a9290;
+  --rule: #e3dfd6;
+  --accent: #8a4b1c;
+  --accent-soft: #f3ead6;
+  --code-bg: #f1ecdf;
+  --shadow: 0 4px 18px -6px rgba(20, 18, 16, 0.12);
+  --max-body: 720px;
+}
+* { box-sizing: border-box; }
+html { -webkit-font-smoothing: antialiased; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: 'Charter', 'Georgia', 'Noto Serif KR', serif;
+  font-size: 17px;
+  line-height: 1.7;
+  font-feature-settings: 'kern' 1, 'liga' 1;
+}
+.app {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 48px;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 40px 32px 120px;
+}
+@media (max-width: 920px) {
+  .app { grid-template-columns: 1fr; gap: 16px; }
+}
+
+/* TOC sidebar */
+.toc {
+  position: sticky;
+  top: 32px;
+  align-self: start;
+  font-family: 'Inter', 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  color: var(--ink-mute);
+  border-right: 1px solid var(--rule);
+  padding-right: 20px;
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+}
+.toc .brand {
+  font-family: 'Charter', 'Georgia', serif;
+  font-style: italic;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+.toc .sub {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 14px;
+}
+.toc .switcher {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--rule);
+  flex-wrap: wrap;
+}
+.toc .switcher a {
+  color: var(--ink-mute);
+  text-decoration: none;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transition: border-color 150ms ease, color 150ms ease;
+}
+.toc .switcher a:hover { border-color: var(--accent); color: var(--accent); }
+.toc .switcher a.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.toc ul {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 12px;
+}
+.toc li { margin: 2px 0; }
+.toc a {
+  color: var(--ink-mute);
+  text-decoration: none;
+  display: block;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border-left: 2px solid transparent;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  line-height: 1.4;
+}
+.toc a:hover { background: var(--accent-soft); color: var(--accent); }
+.toc a.level-3 { padding-left: 20px; font-size: 12px; }
+.toc a.active { border-left-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+
+/* Main content */
+main {
+  max-width: var(--max-body);
+}
+h1, h2, h3, h4 {
+  font-family: 'Inter', 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: var(--ink);
+  letter-spacing: -0.012em;
+  line-height: 1.25;
+  font-weight: 600;
+  margin-top: 2em;
+  margin-bottom: 0.6em;
+}
+h1 {
+  font-size: 2.4rem;
+  margin-top: 0;
+  margin-bottom: 0.2em;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+h1 + blockquote {
+  margin-top: 0;
+  font-family: 'Charter', 'Georgia', serif;
+  font-style: italic;
+  font-size: 0.95rem;
+  color: var(--ink-mute);
+  background: transparent;
+  border-left: 3px solid var(--accent);
+  padding: 4px 16px;
+}
+h2 {
+  font-size: 1.55rem;
+  border-top: 1px solid var(--rule);
+  padding-top: 2.2em;
+}
+h2:first-of-type { border-top: 0; padding-top: 0; }
+h3 { font-size: 1.15rem; }
+h4 { font-size: 1rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-mute); }
+
+p, li { color: var(--ink); }
+p { margin: 0 0 1em; }
+ul, ol { padding-left: 1.5em; }
+li { margin: 0.35em 0; }
+a { color: var(--accent); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+a:hover { text-decoration-thickness: 2px; }
+
+blockquote {
+  margin: 1.4em 0;
+  padding: 16px 20px;
+  background: var(--accent-soft);
+  border-left: 3px solid var(--accent);
+  color: var(--ink);
+  font-size: 0.95em;
+  border-radius: 0 8px 8px 0;
+}
+blockquote p:last-child { margin-bottom: 0; }
+
+code {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  background: var(--code-bg);
+  color: var(--ink);
+  font-size: 0.88em;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+pre {
+  background: var(--code-bg);
+  padding: 14px 18px;
+  border-radius: 10px;
+  overflow-x: auto;
+  line-height: 1.5;
+  font-size: 0.88em;
+  border: 1px solid var(--rule);
+}
+pre code { background: transparent; padding: 0; border-radius: 0; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1em 0;
+  font-size: 0.93em;
+}
+th, td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+  vertical-align: top;
+}
+th {
+  font-family: 'Inter', 'Noto Sans KR', sans-serif;
+  font-weight: 600;
+  font-size: 0.78em;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-mute);
+}
+
+hr {
+  border: 0;
+  height: 1px;
+  background: var(--rule);
+  margin: 2.5em 0;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 10px;
+  border: 1px solid var(--rule);
+  box-shadow: var(--shadow);
+  margin: 1.2em 0;
+}
+img + em {
+  display: block;
+  text-align: center;
+  font-size: 0.85em;
+  color: var(--ink-mute);
+  margin-top: -0.6em;
+  margin-bottom: 2em;
+}
+
+/* Footer line */
+main > p > em:only-child {
+  display: block;
+  border-top: 1px solid var(--rule);
+  padding-top: 20px;
+  color: var(--ink-faint);
+  font-size: 0.85em;
+  margin-top: 4em;
+}
+
+/* Print */
+@media print {
+  .toc { display: none; }
+  .app { grid-template-columns: 1fr; padding: 0; max-width: none; }
+  main { max-width: none; }
+  img { box-shadow: none; border-radius: 4px; page-break-inside: avoid; }
+  h2, h3 { page-break-after: avoid; }
+  pre, blockquote { page-break-inside: avoid; }
+  @page { margin: 0.6in; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="toc">
+    <div class="brand">speakwise</div>
+    <div class="sub">INSTRUCTOR · ENGLISH</div>
+    <nav class="switcher" aria-label="Guide switcher"><a href="./instructor_ko.html" class="">강사 (KO)</a><a href="./instructor_en.html" class="active">Instructor (EN)</a><a href="./student_ko.html" class="">학생 (KO)</a><a href="./student_en.html" class="">Student (EN)</a></nav>
+    <nav aria-label="Table of contents">
+      <ul>
+<li><a class="level-2" href="#getting-started-landing-and-sign-in">Getting started — landing and sign-in</a></li>
+<li><a class="level-2" href="#dashboard-anatomy">Dashboard anatomy</a></li>
+<li><a class="level-2" href="#class-analytics-the-class-level-lens">Class Analytics — the class-level lens</a></li>
+<li><a class="level-3" href="#top-line-metric-cards">Top-line metric cards</a></li>
+<li><a class="level-3" href="#score-distribution-time-series">Score distribution & time series</a></li>
+<li><a class="level-3" href="#reasoning-dimensions-bar-chart">Reasoning Dimensions bar chart</a></li>
+<li><a class="level-3" href="#per-student-breakdown-table">Per-student breakdown table</a></li>
+<li><a class="level-2" href="#submission-detail-modal-walkthrough">Submission Detail modal — walkthrough</a></li>
+<li><a class="level-3" href="#top-score-ai-feedback-confidence">Top — score, AI feedback, confidence</a></li>
+<li><a class="level-3" href="#rubric-breakdown-radar">Rubric Breakdown radar</a></li>
+<li><a class="level-3" href="#reasoning-quality-session-timing">Reasoning Quality + Session Timing</a></li>
+<li><a class="level-3" href="#speech-capture-archive-upstream">Speech capture archive (upstream)</a></li>
+<li><a class="level-3" href="#integrated-analysis-workspace-the-concept-map">Integrated Analysis Workspace — the Concept Map</a></li>
+<li><a class="level-2" href="#the-concept-map-complete-reference">The Concept Map — complete reference</a></li>
+<li><a class="level-3" href="#basic-gestures">Basic gestures</a></li>
+<li><a class="level-3" href="#layout-modes-radial-vs-force">Layout modes — Radial vs Force</a></li>
+<li><a class="level-3" href="#colour-modes-concept-vs-toulmin">Colour modes — Concept vs Toulmin ⭐</a></li>
+<li><a class="level-3" href="#toulmin-filter-chips">Toulmin filter chips</a></li>
+<li><a class="level-3" href="#replay-timeline-playback">Replay — timeline playback</a></li>
+<li><a class="level-3" href="#search-relation-filter-cluster-collapse">Search, relation filter, cluster collapse</a></li>
+<li><a class="level-2" href="#instructor-review-validate-or-override">Instructor Review — validate or override</a></li>
+<li><a class="level-2" href="#annotation-per-turn-notes">Annotation — per-turn notes</a></li>
+<li><a class="level-2" href="#building-a-course">Building a course</a></li>
+<li><a class="level-2" href="#managing-existing-courses">Managing existing courses</a></li>
+<li><a class="level-2" href="#admin-panel-admin-only">Admin Panel (admin-only)</a></li>
+<li><a class="level-2" href="#exporting">Exporting</a></li>
+<li><a class="level-2" href="#operational-notes">Operational notes</a></li>
+<li><a class="level-2" href="#appendix-troubleshooting">Appendix — troubleshooting</a></li>
+</ul>
+    </nav>
+  </aside>
+  <main>
+    <h1 id="speakwise-instructor-guide">SpeakWise — Instructor Guide</h1>
+<blockquote>
+<p><strong>Audience</strong>: Instructors and researchers running oral interviews in their own courses with SpeakWise, and scoring or analysing the resulting student responses.
+<strong>Version</strong>: Based on <code>master</code> as of 2026-04-24. Includes the Class Analytics panel, the Submission Analytics panels, and the Concept Map Toulmin mode.</p>
+</blockquote>
+<hr>
+<h2 id="getting-started-landing-and-sign-in">1. Getting started — landing and sign-in</h2>
+<p>SpeakWise&#39;s entry page routes a visitor into either the student workspace or the instructor workspace from a single screen.</p>
+<p><img src="../screenshots/shared/01-landing.png" alt="Landing" loading="lazy"></p>
+<p><strong>Steps</strong></p>
+<ol>
+<li>Click the <strong>Instructor Workspace</strong> button.</li>
+<li>The unified authentication view opens. Enter your email and password, then press <strong>Sign in</strong>.</li>
+</ol>
+<p><img src="../screenshots/shared/02-auth-signin.png" alt="Sign in" loading="lazy"></p>
+<blockquote>
+<p><strong>First time?</strong> Use the mode toggle in the form to switch to sign-up, then register your email, role, and institution. If you sign up with the email set as <code>ADMIN_EMAIL</code> in the source, the account automatically gets admin privileges and can see every course in every institution.</p>
+</blockquote>
+<p>Immediately after sign-in the app loads your courses and submissions from Supabase. During the fetch you may briefly see a &quot;Loading from Supabase…&quot; placeholder.</p>
+<p><img src="../screenshots/instructor/10-after-signin.png" alt="Post sign-in" loading="lazy"></p>
+<hr>
+<h2 id="dashboard-anatomy">2. Dashboard anatomy</h2>
+<p>The <strong>Course Manager Dashboard</strong> is the default view once you are signed in. The page has three major regions.</p>
+<p><img src="../screenshots/instructor/21-class-analytics.png" alt="Full dashboard" loading="lazy"></p>
+<table>
+<thead>
+<tr>
+<th>Region</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Top header</strong></td>
+<td>Institution context, signed-in identity, Admin Panel entry button (admin-only).</td>
+</tr>
+<tr>
+<td><strong>Summary cards + instructor guidance</strong></td>
+<td>Institution scope, visible course count, total submissions, average score.</td>
+</tr>
+<tr>
+<td><strong>Class Analytics</strong></td>
+<td>Class-level metrics, charts, and a per-student sortable table. Collapsible (▾ caret).</td>
+</tr>
+<tr>
+<td><strong>Bottom split</strong></td>
+<td>Left: the <em>Build Course</em> / <em>Course Library</em> tabs. Right: the recent submissions list.</td>
+</tr>
+</tbody></table>
+<blockquote>
+<p><strong>Admin vs ordinary instructor</strong>: admins see every institution&#39;s courses. Ordinary instructors only see courses where <code>owner_email</code> matches their own email. If a course you expect is missing, check its <code>owner_email</code>.</p>
+</blockquote>
+<hr>
+<h2 id="class-analytics-the-class-level-lens">3. Class Analytics — the class-level lens</h2>
+<p>The Class Analytics panel is <strong>open by default</strong>. Click the ▾ caret on the left of its heading to collapse it. When open, it shows five visual layers in sequence.</p>
+<h3 id="top-line-metric-cards">3.1 Top-line metric cards</h3>
+<p><img src="../screenshots/instructor/21-class-analytics.png" alt="Class Analytics" loading="lazy"></p>
+<p>Four cards sit in a row (left to right):</p>
+<table>
+<thead>
+<tr>
+<th>Card</th>
+<th>Meaning</th>
+<th>How to read it</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Submissions</strong></td>
+<td>Total number of submissions across visible courses</td>
+<td>Zero? Check that you have invited students and distributed passcodes.</td>
+</tr>
+<tr>
+<td><strong>Avg Score</strong></td>
+<td>Average AI score (0–100)</td>
+<td>Low averages may indicate an overly strict rubric <em>or</em> under-prepared students — open a handful of submissions to triangulate.</td>
+</tr>
+<tr>
+<td><strong>Avg Reasoning</strong></td>
+<td>Mean of <code>reasoningRubric.overallReasoningScore</code></td>
+<td>Interpret independently of AI score. It measures Toulmin-element coverage.</td>
+</tr>
+<tr>
+<td><strong>Avg Confidence</strong></td>
+<td>How confident the AI is in its own evaluation (0–100%)</td>
+<td>Low confidence often means transcripts were too short or ambiguous.</td>
+</tr>
+</tbody></table>
+<h3 id="score-distribution-amp-time-series">3.2 Score distribution &amp; time series</h3>
+<ul>
+<li><strong>Score Distribution</strong> — a 10-bin histogram across 0–100. A skew to one end suggests rubric calibration work.</li>
+<li><strong>Score over time</strong> — oldest-to-newest sparkline. An upward trend is common as students become familiar with the format.</li>
+</ul>
+<h3 id="reasoning-dimensions-bar-chart">3.3 Reasoning Dimensions bar chart</h3>
+<p>Four horizontal bars: <em>Explicit Justification</em>, <em>Causal Explanation</em>, <em>Counter-Argument Handling</em>, and <em>Abstraction / Generalization</em>, each averaged on a 0–5 scale. The shortest bar is your class&#39;s most systematic gap.</p>
+<h3 id="per-student-breakdown-table">3.4 Per-student breakdown table</h3>
+<ul>
+<li>Columns: Student · Course · Score · Reasoning · Confidence · Turns · Barge-ins · When</li>
+<li><strong>Click any header to sort.</strong> Sort by Score ascending to surface the lowest-performing submissions first.</li>
+<li><strong>Click any row to open the Submission Detail modal</strong> (next section).</li>
+</ul>
+<blockquote>
+<p><strong>Research tip</strong>: the table can be copied into Excel or R for further analysis. A dedicated CSV/JSON export is on the roadmap (Track R).</p>
+</blockquote>
+<hr>
+<h2 id="submission-detail-modal-walkthrough">4. Submission Detail modal — walkthrough</h2>
+<p>Clicking a row in the per-student table, or any card in the recent submissions list, opens the <strong>Submission Detail modal</strong>. The modal scrolls vertically and is organized into several sections.</p>
+<h3 id="top-score-ai-feedback-confidence">4.1 Top — score, AI feedback, confidence</h3>
+<p><img src="../screenshots/instructor/30-submission-detail-top.png" alt="Submission detail top" loading="lazy"></p>
+<ul>
+<li>Student name, course, timestamp</li>
+<li>Mastery level (emoji and percentage)</li>
+<li><strong>AI Feedback</strong> — a three-to-five-sentence summary written by Gemini</li>
+<li><strong>AI Confidence</strong> — how confident Gemini is in its own scoring, with a one-line rationale. Anything below 0.3 is a flag to re-read the transcript yourself.</li>
+</ul>
+<h3 id="rubric-breakdown-radar">4.2 Rubric Breakdown radar</h3>
+<p><img src="../screenshots/instructor/31-submission-rubric-radar.png" alt="Rubric radar" loading="lazy"></p>
+<ul>
+<li>Four-axis radar on the left: Conceptual Understanding / Communication Clarity / Critical Thinking / Engagement (each 0–25).</li>
+<li>Per-dimension cards on the right that expand (▸) to show <strong>evidence quotes</strong> the AI pulled from the transcript. You can immediately verify whether the AI&#39;s judgment is grounded.</li>
+</ul>
+<h3 id="reasoning-quality-session-timing">4.3 Reasoning Quality + Session Timing</h3>
+<p><img src="../screenshots/instructor/32-submission-reasoning-timing.png" alt="Reasoning and timing" loading="lazy"></p>
+<p><strong>Reasoning Quality block</strong></p>
+<ul>
+<li>Four horizontal bars for the linguistic reasoning dimensions, plus an overall 0–100 reasoning score in the top-right.</li>
+<li>Raw counts below: &quot;Justifications: 3, Causal patterns: 2, Counter attempts: 0, Generalizations: 1&quot; — these come from rule-based pattern detection in <code>lib/reasoning/patterns.ts</code>.</li>
+</ul>
+<p><strong>Session Timing block</strong></p>
+<ul>
+<li>Four metric cards: Turns · Avg Response · Max Delay · Turn-Taking.</li>
+<li>Per-turn response-latency sparkline — does the student speed up or slow down?</li>
+<li>Dialogue metrics: Initiatives, Rephrasing, Avg follow-up chars, Latency σ.</li>
+</ul>
+<blockquote>
+<p><strong>Barge-in Events panel</strong> follows immediately below, but renders only if any barge-ins occurred. Each entry carries a colour-coded interpretation badge: <strong>Confidence (green)</strong> / <strong>Hasty (amber)</strong> / <strong>Correction (blue)</strong> / <strong>Unclassified (grey)</strong>.</p>
+</blockquote>
+<h3 id="speech-capture-archive-upstream">4.4 Speech capture archive (upstream)</h3>
+<p>The <code>rawTranscriptTurns</code> + <code>failedTranscriptions</code> section lists every captured audio turn including the ones too short or too noisy to transcribe. Useful for debugging and for research reproducibility — every utterance is audit-able.</p>
+<h3 id="integrated-analysis-workspace-the-concept-map">4.5 Integrated Analysis Workspace — the Concept Map</h3>
+<p><img src="../screenshots/instructor/34-concept-map-toulmin-mode.png" alt="Concept map (Toulmin mode)" loading="lazy"></p>
+<p>This is where you will spend the most time per submission. The next section details every mode and filter.</p>
+<hr>
+<h2 id="the-concept-map-complete-reference">5. The Concept Map — complete reference</h2>
+<p>The <strong>Integrated analysis workspace</strong> in the middle of the Submission Detail modal shows a node–edge graph on the left and a transcript + annotation pane on the right.</p>
+<h3 id="basic-gestures">5.1 Basic gestures</h3>
+<table>
+<thead>
+<tr>
+<th>Gesture</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Drag the background</td>
+<td>Pan the entire canvas</td>
+</tr>
+<tr>
+<td>Wheel scroll</td>
+<td>Zoom around the cursor</td>
+</tr>
+<tr>
+<td>Drag a node</td>
+<td>Move that node only (position is persisted)</td>
+</tr>
+<tr>
+<td>Click a node</td>
+<td>Sidebar shows the concept, related edges, and transcript references</td>
+</tr>
+<tr>
+<td>Click an edge</td>
+<td>Filter the graph to that relation type</td>
+</tr>
+</tbody></table>
+<h3 id="layout-modes-radial-vs-force">5.2 Layout modes — Radial vs Force</h3>
+<p><img src="../screenshots/instructor/36-concept-map-force-layout.png" alt="Force layout" loading="lazy"></p>
+<ul>
+<li><strong>Radial</strong> (default) — the root node is centered and children fan out in concentric rings. Best for structured hierarchies.</li>
+<li><strong>Force</strong> — d3-force continuous simulation. Better when the relations are dense and no hierarchy is obvious; the layout reveals clusters organically.</li>
+</ul>
+<h3 id="colour-modes-concept-vs-toulmin">5.3 Colour modes — Concept vs Toulmin ⭐</h3>
+<p>Toggle with the <strong>Color: Concept / Toulmin</strong> button.</p>
+<ul>
+<li><strong>Concept mode</strong> (default) — nodes coloured by the domain category the model inferred: THEORY (indigo) / PRINCIPLE (amber) / DOMAIN (violet) / TOOL (cyan) / EXAMPLE (teal).</li>
+<li><strong>Toulmin mode</strong> — nodes coloured by the discourse role each utterance played:<ul>
+<li>🔴 <strong>Claim</strong> (rose)</li>
+<li>🟢 <strong>Evidence</strong> (emerald)</li>
+<li>🟡 <strong>Warrant</strong> (amber) — the logical bridge</li>
+<li>🟣 <strong>Rebuttal</strong> (violet) — pushback</li>
+<li>🔵 <strong>Question</strong> (blue) — AI prompts</li>
+</ul>
+</li>
+</ul>
+<p><img src="../screenshots/instructor/34-concept-map-toulmin-mode.png" alt="Toulmin mode" loading="lazy"></p>
+<h3 id="toulmin-filter-chips">5.4 Toulmin filter chips</h3>
+<p>Only visible while Toulmin colour mode is active. Each chip has a colour dot that matches the node stroke — <strong>the legend is the filter</strong>.</p>
+<p><img src="../screenshots/instructor/35-toulmin-claim-filter.png" alt="Claim filter active" loading="lazy"></p>
+<ul>
+<li><strong>Click a chip</strong> to isolate that role</li>
+<li><strong>Click again</strong> to clear</li>
+<li>The top-level &quot;Clear filter&quot; button clears both relation and Toulmin filters simultaneously</li>
+</ul>
+<p><strong>Research scenarios</strong></p>
+<ul>
+<li><em>&quot;Is this student heavy on Claim but light on Evidence?&quot;</em> — isolate Claim, count; isolate Evidence, compare.</li>
+<li><em>&quot;Compare Warrant density across cohorts&quot;</em> — capture Warrant-only screenshots of several submissions side by side.</li>
+</ul>
+<h3 id="replay-timeline-playback">5.5 Replay — timeline playback</h3>
+<p><img src="../screenshots/instructor/37-replay-midway.png" alt="Replay midway" loading="lazy"></p>
+<p>The Timeline playback card in the right sidebar:</p>
+<ul>
+<li><strong>Play / Pause</strong> — auto-advances turn by turn (1.1-second default interval)</li>
+<li><strong>Full map</strong> — resets to show every turn at once</li>
+<li>Slider — scrub to any turn</li>
+<li><strong>As time progresses the graph grows</strong> — nodes fade-and-scale into place over 520 ms; the currently-mentioned node pulses green.</li>
+</ul>
+<p><strong>Keyboard shortcuts</strong> (when no input is focused):</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>←</code></td>
+<td>Previous turn</td>
+</tr>
+<tr>
+<td><code>→</code></td>
+<td>Next turn</td>
+</tr>
+<tr>
+<td><code>Home</code></td>
+<td>First turn</td>
+</tr>
+<tr>
+<td><code>End</code></td>
+<td>Last turn</td>
+</tr>
+<tr>
+<td><code>Space</code></td>
+<td>Toggle play/pause (auto-plays from turn 0 if stopped)</td>
+</tr>
+</tbody></table>
+<h3 id="search-relation-filter-cluster-collapse">5.6 Search, relation filter, cluster collapse</h3>
+<p>The <strong>Search concepts</strong> box matches node content, type, and conceptType case-insensitively. Non-matching nodes dim.</p>
+<p><strong>Relation filter</strong> chips (Defines / Requires / Exemplifies / Enables / Located in) narrow the edge set. These filters stack with the Toulmin filter.</p>
+<p><strong>Cluster collapse</strong> lets you hide all descendants of a level-1 hub in one click — helpful when the graph is dense and you want to focus on a single branch.</p>
+<hr>
+<h2 id="instructor-review-validate-or-override">6. Instructor Review — validate or override</h2>
+<p><img src="../screenshots/instructor/24-submission-review-panel.png" alt="Review panel" loading="lazy"></p>
+<p>Near the bottom of the Submission Detail modal:</p>
+<ul>
+<li><strong>Validated</strong> — accept the AI score as-is.</li>
+<li><strong>Override</strong> — supply your own score (0–100).</li>
+<li><strong>Notes</strong> — internal comment visible to other reviewers.</li>
+</ul>
+<p>Review records go into <code>submission_reviews</code>. They feed inter-rater reliability analysis if multiple instructors review the same submission.</p>
+<hr>
+<h2 id="annotation-per-turn-notes">7. Annotation — per-turn notes</h2>
+<p><img src="../screenshots/instructor/25-annotation-editor.png" alt="Annotation editor" loading="lazy"></p>
+<p>Click <strong>&quot;Click to annotate&quot;</strong> next to any transcript turn, pick a category, write a note, save.</p>
+<table>
+<thead>
+<tr>
+<th>Category</th>
+<th>Colour</th>
+<th>Use</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>🟢 Strength</td>
+<td>emerald</td>
+<td>Something the student did well</td>
+</tr>
+<tr>
+<td>🔴 Concern</td>
+<td>rose</td>
+<td>A gap, error, or missed opportunity</td>
+</tr>
+<tr>
+<td>🔵 Evidence</td>
+<td>indigo</td>
+<td>Quoting this turn as support for a rubric score</td>
+</tr>
+<tr>
+<td>🟡 Follow up</td>
+<td>amber</td>
+<td>Something to check back on later</td>
+</tr>
+</tbody></table>
+<p>Annotations persist in <code>submission_annotations</code> and are <strong>shared in real time</strong> with any other reviewer who has the modal open — useful for synchronous calibration sessions.</p>
+<hr>
+<h2 id="building-a-course">8. Building a course</h2>
+<p><img src="../screenshots/instructor/22-build-course-form.png" alt="Build Course form" loading="lazy"></p>
+<p>Required inputs (left panel, <strong>Build Course</strong> tab):</p>
+<ul>
+<li><strong>Course Name</strong></li>
+<li><strong>Instructor Name</strong></li>
+<li><strong>Instructor PIN (4 digits)</strong> — self-identification before viewing submissions</li>
+<li><strong>Student Passcode</strong> — what students type on the course login screen</li>
+<li><strong>Institution</strong> — dropdown</li>
+<li><strong>Silence Threshold / Turn Duration</strong> — voice-turn detection tuning (defaults 3000 ms / 700 ms)</li>
+<li><strong>Knowledge Source</strong> (optional) — up to two PDF/DOCX/TXT uploads. Gemini extracts a knowledge base and draft question list.</li>
+</ul>
+<p><strong>System Prompt</strong> — the interviewer&#39;s instruction set. Write it yourself or click ✨ <em>Generate AI prompt</em> to have Gemini draft one. Prompt quality drives interview quality.</p>
+<p><strong>Course Library</strong> tab — reuse previously saved prompt templates.</p>
+<hr>
+<h2 id="managing-existing-courses">9. Managing existing courses</h2>
+<p>Each course card in the right column has:</p>
+<ul>
+<li><strong>View</strong> — open the course detail (prompt, submissions)</li>
+<li><strong>Delete</strong> — cascade-delete including all submissions</li>
+</ul>
+<p>Both actions require <strong>Instructor PIN verification</strong> (admins and the course&#39;s own owner bypass this).</p>
+<p>Editing the <strong>System Prompt</strong> inside the course view takes effect immediately for future interviews; already-submitted sessions are not retroactively re-scored.</p>
+<hr>
+<h2 id="admin-panel-admin-only">10. Admin Panel (admin-only)</h2>
+<p>Users whose email matches <code>ADMIN_EMAIL</code> see an <strong>👑 Admin Panel</strong> button in the top-right header.</p>
+<p><img src="../screenshots/instructor/23-admin-panel.png" alt="Admin panel" loading="lazy"></p>
+<p>The panel exposes:</p>
+<ul>
+<li>Institution Operations Console — coverage counts, role mix</li>
+<li>User access search + role changes</li>
+<li>Recent audit activity (live stream of submission.created events written by the DB trigger added in migration 0002_lock_audit_logs)</li>
+<li>Institution management (create/edit/access code rotation)</li>
+</ul>
+<blockquote>
+<p><strong>Note</strong>: under app-managed auth, some counts read zero even for the admin because the <code>is_admin_role()</code> SQL helper expects a Supabase-Auth JWT. The display gaps will close once session-token auth (P3) is introduced.</p>
+</blockquote>
+<hr>
+<h2 id="exporting">11. Exporting</h2>
+<ul>
+<li><strong>Export JSON</strong> (Concept Map toolbar) — graph data + current viewport + collapsed-cluster state as a single JSON file.</li>
+<li><strong>Export SVG</strong> (Concept Map toolbar) — vector file suitable for posters or papers.</li>
+<li><strong>Print report</strong> (Submission Detail footer) — the browser&#39;s Print to PDF produces an ink-friendly report. A dedicated print stylesheet flattens glass panels to white and enforces page breaks.</li>
+</ul>
+<blockquote>
+<p><strong>Not yet available (Track R)</strong>: a whole-class CSV export and a tidy long-format JSON export for R/Python pipelines. For now, extract raw data from the Supabase SQL editor when you need it for manuscripts.</p>
+</blockquote>
+<hr>
+<h2 id="operational-notes">12. Operational notes</h2>
+<ul>
+<li><strong>Gemini key management</strong>: Vercel env var <code>GEMINI_API_KEY</code> must be enabled for Production <em>and</em> Preview <em>and</em> Development environments, because Vite&#39;s <code>define</code> replacement runs at build time. When the key expires, rotate it in AI Studio, update the Vercel env var, and redeploy.</li>
+<li><strong><code>app_users.email</code> protection</strong>: the email column is revoked from anon/authenticated. User listings now go through the <code>list_app_users_for_admin</code> RPC.</li>
+<li><strong><code>audit_logs</code></strong>: a DB trigger writes a trusted row on every submission INSERT. Client-originated events (course deletion, role changes, annotations) funnel through the <code>log_audit_event</code> RPC.</li>
+<li><strong>Session-token authentication (P3)</strong> is not yet deployed. Until it is, any holder of the publishable key can invoke RPCs — acceptable for a pilot, but recommended to close before IRB submission.</li>
+</ul>
+<hr>
+<h2 id="appendix-troubleshooting">Appendix — troubleshooting</h2>
+<table>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>Likely cause</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Dashboard stuck on &quot;Loading from Supabase…&quot;</td>
+<td>Supabase project paused (free tier, 7 days of inactivity)</td>
+<td>Click <strong>Restore project</strong> in the Supabase dashboard; DNS recovers within a minute.</td>
+</tr>
+<tr>
+<td>Logged in, dashboard empty</td>
+<td>Your email doesn&#39;t match <code>ADMIN_EMAIL</code> and no course has your email as <code>owner_email</code></td>
+<td>Ask an admin to reassign, or use the admin account.</td>
+</tr>
+<tr>
+<td>Concept Map shows &quot;No argument data&quot;</td>
+<td>Transcript too short, or no recognisable argument patterns</td>
+<td>Strengthen the interviewer prompt so students articulate claims and evidence more explicitly.</td>
+</tr>
+<tr>
+<td>Rubric radar or reasoning bars missing</td>
+<td>That submission was written before the rubric-breakdown backfill</td>
+<td>Run the <code>playwright/.backfill-rubric.mjs</code> script — it re-scores only the missing fields, non-destructively.</td>
+</tr>
+<tr>
+<td>Toulmin chips don&#39;t appear</td>
+<td>Colour mode is still on Concept</td>
+<td>Click the <strong>Color: Concept</strong> toggle to flip to <strong>Color: Toulmin</strong>.</td>
+</tr>
+</tbody></table>
+<hr>
+<p><em>The screenshots in this document are re-generated by running <code>node playwright/capture.mjs</code> followed by <code>node playwright/capture-extra.mjs</code>. Keep the capture scripts in sync with the UI so the guide stays current.</em></p>
+
+  </main>
+</div>
+<script>
+// Highlight the TOC entry for the section currently in view.
+(function () {
+  const links = document.querySelectorAll('.toc a[href^="#"]');
+  const targets = Array.from(links).map((a) => {
+    const id = a.getAttribute('href').slice(1);
+    return { link: a, el: document.getElementById(id) };
+  }).filter((x) => x.el);
+  if (targets.length === 0) return;
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      const id = entry.target.id;
+      links.forEach((l) => l.classList.remove('active'));
+      const link = document.querySelector('.toc a[href="#' + id + '"]');
+      if (link) link.classList.add('active');
+    });
+  }, { rootMargin: '-20% 0% -70% 0%' });
+  targets.forEach((t) => observer.observe(t.el));
+})();
+</script>
+</body>
+</html>

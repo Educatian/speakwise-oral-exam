@@ -1,4 +1,15 @@
 import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import {
+    forceCenter,
+    forceCollide,
+    forceLink,
+    forceManyBody,
+    forceSimulation,
+    forceX,
+    forceY,
+    type SimulationLinkDatum,
+    type SimulationNodeDatum
+} from 'd3-force';
 import { ArgumentEdge, ArgumentGraph, ArgumentNode } from '../../types';
 
 interface TranscriptTurn {
@@ -64,6 +75,29 @@ function getNodeVisual(node: ArgumentNode) {
     }
 }
 
+// Toulmin-lens colouring. The argument-graph builder already tags each node
+// with a Toulmin-adjacent `type` (claim / evidence / justification /
+// counterargument / question); this maps that tag to a colour so researchers
+// can see the discourse structure directly without reading every label.
+type ToulminType = ArgumentNode['type'];
+const TOULMIN_LABELS: Record<ToulminType, string> = {
+    claim: 'Claim',
+    evidence: 'Evidence',
+    justification: 'Warrant',
+    counterargument: 'Rebuttal',
+    question: 'Question'
+};
+const TOULMIN_VISUALS: Record<ToulminType, { fill: string; stroke: string; text: string }> = {
+    claim:          { fill: '#2b0f14', stroke: '#f87171', text: '#fecaca' },
+    evidence:       { fill: '#052118', stroke: '#34d399', text: '#d1fae5' },
+    justification:  { fill: '#2a1d05', stroke: '#fbbf24', text: '#fde68a' },
+    counterargument:{ fill: '#1e1333', stroke: '#a78bfa', text: '#ddd6fe' },
+    question:       { fill: '#0f1b31', stroke: '#60a5fa', text: '#dbeafe' }
+};
+function getToulminVisual(node: ArgumentNode) {
+    return TOULMIN_VISUALS[node.type] || { fill: '#1e293b', stroke: '#64748b', text: '#e2e8f0' };
+}
+
 function buildRadialLayout(nodes: ArgumentNode[], edges: ArgumentEdge[]): Record<string, Position> {
     const positions: Record<string, Position> = {};
     const root = nodes.find((node) => node.metadata?.level === 0) || nodes[0];
@@ -106,53 +140,90 @@ function buildRadialLayout(nodes: ArgumentNode[], edges: ArgumentEdge[]): Record
     return positions;
 }
 
-function buildForceLayout(nodes: ArgumentNode[], edges: ArgumentEdge[], seed: Record<string, Position>): Record<string, Position> {
-    const positions = Object.fromEntries(nodes.map((node) => [node.id, seed[node.id] || { x: VIEW_WIDTH / 2, y: VIEW_HEIGHT / 2 }])) as Record<string, Position>;
+// d3-force based one-shot simulation. Runs synchronously on layout switch
+// and returns settled positions. The root (level-0) node is pinned at center
+// so the whole graph orbits a stable anchor. Level-aware tuning: deeper
+// nodes have tighter collision radius and weaker repulsion so hubs breathe.
+interface SimNodeDatum extends SimulationNodeDatum {
+    id: string;
+    level: number;
+}
+
+type SimLinkDatum = SimulationLinkDatum<SimNodeDatum>;
+
+function buildForceLayout(
+    nodes: ArgumentNode[],
+    edges: ArgumentEdge[],
+    seed: Record<string, Position>
+): Record<string, Position> {
+    if (nodes.length === 0) return {};
+
     const root = nodes.find((node) => node.metadata?.level === 0) || nodes[0];
-    const area = VIEW_WIDTH * VIEW_HEIGHT;
-    const k = Math.sqrt(area / Math.max(nodes.length, 1)) * 0.64;
 
-    for (let step = 0; step < 180; step += 1) {
-        const delta = Object.fromEntries(nodes.map((node) => [node.id, { x: 0, y: 0 }])) as Record<string, Position>;
-
-        for (let i = 0; i < nodes.length; i += 1) {
-            for (let j = i + 1; j < nodes.length; j += 1) {
-                const a = nodes[i];
-                const b = nodes[j];
-                const dx = positions[b.id].x - positions[a.id].x;
-                const dy = positions[b.id].y - positions[a.id].y;
-                const dist = Math.max(28, Math.sqrt(dx * dx + dy * dy));
-                const force = (k * k) / dist;
-                delta[a.id].x -= (dx / dist) * force;
-                delta[a.id].y -= (dy / dist) * force;
-                delta[b.id].x += (dx / dist) * force;
-                delta[b.id].y += (dy / dist) * force;
-            }
+    const simNodes: SimNodeDatum[] = nodes.map((node) => {
+        const seeded = seed[node.id];
+        const level = (node.metadata?.level as number | undefined) ?? 2;
+        const base: SimNodeDatum = {
+            id: node.id,
+            level,
+            x: seeded?.x ?? VIEW_WIDTH / 2,
+            y: seeded?.y ?? VIEW_HEIGHT / 2
+        };
+        if (node.id === root.id) {
+            base.fx = VIEW_WIDTH / 2;
+            base.fy = VIEW_HEIGHT / 2;
         }
+        return base;
+    });
 
-        edges.forEach((edge) => {
-            const dx = positions[edge.to].x - positions[edge.from].x;
-            const dy = positions[edge.to].y - positions[edge.from].y;
-            const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
-            const force = (dist * dist) / (k * 5.4);
-            delta[edge.from].x += (dx / dist) * force;
-            delta[edge.from].y += (dy / dist) * force;
-            delta[edge.to].x -= (dx / dist) * force;
-            delta[edge.to].y -= (dy / dist) * force;
-        });
+    const simLinks: SimLinkDatum[] = edges
+        .filter((edge) => simNodes.some((n) => n.id === edge.from) && simNodes.some((n) => n.id === edge.to))
+        .map((edge) => ({ source: edge.from, target: edge.to }));
 
-        nodes.forEach((node) => {
-            if (node.id === root.id) {
-                positions[node.id] = { x: VIEW_WIDTH / 2, y: VIEW_HEIGHT / 2 };
-                return;
-            }
-            const damping = node.metadata?.level === 2 ? 0.028 : 0.02;
-            positions[node.id].x = clamp(positions[node.id].x + delta[node.id].x * damping, 80, VIEW_WIDTH - 80);
-            positions[node.id].y = clamp(positions[node.id].y + delta[node.id].y * damping, 64, VIEW_HEIGHT - 64);
-        });
-    }
+    const simulation = forceSimulation<SimNodeDatum>(simNodes)
+        .force(
+            'link',
+            forceLink<SimNodeDatum, SimLinkDatum>(simLinks)
+                .id((d) => d.id)
+                .distance((link) => {
+                    const src = link.source as SimNodeDatum;
+                    const tgt = link.target as SimNodeDatum;
+                    if (src.level === 0 || tgt.level === 0) return 170;
+                    if (src.level === 1 || tgt.level === 1) return 130;
+                    return 110;
+                })
+                .strength(0.45)
+        )
+        .force(
+            'charge',
+            forceManyBody<SimNodeDatum>().strength((d) =>
+                d.level === 0 ? -800 : d.level === 1 ? -520 : -320
+            )
+        )
+        .force(
+            'collide',
+            forceCollide<SimNodeDatum>().radius((d) =>
+                d.level === 0 ? 68 : d.level === 1 ? 54 : 44
+            )
+        )
+        .force('center', forceCenter(VIEW_WIDTH / 2, VIEW_HEIGHT / 2).strength(0.6))
+        .force('x', forceX<SimNodeDatum>(VIEW_WIDTH / 2).strength(0.04))
+        .force('y', forceY<SimNodeDatum>(VIEW_HEIGHT / 2).strength(0.04))
+        .stop();
 
-    return positions;
+    // Run enough ticks for the system to settle. D3's default alpha decay
+    // (0.0228) converges well within 300 ticks for graphs of this size.
+    for (let i = 0; i < 300; i += 1) simulation.tick();
+
+    const result: Record<string, Position> = {};
+    simNodes.forEach((node) => {
+        result[node.id] = {
+            x: clamp(node.x ?? VIEW_WIDTH / 2, 64, VIEW_WIDTH - 64),
+            y: clamp(node.y ?? VIEW_HEIGHT / 2, 56, VIEW_HEIGHT - 56)
+        };
+    });
+
+    return result;
 }
 
 export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
@@ -165,6 +236,8 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
 }) => {
     const svgRef = useRef<SVGSVGElement | null>(null);
     const [layoutMode, setLayoutMode] = useState<LayoutMode>('radial');
+    const [colorMode, setColorMode] = useState<'concept' | 'toulmin'>('concept');
+    const [toulminFilter, setToulminFilter] = useState<ToulminType | null>(null);
     const [viewport, setViewport] = useState<ViewportState>(DEFAULT_VIEWPORT);
     const [positions, setPositions] = useState<Record<string, Position>>(() => buildRadialLayout(graph.nodes, graph.edges));
     const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
@@ -329,25 +402,102 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
     }), [graph.edges, hiddenNodeIds, searchedNodeIds, selectedRelation, visibleTimelineNodeIds]);
 
     const visibleNodeIds = useMemo(() => {
+        const passesToulmin = (node: ArgumentNode) =>
+            !toulminFilter || node.type === toulminFilter;
+
         if (!selectedRelation) {
             return new Set(graph.nodes
                 .filter((node) => visibleTimelineNodeIds.has(node.id) && !hiddenNodeIds.has(node.id))
                 .filter((node) => !searchedNodeIds || searchedNodeIds.has(node.id))
+                .filter(passesToulmin)
                 .map((node) => node.id));
         }
         const relationNodes = new Set<string>();
         filteredEdges.forEach((edge) => {
-            relationNodes.add(edge.from);
-            relationNodes.add(edge.to);
+            const fromNode = nodesById[edge.from];
+            const toNode = nodesById[edge.to];
+            if (fromNode && passesToulmin(fromNode)) relationNodes.add(edge.from);
+            if (toNode && passesToulmin(toNode)) relationNodes.add(edge.to);
         });
-        if (focusedNodeId) relationNodes.add(focusedNodeId);
+        if (focusedNodeId && nodesById[focusedNodeId] && passesToulmin(nodesById[focusedNodeId])) {
+            relationNodes.add(focusedNodeId);
+        }
         return relationNodes;
-    }, [filteredEdges, focusedNodeId, graph.nodes, hiddenNodeIds, searchedNodeIds, selectedRelation, visibleTimelineNodeIds]);
+    }, [filteredEdges, focusedNodeId, graph.nodes, hiddenNodeIds, nodesById, searchedNodeIds, selectedRelation, toulminFilter, visibleTimelineNodeIds]);
 
     const visibleNodes = useMemo(() => graph.nodes.filter((node) => visibleNodeIds.has(node.id)), [graph.nodes, visibleNodeIds]);
     const focusedNode = focusedNodeId ? nodesById[focusedNodeId] || null : null;
     const focusedTurns = focusedNode ? (mentionMap.get(focusedNode.id) || []) : [];
     const focusedEdges = focusedNode ? graph.edges.filter((edge) => edge.from === focusedNode.id || edge.to === focusedNode.id) : [];
+
+    // Track which node ids just transitioned into the visible set — these get
+    // an enter animation (CSS). Wiped after the animation window so the class
+    // doesn't keep retriggering layout paints.
+    const previouslyVisibleRef = useRef<Set<string>>(new Set());
+    const [newlyVisibleIds, setNewlyVisibleIds] = useState<Set<string>>(new Set());
+    useEffect(() => {
+        const prev = previouslyVisibleRef.current;
+        const entered = new Set<string>();
+        visibleNodeIds.forEach((id) => {
+            if (!prev.has(id)) entered.add(id);
+        });
+        previouslyVisibleRef.current = new Set(visibleNodeIds);
+        if (entered.size === 0) return;
+        setNewlyVisibleIds(entered);
+        const timer = window.setTimeout(() => setNewlyVisibleIds(new Set()), 700);
+        return () => window.clearTimeout(timer);
+    }, [visibleNodeIds]);
+
+    // Keyboard shortcuts for scrubbing the timeline. Skip when the user is
+    // typing in an input or similar (e.g. the search box above).
+    useEffect(() => {
+        if (transcript.length === 0) return;
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+            const target = event.target as HTMLElement | null;
+            if (target) {
+                const tag = target.tagName;
+                if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) return;
+            }
+
+            const current = activeTurnIndex ?? -1;
+            const last = transcript.length - 1;
+            switch (event.key) {
+                case 'ArrowLeft':
+                    event.preventDefault();
+                    onActiveTurnIndexChange?.(current <= 0 ? null : current - 1);
+                    setIsPlaying(false);
+                    break;
+                case 'ArrowRight':
+                    event.preventDefault();
+                    onActiveTurnIndexChange?.(Math.min(last, current + 1));
+                    setIsPlaying(false);
+                    break;
+                case 'Home':
+                    event.preventDefault();
+                    onActiveTurnIndexChange?.(0);
+                    setIsPlaying(false);
+                    break;
+                case 'End':
+                    event.preventDefault();
+                    onActiveTurnIndexChange?.(last);
+                    setIsPlaying(false);
+                    break;
+                case ' ':
+                    event.preventDefault();
+                    if (activeTurnIndex == null) {
+                        onActiveTurnIndexChange?.(0);
+                        setIsPlaying(true);
+                    } else {
+                        setIsPlaying((prev) => !prev);
+                    }
+                    break;
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [activeTurnIndex, onActiveTurnIndexChange, transcript.length]);
 
     useEffect(() => {
         if (onHighlightTurnsChange) {
@@ -457,8 +607,16 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
                     />
                     <button type="button" onClick={() => { setLayoutMode('radial'); setPositions(radialPositions); }} className={`px-3 py-2 rounded-xl text-xs border ${layoutMode === 'radial' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-slate-700 bg-slate-900/60 text-slate-400'}`}>Radial</button>
                     <button type="button" onClick={() => { setLayoutMode('force'); setPositions((current) => buildForceLayout(graph.nodes, graph.edges, current)); }} className={`px-3 py-2 rounded-xl text-xs border ${layoutMode === 'force' ? 'border-indigo-500/30 bg-indigo-500/10 text-indigo-300' : 'border-slate-700 bg-slate-900/60 text-slate-400'}`}>Force</button>
+                    <button
+                        type="button"
+                        onClick={() => setColorMode((m) => (m === 'concept' ? 'toulmin' : 'concept'))}
+                        className={`px-3 py-2 rounded-xl text-xs border ${colorMode === 'toulmin' ? 'border-amber-500/30 bg-amber-500/10 text-amber-300' : 'border-slate-700 bg-slate-900/60 text-slate-400'}`}
+                        title="Toggle between concept-type and Toulmin colouring"
+                    >
+                        {colorMode === 'toulmin' ? 'Color: Toulmin' : 'Color: Concept'}
+                    </button>
                     <button type="button" onClick={() => setViewport(DEFAULT_VIEWPORT)} className="px-3 py-2 rounded-xl text-xs border border-slate-700 bg-slate-900/60 text-slate-400">Reset view</button>
-                    <button type="button" onClick={() => { setSelectedRelation(null); setSelectedEdgeKey(null); }} className="px-3 py-2 rounded-xl text-xs border border-slate-700 bg-slate-900/60 text-slate-400">Clear filter</button>
+                    <button type="button" onClick={() => { setSelectedRelation(null); setSelectedEdgeKey(null); setToulminFilter(null); }} className="px-3 py-2 rounded-xl text-xs border border-slate-700 bg-slate-900/60 text-slate-400">Clear filter</button>
                     <button type="button" onClick={handleExportJson} className="px-3 py-2 rounded-xl text-xs border border-slate-700 bg-slate-900/60 text-slate-400">Export JSON</button>
                     <button type="button" onClick={handleExportSvg} className="px-3 py-2 rounded-xl text-xs border border-slate-700 bg-slate-900/60 text-slate-400">Export SVG</button>
                 </div>
@@ -477,6 +635,35 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
                     </button>
                 ))}
             </div>
+
+            {/* Toulmin component filter. Click a chip to isolate nodes of that
+                 discourse role; click again to clear. The chip's colour matches
+                 the node's stroke so the legend is the filter. */}
+            {colorMode === 'toulmin' && (
+                <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[10px] uppercase tracking-[0.18em] text-slate-600 font-bold pr-1">Toulmin</span>
+                    {(Object.keys(TOULMIN_LABELS) as ToulminType[]).map((t) => {
+                        const v = TOULMIN_VISUALS[t];
+                        const active = toulminFilter === t;
+                        return (
+                            <button
+                                key={t}
+                                type="button"
+                                onClick={() => setToulminFilter((current) => (current === t ? null : t))}
+                                className={`px-3 py-1.5 rounded-full text-[11px] border flex items-center gap-1.5 ${active ? 'bg-slate-900/70 text-slate-100' : 'bg-slate-900/40 text-slate-400'}`}
+                                style={active ? { borderColor: v.stroke } : { borderColor: 'rgba(100, 116, 139, 0.35)' }}
+                            >
+                                <span
+                                    aria-hidden="true"
+                                    className="inline-block w-2.5 h-2.5 rounded-full"
+                                    style={{ backgroundColor: v.stroke }}
+                                />
+                                {TOULMIN_LABELS[t]}
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
 
             {Array.from(clusterMap.keys()).length > 0 && (
                 <div className="flex flex-wrap gap-2">
@@ -542,15 +729,16 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
                                 const position = positions[node.id];
                                 if (!position) return null;
                                 const size = getNodeSize(node);
-                                const visual = getNodeVisual(node);
+                                const visual = colorMode === 'toulmin' ? getToulminVisual(node) : getNodeVisual(node);
                                 const isFocused = focusedNodeId === node.id;
                                 const isMentioned = activeTurnIndex != null && (mentionMap.get(node.id) || []).includes(activeTurnIndex);
+                                const isEntering = newlyVisibleIds.has(node.id);
                                 return (
                                     <g
                                         key={node.id}
                                         data-node="true"
                                         transform={`translate(${position.x} ${position.y})`}
-                                        className="cursor-pointer"
+                                        className={`cursor-pointer arg-node${isEntering ? ' arg-node-enter' : ''}${isMentioned ? ' arg-node-active' : ''}`}
                                         onPointerDown={(event) => {
                                             event.stopPropagation();
                                             const point = clientToWorld(event.clientX, event.clientY);
@@ -581,7 +769,7 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
                         </div>
                         <svg viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`} className="w-full h-auto rounded-lg bg-slate-900/80">
                             {graph.edges.map((edge) => <line key={`${edge.from}-${edge.to}-${edge.relation}`} x1={positions[edge.from]?.x || 0} y1={positions[edge.from]?.y || 0} x2={positions[edge.to]?.x || 0} y2={positions[edge.to]?.y || 0} stroke="#334155" strokeWidth="1" opacity="0.5" />)}
-                            {graph.nodes.map((node) => <circle key={node.id} cx={positions[node.id]?.x || 0} cy={positions[node.id]?.y || 0} r={node.metadata?.level === 0 ? 10 : node.metadata?.level === 1 ? 7 : 5} fill={focusedNodeId === node.id ? '#f8fafc' : getNodeVisual(node).stroke} opacity={visibleNodeIds.has(node.id) ? 0.95 : 0.24} />)}
+                            {graph.nodes.map((node) => <circle key={node.id} cx={positions[node.id]?.x || 0} cy={positions[node.id]?.y || 0} r={node.metadata?.level === 0 ? 10 : node.metadata?.level === 1 ? 7 : 5} fill={focusedNodeId === node.id ? '#f8fafc' : (colorMode === 'toulmin' ? getToulminVisual(node).stroke : getNodeVisual(node).stroke)} opacity={visibleNodeIds.has(node.id) ? 0.95 : 0.24} />)}
                             <rect x={minimapViewport.x} y={minimapViewport.y} width={minimapViewport.width} height={minimapViewport.height} fill="none" stroke="#22d3ee" strokeWidth="8" opacity="0.75" />
                         </svg>
                     </div>
