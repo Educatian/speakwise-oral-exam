@@ -489,7 +489,7 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)] gap-4">
+                    <div className="grid grid-cols-1 gap-4">
                         <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
                             {graphLoading ? (
                                 <div className="text-center py-10">
