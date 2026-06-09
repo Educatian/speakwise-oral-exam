@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { AppView } from '../../types';
 import { checkInstructorStatus } from '../../lib/supabase/database';
+import { useToastContext } from '../../contexts/ToastContext';
 
 interface LandingViewProps {
     onNavigate: (view: AppView, role?: 'student' | 'instructor') => void;
 }
 
 export const LandingView: React.FC<LandingViewProps> = ({ onNavigate }) => {
+    const toast = useToastContext();
     const [loggedInUser, setLoggedInUser] = useState<{ email: string; role: string } | null>(null);
     const [savedInstitution, setSavedInstitution] = useState<{ schoolName: string } | null>(null);
     const [checkingRole, setCheckingRole] = useState(false);
@@ -55,7 +57,7 @@ export const LandingView: React.FC<LandingViewProps> = ({ onNavigate }) => {
             return;
         }
 
-        alert('Instructor access requires an instructor-approved account.');
+        toast.warning('Instructor access requires an instructor-approved account.');
         onNavigate(AppView.UNIFIED_AUTH, 'instructor');
     };
 

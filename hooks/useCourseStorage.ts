@@ -11,6 +11,7 @@ import {
     isSupabaseConfigured,
     supabase
 } from '../lib/supabase';
+import { getAuthEventName } from '../lib/supabase/auth';
 
 interface UseCourseStorageReturn {
     courses: Course[];
@@ -54,7 +55,21 @@ export function useCourseStorage(): UseCourseStorageReturn {
                 setLoading(false);
             });
 
-            return () => unsubscribe();
+            // Re-fetch when the auth session changes. The initial subscription
+            // fetch can run before the user is signed in; under institution RLS
+            // an anonymous read returns nothing, so courses would otherwise stay
+            // empty until a manual refresh after login.
+            const onAuthChanged = () => {
+                getAllCourses()
+                    .then((c) => { setCourses(c); setLoading(false); })
+                    .catch(() => { /* keep current state on transient error */ });
+            };
+            window.addEventListener(getAuthEventName(), onAuthChanged);
+
+            return () => {
+                unsubscribe();
+                window.removeEventListener(getAuthEventName(), onAuthChanged);
+            };
         } else {
             // Fallback to localStorage
             try {

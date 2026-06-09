@@ -491,6 +491,9 @@ ${joinedSources}`;
         ? Math.round(allSubmissions.reduce((sum, submission) => sum + submission.score, 0) / totalSubmissions)
         : null;
     const coursesWithoutSubmissions = visibleCourses.filter((course) => course.submissions.length === 0).length;
+    // Submissions the evaluation pipeline flagged for a human look and that no
+    // instructor has reviewed yet — the actionable front of the review queue.
+    const flaggedForReview = allSubmissions.filter((s) => s.needsReview && !s.instructorReview).length;
     const instructorPriorities = visibleCourses
         .map((course) => {
             const courseAverage = course.submissions.length > 0
@@ -577,10 +580,20 @@ ${joinedSources}`;
                                 <p className="text-sm text-white">{coursesWithoutSubmissions} course{coursesWithoutSubmissions !== 1 ? 's' : ''} need first submissions</p>
                                 <p className="text-xs text-slate-500 mt-2">Prioritize prompt checks and student onboarding in these workspaces.</p>
                             </div>
-                            <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
-                                <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600 font-bold mb-2">Review quality</p>
-                                <p className="text-sm text-white">{totalSubmissions > 0 ? 'Evidence review is active' : 'No review data yet'}</p>
-                                <p className="text-xs text-slate-500 mt-2">Open lower-scoring submissions first so instructors can validate weak reasoning patterns.</p>
+                            <div className={`rounded-2xl border p-4 ${flaggedForReview > 0 ? 'border-amber-500/30 bg-amber-500/[0.06]' : 'border-slate-800 bg-slate-900/40'}`}>
+                                <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600 font-bold mb-2">Needs review</p>
+                                <p className={`text-sm ${flaggedForReview > 0 ? 'text-amber-200 font-semibold' : 'text-white'}`}>
+                                    {totalSubmissions === 0
+                                        ? 'No review data yet'
+                                        : flaggedForReview > 0
+                                          ? `${flaggedForReview} submission${flaggedForReview === 1 ? '' : 's'} flagged for review`
+                                          : 'No submissions need review'}
+                                </p>
+                                <p className="text-xs text-slate-500 mt-2">
+                                    {flaggedForReview > 0
+                                        ? 'Low confidence, score disagreement, or thin evidence — open these first. See the flagged list in Class Analytics.'
+                                        : 'Flagged attempts (low confidence or score disagreement) will surface here for a quick human check.'}
+                                </p>
                             </div>
                         </div>
                     </div>

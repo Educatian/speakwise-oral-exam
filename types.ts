@@ -323,6 +323,14 @@ export interface Submission {
   reasoningRubric?: ReasoningRubric;
   dialogueMetrics?: DialogueMetrics;
   argumentGraph?: ArgumentGraph;
+
+  // Evaluation provenance & human-review triage
+  scoreAgreement?: number;      // |LLM score − pattern reasoning score| (0-100); lower = more convergent
+  needsReview?: boolean;        // true when confidence/agreement/coverage signals warrant a human look
+  reviewReasons?: string[];     // human-readable reasons this submission was flagged for review
+  analysisVersion?: string;     // analytics-pipeline version stamp (reproducibility/audit)
+  promptVersion?: string;       // evaluation-prompt version stamp
+  evalModel?: string;           // model id used for the LLM scoring pass
 }
 
 export interface Course {
@@ -361,44 +369,14 @@ export interface AudioContexts {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Component Props Types
-// ─────────────────────────────────────────────────────────────────────────────
-
-export interface StudentLoginProps {
-  onLogin: (course: Course, studentName: string) => void;
-  onViewHistory: () => void;
-  onManagerAccess: () => void;
-  courses: Course[];
-}
-
-export interface InterviewSessionProps {
-  course: Course;
-  studentName: string;
-  onEnd: (submission: Submission) => void;
-  onBack: () => void;
-}
-
-export interface ManagerDashboardProps {
-  courses: Course[];
-  onAddCourse: (course: Course) => void;
-  onDeleteCourse: (id: string) => void;
-  onBack: () => void;
-}
-
-export interface SubmissionModalProps {
-  submission: Submission;
-  onClose: () => void;
-}
-
-export interface StudentHistoryProps {
-  submissions: Submission[];
-  onSelectSubmission: (submission: Submission) => void;
-  onBack: () => void;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Hook Return Types
 // ─────────────────────────────────────────────────────────────────────────────
+//
+// NOTE: Per-view prop interfaces (StudentLoginProps, InterviewSessionProps, …)
+// were removed — they were unused and had drifted out of sync with the actual
+// components, which define their own inline prop types. The hook-return types
+// useCourseStorage/useStudentHistory rely on are likewise defined locally in
+// their own hook files; only UseGeminiLiveReturn below is consumed from here.
 
 /** Turn phase for turn-based interview flow */
 export type TurnPhase = 'ai_speaking' | 'recording' | 'transcribing' | 'idle';
@@ -429,21 +407,6 @@ export interface UseGeminiLiveReturn {
   startSession: () => Promise<void>;
   endSession: () => Promise<TranscriptionItem[]>;
   stopRecording: () => void;      // Manually stop recording (user presses "Done")
-}
-
-export interface UseCourseStorageReturn {
-  courses: Course[];
-  loading: boolean;
-  addCourse: (course: Omit<Course, 'id' | 'submissions'>) => Course;
-  deleteCourse: (id: string) => void;
-  addSubmission: (courseId: string, submission: Submission) => void;
-}
-
-export interface UseStudentHistoryReturn {
-  history: Submission[];
-  loading: boolean;
-  addToHistory: (submission: Submission) => void;
-  clearHistory: () => void;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

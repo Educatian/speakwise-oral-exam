@@ -6,6 +6,8 @@
 
 Institution-ready AI oral assessment platform for structured speaking interviews, transcript-based evaluation, instructor review, and deployment across courses and institutions.
 
+**Live:** [app](https://speakwise-oral-exam.pages.dev) · [walkthrough guide](https://speakwise-guide.pages.dev)
+
 ## Overview
 
 SpeakWise is built for schools, programs, and instructors who need more than a generic AI voice demo. It provides a calmer, assessment-focused environment where:
@@ -18,14 +20,18 @@ The product combines AI interview delivery, transcript analysis, concept-map vis
 
 ## Core Capabilities
 
-- AI-led oral interview flow with turn-based speaking detection
+- AI-led oral interview flow with turn-based speaking detection and a calm, low-anxiety UI
 - transcript capture, evaluation, and rubric-aligned feedback
-- interactive argument and concept map with search, export, and timeline playback
-- instructor review workflow with score validation and override
-- transcript-linked reviewer annotations
+- **reasoning analytics**: a Toulmin-aligned reasoning rubric, dialogue metrics, and an LLM↔pattern **score-agreement** check with **confidence calibration**
+- **human-review triage**: every submission is flagged (or not) for instructor review with explicit reasons, surfaced at the top of the dashboard
+- **radial argument / concept map** — concentric by reasoning depth, with semantic edge colours (supports / causal / counter / responds), node size by centrality, weak-structure flags, and a gold ring on concepts cited in the score
+- **cohort analytics**: mean / median / SD, small-n caveat, score distribution, and **CSV / JSON export** with analysis/prompt/model version stamps for reproducibility
+- instructor review workflow with score validation and override, plus transcript-linked annotations
 - course templates for repeatable institution rollout
-- institution-aware course and access structure
+- **institution-scoped access enforced by Supabase Auth + Row Level Security** (a signed-in user sees only their institution's data)
 - admin console for roles, institution coverage, and audit activity
+
+A walkthrough guide (student + instructor) with recorded videos is hosted at **[speakwise-guide.pages.dev](https://speakwise-guide.pages.dev)** (source under [docs/guidebooks](docs/guidebooks)).
 
 ## Product Position
 
@@ -39,7 +45,7 @@ The app prioritizes:
 - institution deployment readiness,
 - and operational trust.
 
-For the guiding principles behind the product, see [PRODUCT_PHILOSOPHY.md](C:\Users\jewoo\Desktop\speakwise1.1\speakwise-oral-exam\PRODUCT_PHILOSOPHY.md).
+For the guiding principles behind the product, see [PRODUCT_PHILOSOPHY.md](PRODUCT_PHILOSOPHY.md).
 
 ## User Experience
 
@@ -65,11 +71,11 @@ For the guiding principles behind the product, see [PRODUCT_PHILOSOPHY.md](C:\Us
 
 ## Tech Stack
 
-- React 19
-- TypeScript
-- Vite
-- Supabase database and RPCs
-- Google Gemini for interview and evaluation workflows
+- React 19 + TypeScript + Vite
+- Supabase — **Auth + Postgres + Row Level Security** + RPCs
+- Google Gemini Live for the voice interview; OpenRouter (gpt-4o-audio transcription, Gemini scoring) for analysis
+- D3 for the argument/concept map
+- Cloudflare Pages hosting
 
 ## Local Development
 
@@ -111,9 +117,11 @@ For production setup:
 
 ## Current Architecture Notes
 
-- Authentication is app-managed and stored against `app_users` in Supabase.
+- Authentication uses **Supabase Auth**; role and institution live in `user_profiles` (created by a signup trigger, with instructor role gated server-side — never self-claimed).
+- **Row Level Security enforces institution isolation** — an anonymous client can read nothing; a signed-in user sees only their own institution's courses, submissions, and history.
 - The app supports Supabase-backed persistence with local fallback behavior for selected workflows.
 - Institution-level deployment features include templates, annotations, instructor review, and audit logging.
+- Migration runbooks: [AUTH_MIGRATION_RUNBOOK.md](AUTH_MIGRATION_RUNBOOK.md), [SECURITY_HARDENING.md](SECURITY_HARDENING.md).
 
 ## Repository Structure
 

@@ -241,10 +241,23 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
                 </div>
 
                 <div className="glass-panel p-5 sm:p-6 rounded-3xl flex flex-col items-center justify-center min-h-[150px]">
-                    <AudioVisualizer isLive={status === InterviewStatus.LIVE} isActive={turnPhase === 'recording'} color={turnPhase === 'ai_speaking' ? 'accent' : 'primary'} />
-                    <p className={`text-[10px] mt-4 uppercase font-bold tracking-[0.2em] text-center ${turnPhase === 'recording' ? 'text-red-400' : turnPhase === 'ai_speaking' ? 'text-cyan-300' : turnPhase === 'transcribing' ? 'text-amber-400' : 'text-slate-600'}`} role="status" aria-live="polite">
+                    <AudioVisualizer isLive={status === InterviewStatus.LIVE} isActive={turnPhase === 'recording'} color={turnPhase === 'ai_speaking' ? 'accent' : 'primary'} audioLevel={turnPhase === 'recording' ? audioLevel : 0} />
+                    <p className={`text-[10px] mt-4 uppercase font-bold tracking-[0.2em] text-center ${turnPhase === 'recording' ? 'text-red-400' : turnPhase === 'ai_speaking' ? 'text-cyan-300' : turnPhase === 'transcribing' ? 'text-amber-400' : 'text-slate-600'}`} aria-hidden="true">
                         {statusCopy(status, turnPhase)}
                     </p>
+                    {/* Assertive announcement so screen-reader users track the calm
+                        turn flow in real time (the visible caption above is decorative). */}
+                    <span className="sr-only" role="status" aria-live="assertive">
+                        {status === InterviewStatus.LIVE
+                            ? turnPhase === 'ai_speaking'
+                                ? 'Listening to the interviewer.'
+                                : turnPhase === 'recording'
+                                  ? 'Your turn. Respond when you are ready.'
+                                  : turnPhase === 'transcribing'
+                                    ? 'Saving your response.'
+                                    : 'Please wait.'
+                            : ''}
+                    </span>
                 </div>
 
                 <div className="glass-panel p-4 rounded-2xl">

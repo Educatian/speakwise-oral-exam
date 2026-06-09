@@ -1,5 +1,6 @@
 import React, { Suspense, lazy } from 'react';
 import { AppView, Course, Institution, Submission, ADMIN_EMAIL } from '../types';
+import { findCourseForSubmission, getPeerSubmissions } from '../lib/utils/peerSubmissions';
 
 const LandingView = lazy(() =>
     import('./views/LandingView').then((module) => ({ default: module.LandingView }))
@@ -115,7 +116,7 @@ export const AppRouter: React.FC<AppRouterProps> = ({
             <div className="flex flex-col items-center justify-center min-h-[50vh] gap-4">
                 <div className="w-12 h-12 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
                 <p className="text-slate-500 text-sm animate-pulse">
-                    Loading from {isSupabaseConfigured() ? 'Supabase' : 'localStorage'}...
+                    Loading your workspace…
                 </p>
             </div>
         );
@@ -227,6 +228,7 @@ export const AppRouter: React.FC<AppRouterProps> = ({
                 <StudentLoginView
                     courses={courses}
                     selectedCourse={activeCourse}
+                    defaultName={studentName || user?.displayName}
                     onLogin={handleStudentLogin}
                     onViewHistory={() => navigateTo(AppView.STUDENT_HISTORY)}
                     onManagerAccess={() => navigateTo(AppView.MANAGER_DASHBOARD)}
@@ -265,14 +267,8 @@ export const AppRouter: React.FC<AppRouterProps> = ({
                 break;
             }
 
-            const matchingCourse = courses.find(
-                (course) =>
-                    course.name === lastSubmission.courseName ||
-                    course.submissions.some((submission) => submission.id === lastSubmission.id)
-            );
-            const peerSubs = matchingCourse
-                ? matchingCourse.submissions.filter((submission) => submission.id !== lastSubmission.id)
-                : [];
+            const matchingCourse = findCourseForSubmission(courses, lastSubmission);
+            const peerSubs = getPeerSubmissions(matchingCourse, lastSubmission.id);
 
             viewNode = (
                 <StudentResultsView

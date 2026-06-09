@@ -6,6 +6,7 @@ import { sanitizeStudentName } from '../../lib/security/sanitize';
 interface StudentLoginViewProps {
     courses: Course[];
     selectedCourse?: Course | null;  // Pre-selected course from StudentCoursesView
+    defaultName?: string;            // Display name of the signed-in student (skips re-entry)
     onLogin: (course: Course, studentName: string) => void;
     onViewHistory: () => void;
     onManagerAccess: () => void;
@@ -20,12 +21,13 @@ interface StudentLoginViewProps {
 export const StudentLoginView: React.FC<StudentLoginViewProps> = ({
     courses,
     selectedCourse,
+    defaultName,
     onLogin,
     onViewHistory,
     onManagerAccess,
     onBack
 }) => {
-    const [studentName, setStudentName] = useState('');
+    const [studentName, setStudentName] = useState(defaultName ?? '');
     const [courseNumber, setCourseNumber] = useState('');
     const [passcode, setPasscode] = useState('');
     const [error, setError] = useState<string | null>(null);
@@ -33,6 +35,10 @@ export const StudentLoginView: React.FC<StudentLoginViewProps> = ({
 
     // Check if course is pre-selected (simplified mode)
     const isSimplifiedMode = !!selectedCourse;
+    // When the student is already signed in we know their name — don't make them
+    // retype it. Reduces the authenticated pre-interview screen to a calm
+    // confirmation + entry code + start.
+    const hasKnownName = !!defaultName?.trim();
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -92,15 +98,19 @@ export const StudentLoginView: React.FC<StudentLoginViewProps> = ({
                 <div className="text-center space-y-2">
                     {isSimplifiedMode ? (
                         <>
-                            <h2 className="text-2xl font-bold text-white">Join Interview</h2>
+                            <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500 font-bold">You're about to start</p>
+                            <h2 className="text-2xl font-bold text-white">{selectedCourse?.name}</h2>
                             <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3">
-                                <p className="text-emerald-400 text-sm font-medium">
-                                    {selectedCourse?.name}
-                                </p>
-                                <p className="text-slate-500 text-xs mt-1">
+                                <p className="text-slate-400 text-xs">
                                     Instructor: {selectedCourse?.instructorName}
                                 </p>
+                                {hasKnownName && (
+                                    <p className="text-emerald-300 text-sm font-medium mt-1">
+                                        Starting as {defaultName}
+                                    </p>
+                                )}
                             </div>
+                            <p className="text-slate-500 text-xs">Enter the entry code from your instructor, then begin when you're ready.</p>
                         </>
                     ) : (
                         <>
@@ -113,15 +123,18 @@ export const StudentLoginView: React.FC<StudentLoginViewProps> = ({
                 </div>
 
                 <div className="space-y-4">
-                    <Input
-                        placeholder="Your Full Name"
-                        value={studentName}
-                        onChange={(e) => setStudentName(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        autoComplete="name"
-                        aria-label="Student name"
-                        required
-                    />
+                    {/* Name input only when we don't already know the signed-in student */}
+                    {!hasKnownName && (
+                        <Input
+                            placeholder="Your Full Name"
+                            value={studentName}
+                            onChange={(e) => setStudentName(e.target.value)}
+                            onKeyDown={handleKeyDown}
+                            autoComplete="name"
+                            aria-label="Student name"
+                            required
+                        />
+                    )}
 
                     {/* Course number only in full mode */}
                     {!isSimplifiedMode && (

@@ -77,7 +77,7 @@ export const StudentHistoryView: React.FC<StudentHistoryViewProps> = ({
                                                 <span
                                                     className={`block text-2xl font-bold ${getMasteryLevel(sub.score).color}`}
                                                 >
-                                                    {getMasteryLevel(sub.score).emoji} {sub.score}%
+                                                    {sub.score}%
                                                 </span>
                                                 <span className={`text-[10px] uppercase tracking-widest font-bold ${getMasteryLevel(sub.score).color}`}>
                                                     {getMasteryLevel(sub.score).label}

@@ -8,6 +8,8 @@
 export interface MasteryLevel {
     level: string;
     label: string;
+    /** @deprecated Kept for backward compatibility; intentionally empty to
+     *  preserve the restrained academic tone (no emoji grades). */
     emoji: string;
     color: string;      // Tailwind text color class
     bgColor: string;    // Tailwind background color class
@@ -23,7 +25,7 @@ export function getMasteryLevel(score: number): MasteryLevel {
         return {
             level: 'Expert',
             label: 'Excellent',
-            emoji: '🌟',
+            emoji: '',
             color: 'text-emerald-400',
             bgColor: 'bg-emerald-500/20',
             description: 'Outstanding demonstration of understanding'
@@ -33,7 +35,7 @@ export function getMasteryLevel(score: number): MasteryLevel {
         return {
             level: 'Proficient',
             label: 'Great Work',
-            emoji: '✨',
+            emoji: '',
             color: 'text-green-400',
             bgColor: 'bg-green-500/20',
             description: 'Strong command of the material'
@@ -43,7 +45,7 @@ export function getMasteryLevel(score: number): MasteryLevel {
         return {
             level: 'Developing',
             label: 'Good Progress',
-            emoji: '📈',
+            emoji: '',
             color: 'text-blue-400',
             bgColor: 'bg-blue-500/20',
             description: 'Solid foundation with room to grow'
@@ -53,7 +55,7 @@ export function getMasteryLevel(score: number): MasteryLevel {
         return {
             level: 'Emerging',
             label: 'Building Skills',
-            emoji: '🌱',
+            emoji: '',
             color: 'text-yellow-400',
             bgColor: 'bg-yellow-500/20',
             description: 'Making progress, keep practicing'
@@ -63,7 +65,7 @@ export function getMasteryLevel(score: number): MasteryLevel {
     return {
         level: 'Beginning',
         label: 'Getting Started',
-        emoji: '🚀',
+        emoji: '',
         color: 'text-amber-400',
         bgColor: 'bg-amber-500/20',
         description: 'Early stages - great opportunity to learn'
@@ -74,8 +76,7 @@ export function getMasteryLevel(score: number): MasteryLevel {
  * Get a short constructive label for compact display
  */
 export function getShortMasteryLabel(score: number): string {
-    const { emoji, label } = getMasteryLevel(score);
-    return `${emoji} ${label}`;
+    return getMasteryLevel(score).label;
 }
 
 /**
@@ -88,14 +89,14 @@ export function getScoreColor(score: number): string {
 
 /**
  * Format score for display with constructive framing
- * Instead of "45%" shows "45% - Getting Started 🚀"
+ * Instead of "45%" shows "45% · Getting Started"
  */
 export function formatScoreConstructively(score: number, showPercentage = true): string {
-    const { emoji, label } = getMasteryLevel(score);
+    const { label } = getMasteryLevel(score);
     if (showPercentage) {
-        return `${score}% ${emoji}`;
+        return `${score}% · ${label}`;
     }
-    return `${emoji} ${label}`;
+    return label;
 }
 
 export default { getMasteryLevel, getShortMasteryLabel, getScoreColor, formatScoreConstructively };

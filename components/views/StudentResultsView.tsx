@@ -77,8 +77,23 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({ submissi
         ['Confidence', submission.confidenceScore != null ? `${Math.round(submission.confidenceScore * 100)}%` : 'N/A', 'Model confidence in this evaluation']
     ] as const;
 
+    const showProvisionalNotice = submission.needsReview && !submission.instructorReview;
+
     const renderOverview = () => (
         <div className="space-y-6">
+            {showProvisionalNotice && (
+                <div className="glass-panel p-5 rounded-3xl border border-amber-500/20 bg-amber-500/[0.04]" role="status">
+                    <div className="flex items-start gap-3">
+                        <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-amber-500/15 text-amber-300 text-xs font-bold">i</span>
+                        <div>
+                            <p className="text-sm font-semibold text-amber-200">This result is provisional</p>
+                            <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                                It has been flagged for instructor review, so the score below may change. There is nothing you need to do.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
             {submission.instructorReview && (
                 <div className="glass-panel p-6 rounded-3xl border border-indigo-500/15">
                     <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
@@ -237,7 +252,7 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({ submissi
                     <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
                         <p className="text-sm text-slate-300 font-medium">Argument graph</p>
                         <p className="text-xs text-slate-500 mt-2">
-                            {argGraph ? `${argGraph.nodes.length} nodes, ${argGraph.edges.length} links, coherence ${Math.round(argGraph.coherenceScore * 100)}%` : 'No argument graph was generated for this attempt.'}
+                            {argGraph ? `${argGraph.nodes.length} nodes, ${argGraph.edges.length} links, coherence ${Math.round(argGraph.coherenceScore)}%` : 'No argument graph was generated for this attempt.'}
                         </p>
                     </div>
                 </div>

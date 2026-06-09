@@ -194,11 +194,11 @@ export const MicTest: React.FC<MicTestProps> = ({ className = '', onDeviceSelect
 
         } catch (err: any) {
             if (err.name === 'NotAllowedError') {
-                setError('마이크 접근이 거부되었습니다. 브라우저 설정에서 허용해주세요.');
+                setError('Microphone access was blocked. Please allow it in your browser settings, then try again.');
             } else if (err.name === 'NotFoundError') {
-                setError('마이크를 찾을 수 없습니다. 연결 상태를 확인해주세요.');
+                setError('No microphone was found. Please check that one is connected.');
             } else {
-                setError('마이크 테스트 실패. 다시 시도해주세요.');
+                setError('The microphone test could not start. Please try again.');
             }
             console.error('Mic test error:', err);
         }
@@ -228,13 +228,13 @@ export const MicTest: React.FC<MicTestProps> = ({ className = '', onDeviceSelect
     };
 
     const getLevelText = () => {
-        if (!isTesting) return 'Click to test';
-        if (isClipping) return '⚠️ Clipping! Move back';
-        if (audioLevel < 10) return '🔇 No sound detected';
-        if (audioLevel < 30) return '🔈 Low — speak louder';
-        if (audioLevel < 60) return '🔊 Good!';
-        if (audioLevel < 80) return '🔊 Great!';
-        return '📢 Too loud!';
+        if (!isTesting) return 'Click to test your microphone';
+        if (isClipping) return 'Too loud — move back a little';
+        if (audioLevel < 10) return 'No sound detected';
+        if (audioLevel < 30) return 'Level low — speak up';
+        if (audioLevel < 60) return 'Microphone ready';
+        if (audioLevel < 80) return 'Sounds good';
+        return 'A little loud';
     };
 
     const getBandColor = (value: number) => {
@@ -255,7 +255,11 @@ export const MicTest: React.FC<MicTestProps> = ({ className = '', onDeviceSelect
             {/* Header */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '18px' }}>🎤</span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                        <line x1="12" y1="19" x2="12" y2="23" />
+                    </svg>
                     <span style={{ color: '#cbd5e1', fontSize: '13px', fontWeight: 600 }}>Microphone Test</span>
                     {isTesting && (
                         <span style={{

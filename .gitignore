@@ -29,3 +29,4 @@ dist-ssr
 # One-off backfill artifacts (rubric_breakdown backfill; delete after use)
 /.backfill-*.mjs
 /.backfill-*.json
+videos/_raw_*/
