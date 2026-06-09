@@ -36,25 +36,17 @@ export interface ChatCompleteOptions {
     modalities?: Array<'text' | 'audio'>;
 }
 
-const ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
+// All LLM traffic goes through the same-origin proxy (Cloudflare Pages worker
+// in prod, vite dev middleware locally). The OpenRouter key is injected
+// server-side and never ships in the client bundle.
+const ENDPOINT = '/api/llm';
 
 /** Model used for audio transcription. gpt-4o-audio-preview accepts wav/mp3
  *  input and returns text. Tested to work through OpenRouter (unlike the
  *  Gemini-family audio inputs, which OpenRouter silently strips). */
 export const AUDIO_TRANSCRIPTION_MODEL = 'openai/gpt-4o-audio-preview';
 
-function getKey(): string {
-    const key = import.meta.env.VITE_OPENROUTER_API_KEY;
-    if (!key) {
-        throw new Error(
-            'VITE_OPENROUTER_API_KEY is not set. Add it to .env.local (local dev) and the Vercel project env vars (production build).'
-        );
-    }
-    return key;
-}
-
 export async function chatComplete(options: ChatCompleteOptions): Promise<string> {
-    const key = getKey();
     const payload: Record<string, unknown> = {
         model: options.model || DEFAULT_MODEL,
         messages: options.messages
@@ -68,14 +60,7 @@ export async function chatComplete(options: ChatCompleteOptions): Promise<string
 
     const res = await fetch(ENDPOINT, {
         method: 'POST',
-        headers: {
-            Authorization: `Bearer ${key}`,
-            'Content-Type': 'application/json',
-            // OpenRouter uses these for attribution / ranking on openrouter.ai.
-            'HTTP-Referer':
-                typeof window !== 'undefined' ? window.location.origin : 'https://speakwise.local',
-            'X-Title': 'SpeakWise'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
     });
 

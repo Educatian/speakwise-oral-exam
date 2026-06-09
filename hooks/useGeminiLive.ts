@@ -385,8 +385,16 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
             previousUserTextRef.current = '';
             aiTextBufferRef.current = '';
 
+            // Get a short-lived ephemeral token from our server proxy; the
+            // long-lived Gemini key stays server-side.
+            const tokenResp = await fetch('/api/gemini-token', { method: 'POST' });
+            if (!tokenResp.ok) {
+                throw new Error('Could not start the voice session (token unavailable).');
+            }
+            const { token: ephemeralToken } = await tokenResp.json();
+
             const wsClient = new GeminiWebsocketClient({
-                apiKey: process.env.API_KEY as string,
+                apiKey: ephemeralToken as string,
                 systemInstruction,
                 voiceName,
                 onOpen: async () => {
@@ -435,7 +443,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                         }
                     });
 
-                    transcriptionServiceRef.current = new TranscriptionService(process.env.API_KEY as string);
+                    transcriptionServiceRef.current = new TranscriptionService('');
                 },
                 onMessage: async (message: LiveServerMessage) => {
                     const serverContent = message.serverContent;

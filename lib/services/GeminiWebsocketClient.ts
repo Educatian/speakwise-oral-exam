@@ -28,7 +28,13 @@ export class GeminiWebsocketClient {
     async connect(): Promise<void> {
         if (this.session) return;
 
-        const ai = new GoogleGenAI({ apiKey: this.options.apiKey });
+        // apiKey here is a short-lived ephemeral token minted server-side; the
+        // Live API requires the v1alpha surface for ephemeral-token auth so the
+        // long-lived Gemini key never reaches the browser.
+        const ai = new GoogleGenAI({
+            apiKey: this.options.apiKey,
+            httpOptions: { apiVersion: 'v1alpha' }
+        });
 
         this.session = await ai.live.connect({
             model: 'gemini-2.5-flash-native-audio-preview-12-2025',
