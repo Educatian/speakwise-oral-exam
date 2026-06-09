@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SpeakWise — Walkthrough Guide</title>
+<style>
+  :root{
+    --bg:#0a0f1d; --panel:#0f172a; --panel2:#111c33; --line:#1e293b;
+    --text:#e2e8f0; --muted:#94a3b8; --dim:#64748b;
+    --emerald:#10b981; --emerald-soft:rgba(16,185,129,.12);
+    --indigo:#818cf8; --indigo-soft:rgba(129,140,248,.12);
+    --amber:#fbbf24;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:radial-gradient(1200px 600px at 50% -10%,#0d1730,var(--bg));
+       color:var(--text);font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  a{color:var(--emerald);text-decoration:none}
+  .wrap{max-width:1040px;margin:0 auto;padding:0 20px 80px}
+
+  header.top{padding:48px 0 22px;display:flex;align-items:center;gap:16px}
+  .logo{width:46px;height:46px;border-radius:14px;display:grid;place-items:center;
+    background:linear-gradient(135deg,#34d399,#4f46e5);box-shadow:0 8px 30px rgba(16,185,129,.25);
+    font-weight:900;font-style:italic;font-size:22px;color:#fff}
+  .brand h1{margin:0;font-size:26px;letter-spacing:-.3px}
+  .brand h1 span{color:var(--emerald)}
+  .brand p{margin:2px 0 0;color:var(--muted);font-size:13px}
+  .live{margin-left:auto;font-size:12px;color:var(--muted);border:1px solid var(--line);
+    background:var(--panel);padding:8px 12px;border-radius:10px}
+  .live b{color:var(--emerald)}
+
+  .tabs{display:flex;gap:10px;margin:10px 0 26px;position:sticky;top:0;z-index:5;
+    padding:14px 0;background:linear-gradient(var(--bg),var(--bg) 70%,transparent)}
+  .tab{flex:1;cursor:pointer;border:1px solid var(--line);background:var(--panel);
+    color:var(--muted);padding:14px 16px;border-radius:16px;text-align:left;transition:.15s}
+  .tab .k{display:block;font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--dim);font-weight:800}
+  .tab .t{display:block;font-size:16px;font-weight:700;color:var(--text);margin-top:3px}
+  .tab.active[data-tab="student"]{border-color:rgba(16,185,129,.4);background:var(--emerald-soft)}
+  .tab.active[data-tab="instructor"]{border-color:rgba(129,140,248,.4);background:var(--indigo-soft)}
+
+  section.flow{display:none}
+  section.flow.active{display:block;animation:fade .25s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+  .hero{border:1px solid var(--line);background:var(--panel);border-radius:22px;padding:8px;margin-bottom:26px;overflow:hidden}
+  .hero video{width:100%;display:block;border-radius:16px;background:#000}
+  .hero .cap{color:var(--muted);font-size:13px;padding:12px 14px 6px}
+
+  .step{border:1px solid var(--line);background:var(--panel);border-radius:20px;padding:22px 24px;margin:18px 0}
+  .step h3{margin:0 0 4px;font-size:19px;display:flex;align-items:baseline;gap:12px}
+  .num{font-size:13px;font-weight:800;color:#0a0f1d;background:var(--emerald);
+    border-radius:8px;padding:3px 9px;letter-spacing:.04em}
+  .instructor .num{background:var(--indigo);color:#0a0f1d}
+  .step p{color:var(--muted);margin:6px 0 0}
+  .step ul{color:var(--muted);margin:10px 0 0;padding-left:18px}
+  .step ul li{margin:4px 0}
+  .step img{width:100%;border:1px solid var(--line);border-radius:14px;margin-top:16px;display:block}
+  .note{margin-top:14px;border-left:3px solid var(--amber);background:rgba(251,191,36,.06);
+    padding:10px 14px;border-radius:0 10px 10px 0;color:#fde68a;font-size:13.5px}
+  .pill{display:inline-block;font-size:11px;font-weight:700;color:var(--emerald);
+    background:var(--emerald-soft);border:1px solid rgba(16,185,129,.3);border-radius:999px;padding:2px 9px;margin-left:4px}
+  .instructor .pill{color:var(--indigo);background:var(--indigo-soft);border-color:rgba(129,140,248,.3)}
+
+  code{background:#0b1426;border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:13px;color:#cbd5e1}
+  pre{background:#0b1426;border:1px solid var(--line);border-radius:12px;padding:14px 16px;overflow:auto;color:#cbd5e1;font-size:13px}
+  footer{color:var(--dim);font-size:12.5px;text-align:center;margin-top:44px;border-top:1px solid var(--line);padding-top:22px}
+  .legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:12px;font-size:12.5px;color:var(--muted)}
+  .legend span{display:inline-flex;align-items:center;gap:7px}
+  .sw{width:22px;height:5px;border-radius:3px;display:inline-block}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="logo">W</div>
+    <div class="brand">
+      <h1>Speak<span>Wise</span> — Walkthrough Guide</h1>
+      <p>Institution-ready AI oral examination platform</p>
+    </div>
+    <div class="live">Live: <b><a href="https://speakwise-oral-exam.pages.dev" target="_blank" rel="noopener">speakwise-oral-exam.pages.dev</a></b></div>
+  </header>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="student"><span class="k">Walkthrough</span><span class="t">🎓 Student journey</span></button>
+    <button class="tab" data-tab="instructor"><span class="k">Walkthrough</span><span class="t">🧑‍🏫 Instructor journey</span></button>
+  </div>
+
+  <!-- ───────────────────────── STUDENT ───────────────────────── -->
+  <section class="flow student active" id="student">
+    <div class="hero">
+      <video controls preload="metadata" poster="screenshots/student/01-landing.png">
+        <source src="videos/student-journey.webm" type="video/webm" />
+        Your browser can't play this video — see <a href="videos/student-journey.webm">student-journey.webm</a>.
+      </video>
+      <div class="cap">🎬 Student journey recorded live with Playwright: landing → create account → institution → course → pre-interview.</div>
+    </div>
+
+    <div class="step"><h3><span class="num">1</span> Open SpeakWise and choose "Student"</h3>
+      <p>A calm entry screen. Pick the <b>Student</b> path to reach your institution, courses, and interview history.</p>
+      <img src="screenshots/student/01-landing.png" alt="Landing" loading="lazy"/></div>
+
+    <div class="step"><h3><span class="num">2</span> Sign in, or create your account</h3>
+      <p>Returning students sign in; new students choose <b>"Create one now"</b>. Instructor accounts are provisioned by your institution — students self-serve here.</p>
+      <img src="screenshots/student/02-auth-signin.png" alt="Sign in" loading="lazy"/></div>
+
+    <div class="step"><h3><span class="num">3</span> Create your student account</h3>
+      <p>Enter your name, pick your <b>institution</b>, and set an email + password (min 6 characters). Your institution choice keeps your courses scoped correctly.</p>
+      <img src="screenshots/student/03-signup-filled.png" alt="Sign-up filled" loading="lazy"/></div>
+
+    <div class="step"><h3><span class="num">4</span> Confirm your institution workspace</h3>
+      <p>Enter the <b>institution access code</b> from your instructor (the demo workspace uses <code>DEMO</code>), then <b>Continue to Courses</b>. This keeps course visibility and reporting aligned to the right campus.</p>
+      <img src="screenshots/student/04-school-select.png" alt="Institution select" loading="lazy"/></div>
+
+    <div class="step"><h3><span class="num">5</span> Pick your course <span class="pill">institution-scoped</span></h3>
+      <p>Only courses in your institution appear. Select the one your instructor assigned and choose <b>Join</b>.</p>
+      <img src="screenshots/student/05-courses.png" alt="Available courses" loading="lazy"/>
+      <div class="note">Empty list? Your instructor hasn't published a course in your workspace yet — check the name/code with them.</div></div>
+
+    <div class="step"><h3><span class="num">6</span> Start the oral interview</h3>
+      <p>One calm pre-interview screen: <b>"You're about to start {course}"</b> with your name already filled in (<b>Starting as …</b>). Enter the entry code, run the <b>microphone test</b>, then <b>Start Interview</b>.</p>
+      <p>During the interview the screen stays deliberately calm — phase cards (<b>Connect → Listen → Respond → Review</b>), a live mic-level meter, supportive prompts if you pause, and a <b>"Done speaking"</b> button.</p>
+      <img src="screenshots/student/06-pre-interview.png" alt="Pre-interview" loading="lazy"/>
+      <div class="note">The live voice interview needs the deployment's AI keys configured; on a keyless preview every other screen still works.</div></div>
+
+    <div class="step"><h3><span class="num">7</span> Review your results and reflect</h3>
+      <p>A tabbed results view: <b>Overview</b> (score band, summary, strengths, next priorities), <b>Reasoning</b> (reasoning quality + argument/concept map), <b>Peers</b> (anonymous comparison), and <b>Transcript</b> (turn-by-turn with tagged argument nodes).</p>
+      <ul><li>If your attempt was flagged for review, a gentle <b>"This result is provisional"</b> note appears — nothing for you to do; your instructor may adjust the score.</li></ul></div>
+  </section>
+
+  <!-- ───────────────────────── INSTRUCTOR ───────────────────────── -->
+  <section class="flow instructor" id="instructor">
+    <div class="hero">
+      <video controls preload="metadata" poster="screenshots/instructor/03-dashboard-overview.png">
+        <source src="videos/instructor-journey.webm" type="video/webm" />
+        Your browser can't play this video — see <a href="videos/instructor-journey.webm">instructor-journey.webm</a>.
+      </video>
+      <div class="cap">🎬 Instructor journey recorded live: sign-in → dashboard → create a course → analytics.</div>
+    </div>
+
+    <div class="step"><h3><span class="num">1</span> Open SpeakWise and choose "Instructor"</h3>
+      <img src="screenshots/instructor/01-landing.png" alt="Landing" loading="lazy"/></div>
+
+    <div class="step"><h3><span class="num">2</span> Sign in with your provisioned account</h3>
+      <p>Instructors don't self-register — your email is added to the institution's registry (or you're the admin) and you <b>sign in</b>. Your role is granted server-side, so a student can never self-claim instructor access.</p>
+      <img src="screenshots/instructor/02-signin.png" alt="Instructor sign-in" loading="lazy"/></div>
+
+    <div class="step"><h3><span class="num">3</span> Dashboard — your operating layer</h3>
+      <p>The <b>Course Manager Dashboard</b>: institution scope, visible courses, submissions and average score, plus an <b>Instructor guidance</b> panel.</p>
+      <ul><li>The <b>"Needs review"</b> card shows, in amber, how many submissions were flagged for a human look (low model confidence, large LLM↔pattern score disagreement, or thin evidence) — your actionable queue, right at the top.</li></ul>
+      <img src="screenshots/instructor/03-dashboard-overview.png" alt="Dashboard overview" loading="lazy"/></div>
+
+    <div class="step"><h3><span class="num">4</span> Create a test (course)</h3>
+      <ul>
+        <li>Name the course; set the student <b>entry code</b> + an instructor <b>PIN</b>.</li>
+        <li>Write or <b>AI-generate</b> the interview prompt; optionally import questions from a <code>.docx</code>.</li>
+        <li>Tune interview settings (silence threshold, minimum turn length).</li>
+        <li>Save reusable <b>course templates</b> for repeatable rollout.</li>
+      </ul>
+      <p>Courses are scoped to your institution automatically.</p>
+      <img src="screenshots/instructor/04-create-course-filled.png" alt="Create a course" loading="lazy"/></div>
+
+    <div class="step"><h3><span class="num">5</span> Manage students + read analytics <span class="pill">professional</span></h3>
+      <ul>
+        <li>Cohort <b>mean, median, and standard deviation</b> for score and reasoning, with a small-cohort caveat when n &lt; 5.</li>
+        <li>Score distribution histogram + score-over-time sparkline; class rubric radar + reasoning-dimension bars.</li>
+        <li>A <b>"Flagged for review"</b> triage list (click through to the submission).</li>
+        <li><b>Export CSV / JSON</b> of the cohort — rubric, reasoning, confidence, score-agreement, Toulmin completeness, and <b>analysis/prompt/model version stamps</b> for reproducibility.</li>
+        <li>Per-student table with sortable columns and review-status dots (amber = needs review, green = reviewed).</li>
+      </ul>
+      <img src="screenshots/instructor/06-class-analytics.png" alt="Class analytics" loading="lazy"/></div>
+
+    <div class="step"><h3><span class="num">6</span> Review a submission (human-in-the-loop)</h3>
+      <p>Open any submission for the full evidence view:</p>
+      <ul>
+        <li><b>Rubric breakdown</b> radar with per-dimension evidence quotes.</li>
+        <li><b>Reasoning quality</b> bars + a <b>Toulmin completeness</b> strip (Claim/Data/Warrant/Backing/Qualifier/Rebuttal + "to strengthen" guidance).</li>
+        <li>A true <b>radial argument / concept map</b> (concentric rings by reasoning depth, children clustered near their parent) with assessment-aligned cues:</li>
+      </ul>
+      <div class="legend">
+        <span><i class="sw" style="background:#34d399"></i>Supports</span>
+        <span><i class="sw" style="background:#fbbf24"></i>Causal</span>
+        <span><i class="sw" style="background:#fb7185"></i>Counter</span>
+        <span><i class="sw" style="background:#60a5fa"></i>Responds</span>
+        <span><i class="sw" style="background:#64748b"></i>Relates</span>
+      </div>
+      <ul>
+        <li>node size by <b>centrality</b>, <b>weak-structure flags</b> ("No Evidence/Warrant/Rebuttal" + dashed-amber unsupported nodes), and a <b>gold ring</b> on concepts cited in the score rationale (map → grade traceability).</li>
+        <li>Transcript-linked <b>annotations</b> and a <b>score override + notes</b> workflow — your judgment is recorded on the student's result.</li>
+      </ul>
+      <div class="note">These frames need a completed student submission carrying an argument graph (a live voice interview with AI keys configured). Once one interview is completed, re-run the recorder to capture them into the video.</div></div>
+
+    <div class="step"><h3>Regenerate this walkthrough</h3>
+      <pre>INSTRUCTOR_EMAIL='demo.instructor@speakwise-test.com' INSTRUCTOR_PASSWORD='********' \
+FLOW=instructor node playwright/walkthrough.mjs</pre>
+      <p>Use <code>FLOW=student</code> or <code>FLOW=both</code> for the other journey. The instructor email must be in the <code>instructors</code> registry (or be the admin) so the signup trigger grants the instructor role.</p></div>
+  </section>
+
+  <footer>
+    SpeakWise walkthrough guide · screenshots &amp; videos generated by <code>playwright/walkthrough.mjs</code> against the live deployment.
+  </footer>
+</div>
+
+<script>
+  const tabs = document.querySelectorAll('.tab');
+  const flows = document.querySelectorAll('.flow');
+  tabs.forEach(t => t.addEventListener('click', () => {
+    tabs.forEach(x => x.classList.remove('active'));
+    flows.forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById(t.dataset.tab).classList.add('active');
+    window.scrollTo({top:0,behavior:'smooth'});
+  }));
+</script>
+</body>
+</html>
