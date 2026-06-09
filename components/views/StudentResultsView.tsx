@@ -270,7 +270,7 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({ submissi
                     {peerData.unique.length > 0 && <div><div className="flex items-center gap-2 mb-3"><span className="text-sm font-medium text-indigo-400">Different perspectives</span><span className="text-xs text-slate-600">Ideas explored by peers that may expand your answer set</span></div><div className="space-y-2">{peerData.unique.map((item, index) => <div key={index} className="flex items-start gap-3 p-3 bg-indigo-500/5 border border-indigo-500/15 rounded-xl"><div className="flex-shrink-0 px-2 py-0.5 bg-indigo-500/20 rounded-full text-xs font-bold text-indigo-400">{item.count} peers</div><p className="text-sm text-slate-300 leading-relaxed">"{item.claim}"</p></div>)}</div></div>}
                     {peerData.shared.length === 0 && peerData.unique.length === 0 && <p className="text-sm text-slate-500">Not enough overlapping concepts were found for a comparison yet.</p>}
                 </div>
-            ) : <div className="text-center py-8 text-slate-600"><p className="text-sm">Peer comparisons will appear once more classmates complete the same interview.</p></div>}
+            ) : <div className="text-center py-8 text-slate-600"><img src="/empty/peers.png" alt="" aria-hidden="true" className="w-28 h-28 mx-auto mb-3 object-contain opacity-90" /><p className="text-sm">Peer comparisons will appear once more classmates complete the same interview.</p></div>}
         </div>
     );
 

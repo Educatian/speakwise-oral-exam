@@ -73,7 +73,8 @@ export const LandingView: React.FC<LandingViewProps> = ({ onNavigate }) => {
     return (
         <div className="relative min-h-screen flex flex-col items-center justify-center p-6 overflow-hidden">
             <div className="absolute inset-0 -z-10">
-                <div className="scientific-ambient-bg absolute inset-0" />
+                <img src="/hero-ambient.webp" alt="" aria-hidden="true" className="absolute inset-0 w-full h-full object-cover" />
+                <div className="scientific-ambient-bg absolute inset-0 opacity-60" />
                 <div className="scientific-ambient-grid absolute inset-0" />
                 <div className="scientific-ambient-rings absolute inset-0" />
                 <div className="scientific-ambient-points absolute inset-0" />
@@ -154,7 +155,7 @@ export const LandingView: React.FC<LandingViewProps> = ({ onNavigate }) => {
                 >
                     <div className="flex items-center gap-4 mb-4">
                         <div className="w-14 h-14 rounded-2xl bg-[linear-gradient(135deg,rgba(14,116,144,0.95),rgba(59,130,246,0.75))] flex items-center justify-center group-hover:scale-110 transition-transform shadow-[0_0_30px_-18px_rgba(56,189,248,0.9)]">
-                            <span className="text-2xl">I</span>
+                            <img src="/role-instructor.png" alt="" aria-hidden="true" className="w-7 h-7 object-contain" />
                         </div>
                         <div>
                             <h2 className="text-xl font-bold text-white">Instructor Workspace</h2>
@@ -181,7 +182,7 @@ export const LandingView: React.FC<LandingViewProps> = ({ onNavigate }) => {
                 >
                     <div className="flex items-center gap-4 mb-4">
                         <div className="w-14 h-14 rounded-2xl bg-[linear-gradient(135deg,rgba(5,150,105,0.92),rgba(45,212,191,0.7))] flex items-center justify-center group-hover:scale-110 transition-transform shadow-[0_0_30px_-18px_rgba(16,185,129,0.9)]">
-                            <span className="text-2xl">S</span>
+                            <img src="/role-student.png" alt="" aria-hidden="true" className="w-7 h-7 object-contain" />
                         </div>
                         <div>
                             <h2 className="text-xl font-bold text-white">Student Workspace</h2>

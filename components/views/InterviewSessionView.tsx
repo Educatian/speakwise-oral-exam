@@ -315,9 +315,12 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
             <div className="xl:col-span-8 h-[52vh] min-h-[360px] sm:h-[500px] lg:h-[600px] flex flex-col">
                 <div className="glass-panel rounded-3xl flex-1 flex flex-col overflow-hidden">
                     <div className="px-4 sm:px-6 py-4 border-b border-slate-800 bg-slate-900/30 flex justify-between items-center gap-3">
-                        <div>
-                            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Live transcript</h3>
-                            <p className="text-xs text-slate-600 mt-1">This transcript becomes the basis for evaluation and review.</p>
+                        <div className="flex items-center gap-3">
+                            <img src="/examiner-mark.png" alt="" aria-hidden="true" className="w-9 h-9 rounded-xl object-contain ring-1 ring-white/10 flex-shrink-0" />
+                            <div>
+                                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Live transcript</h3>
+                                <p className="text-xs text-slate-600 mt-1">Dr. SpeakWise — this transcript becomes the basis for evaluation.</p>
+                            </div>
                         </div>
                         {status === InterviewStatus.LIVE && <div className="live-indicator live-indicator-ring" aria-label="Live session active" />}
                     </div>
