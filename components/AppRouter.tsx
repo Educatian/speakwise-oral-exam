@@ -1,6 +1,7 @@
 import React, { Suspense, lazy } from 'react';
 import { AppView, Course, Institution, Submission, ADMIN_EMAIL } from '../types';
 import { findCourseForSubmission, getPeerSubmissions } from '../lib/utils/peerSubmissions';
+import { LogoLoader } from './ui/LogoLoader';
 
 const LandingView = lazy(() =>
     import('./views/LandingView').then((module) => ({ default: module.LandingView }))
@@ -75,10 +76,7 @@ interface AppRouterProps {
 }
 
 const RouteFallback: React.FC = () => (
-    <div className="flex flex-col items-center justify-center min-h-[40vh] gap-4">
-        <div className="w-10 h-10 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
-        <p className="text-slate-500 text-sm">Loading workspace...</p>
-    </div>
+    <LogoLoader className="min-h-[40vh]" label="Loading workspace…" />
 );
 
 export const AppRouter: React.FC<AppRouterProps> = ({
@@ -113,12 +111,7 @@ export const AppRouter: React.FC<AppRouterProps> = ({
 }) => {
     if (isLoading) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-[50vh] gap-4">
-                <div className="w-12 h-12 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
-                <p className="text-slate-500 text-sm animate-pulse">
-                    Loading your workspace…
-                </p>
-            </div>
+            <LogoLoader className="min-h-[50vh]" label="Loading your workspace…" />
         );
     }
 

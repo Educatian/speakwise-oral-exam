@@ -284,11 +284,11 @@ const App: React.FC = () => {
         <div className="flex items-center gap-3 md:gap-4 min-w-0">
           {/* Logo */}
           <div
-            className="w-9 h-9 md:w-10 md:h-10 bg-gradient-to-br from-emerald-400 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20 cursor-pointer"
+            className="w-9 h-9 md:w-10 md:h-10 rounded-xl overflow-hidden shadow-lg shadow-emerald-500/20 cursor-pointer ring-1 ring-white/10"
             onClick={returnToLanding}
             aria-label="Return to home"
           >
-            <span className="text-white font-black text-lg md:text-xl italic">W</span>
+            <img src="/logo.png" alt="SpeakWise" className="w-full h-full object-cover" />
           </div>
 
           {/* Brand Name */}
