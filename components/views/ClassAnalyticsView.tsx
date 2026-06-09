@@ -24,8 +24,43 @@ function meanOrNull(xs: number[]): number | null {
     return xs.reduce((a, b) => a + b, 0) / xs.length;
 }
 
+/** Population standard deviation; null for n < 2 (dispersion is undefined). */
+function stdDevOrNull(xs: number[]): number | null {
+    if (xs.length < 2) return null;
+    const m = xs.reduce((a, b) => a + b, 0) / xs.length;
+    const variance = xs.reduce((a, b) => a + (b - m) ** 2, 0) / xs.length;
+    return Math.sqrt(variance);
+}
+
+function medianOrNull(xs: number[]): number | null {
+    if (xs.length === 0) return null;
+    const sorted = [...xs].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
 function safeFixed(v: number | null, digits = 1): string {
     return v == null ? '—' : v.toFixed(digits);
+}
+
+/** Minimum cohort size below which means/SD are statistically unreliable. */
+const SMALL_N_THRESHOLD = 5;
+
+function triggerDownload(filename: string, mime: string, content: string) {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+function csvCell(v: unknown): string {
+    const s = v == null ? '' : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
 export const ClassAnalyticsView: React.FC<ClassAnalyticsViewProps> = ({
@@ -62,11 +97,69 @@ export const ClassAnalyticsView: React.FC<ClassAnalyticsViewProps> = ({
         return {
             count: submissions.length,
             avgScore: meanOrNull(scores),
+            sdScore: stdDevOrNull(scores),
+            medianScore: medianOrNull(scores),
             avgReasoning: meanOrNull(reasoningScores),
+            sdReasoning: stdDevOrNull(reasoningScores),
             avgConfidence: meanOrNull(confidences),
             bargeIns,
         };
     }, [submissions]);
+
+    // Submissions the evaluation pipeline flagged for a human look — low model
+    // confidence, large LLM/pattern disagreement, dropped responses, or too few
+    // turns. Surfacing these is the core "human review matters" affordance.
+    const flagged = useMemo(
+        () => submissions.filter((s) => s.needsReview && !s.instructorReview),
+        [submissions],
+    );
+
+    const exportRows = useMemo(
+        () =>
+            [...submissions]
+                .sort((a, b) => a.timestamp - b.timestamp)
+                .map((s) => ({
+                    student: s.studentName,
+                    course: s.courseName,
+                    score: s.score,
+                    finalScore: s.instructorReview?.overrideScore ?? s.score,
+                    reasoningScore: s.reasoningRubric?.overallReasoningScore ?? '',
+                    scoreAgreement: s.scoreAgreement ?? '',
+                    confidence: s.confidenceScore != null ? Math.round(s.confidenceScore * 100) : '',
+                    turns: s.latencyMetrics?.turnCount ?? '',
+                    avgResponseMs: s.latencyMetrics?.avgInitialLatency != null ? Math.round(s.latencyMetrics.avgInitialLatency) : '',
+                    bargeIns: s.bargeInEvents?.length ?? 0,
+                    toulminCompleteness: s.reasoningRubric?.toulminAnalysis?.completenessScore ?? '',
+                    coherence: s.argumentGraph?.coherenceScore != null ? Math.round(s.argumentGraph.coherenceScore) : '',
+                    needsReview: s.needsReview ? 'yes' : 'no',
+                    reviewReasons: (s.reviewReasons ?? []).join(' | '),
+                    reviewStatus: s.instructorReview?.status ?? 'pending',
+                    analysisVersion: s.analysisVersion ?? '',
+                    promptVersion: s.promptVersion ?? '',
+                    evalModel: s.evalModel ?? '',
+                    timestamp: new Date(s.timestamp).toISOString(),
+                })),
+        [submissions],
+    );
+
+    const exportCsv = () => {
+        const headers = Object.keys(exportRows[0] ?? { student: '' });
+        const lines = [
+            headers.join(','),
+            ...exportRows.map((r) => headers.map((h) => csvCell((r as Record<string, unknown>)[h])).join(',')),
+        ];
+        const stamp = new Date().toISOString().slice(0, 10);
+        triggerDownload(`speakwise-cohort-${stamp}.csv`, 'text/csv;charset=utf-8', lines.join('\n'));
+    };
+
+    const exportJson = () => {
+        const stamp = new Date().toISOString().slice(0, 10);
+        triggerDownload(
+            `speakwise-cohort-${stamp}.json`,
+            'application/json',
+            JSON.stringify({ exportedAt: new Date().toISOString(), count: exportRows.length, rows: exportRows }, null, 2),
+        );
+    };
 
     const classRadar = useMemo(() => {
         const withRubric = submissions
@@ -161,44 +254,73 @@ export const ClassAnalyticsView: React.FC<ClassAnalyticsViewProps> = ({
                             ? `Filtered to ${courses.find((c) => c.id === selectedCourseId)?.name ?? '…'}`
                             : `All visible courses (${courses.length})`}
                     </p>
+                    {totals.count < SMALL_N_THRESHOLD && (
+                        <p className="text-[11px] text-amber-300/80 mt-1">
+                            Small cohort (n = {totals.count}): averages and spread are indicative only.
+                        </p>
+                    )}
                 </div>
-                {onSelectCourse && courses.length > 1 && (
-                    <select
-                        className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200"
-                        value={selectedCourseId ?? ''}
-                        onChange={(e) =>
-                            onSelectCourse(e.target.value === '' ? null : e.target.value)
-                        }
-                        aria-label="Filter analytics by course"
+                <div className="flex items-center gap-2">
+                    {onSelectCourse && courses.length > 1 && (
+                        <select
+                            className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200"
+                            value={selectedCourseId ?? ''}
+                            onChange={(e) =>
+                                onSelectCourse(e.target.value === '' ? null : e.target.value)
+                            }
+                            aria-label="Filter analytics by course"
+                        >
+                            <option value="">All courses</option>
+                            {courses.map((c) => (
+                                <option key={c.id} value={c.id}>
+                                    {c.name}
+                                </option>
+                            ))}
+                        </select>
+                    )}
+                    <button
+                        type="button"
+                        onClick={exportCsv}
+                        className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs font-semibold text-slate-300 hover:text-white hover:border-slate-500"
+                        aria-label="Export cohort analytics as CSV"
                     >
-                        <option value="">All courses</option>
-                        {courses.map((c) => (
-                            <option key={c.id} value={c.id}>
-                                {c.name}
-                            </option>
-                        ))}
-                    </select>
-                )}
+                        Export CSV
+                    </button>
+                    <button
+                        type="button"
+                        onClick={exportJson}
+                        className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs font-semibold text-slate-300 hover:text-white hover:border-slate-500"
+                        aria-label="Export cohort analytics as JSON"
+                    >
+                        JSON
+                    </button>
+                </div>
             </div>
 
             {/* Top metrics */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <MetricCard label="Submissions" value={totals.count} tone="indigo" />
+                <MetricCard
+                    label="Submissions"
+                    value={totals.count}
+                    sublabel={flagged.length > 0 ? `${flagged.length} flagged for review` : 'all reviewed/clear'}
+                    tone="indigo"
+                />
                 <MetricCard
                     label="Avg Score"
                     value={`${safeFixed(totals.avgScore, 0)}%`}
+                    sublabel={`median ${safeFixed(totals.medianScore, 0)} · SD ${safeFixed(totals.sdScore, 1)}`}
                     tone="emerald"
                 />
                 <MetricCard
                     label="Avg Reasoning"
                     value={totals.avgReasoning == null ? '—' : `${totals.avgReasoning.toFixed(0)}/100`}
-                    sublabel="Reasoning-rubric overall"
+                    sublabel={`SD ${safeFixed(totals.sdReasoning, 1)} · rubric overall`}
                     tone="amber"
                 />
                 <MetricCard
                     label="Avg Confidence"
                     value={totals.avgConfidence == null ? '—' : `${(totals.avgConfidence * 100).toFixed(0)}%`}
-                    sublabel="AI self-rated"
+                    sublabel="AI self-rated (calibrated)"
                     tone="default"
                 />
             </div>
@@ -281,6 +403,36 @@ export const ClassAnalyticsView: React.FC<ClassAnalyticsViewProps> = ({
                 </div>
             )}
 
+            {/* Flagged for review */}
+            {flagged.length > 0 && (
+                <div className="bg-amber-500/[0.04] border border-amber-500/20 rounded-2xl p-5">
+                    <div className="flex items-center justify-between mb-3">
+                        <h4 className="text-xs font-bold text-amber-300 uppercase tracking-widest">
+                            Flagged for review
+                            <span className="text-amber-200/60 font-normal"> · {flagged.length}</span>
+                        </h4>
+                        <span className="text-[10px] text-slate-500">low confidence · score disagreement · thin evidence</span>
+                    </div>
+                    <ul className="space-y-2">
+                        {flagged.map((s) => (
+                            <li
+                                key={s.id}
+                                className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-2.5 ${onSelectSubmission ? 'cursor-pointer hover:border-amber-500/40' : ''}`}
+                                onClick={() => onSelectSubmission?.(s)}
+                            >
+                                <div className="min-w-0">
+                                    <span className="text-sm text-slate-200 font-medium">{s.studentName}</span>
+                                    <span className="text-xs text-slate-500"> · {s.courseName}</span>
+                                </div>
+                                <p className="text-xs text-amber-200/80 sm:text-right sm:max-w-[60%] truncate">
+                                    {(s.reviewReasons ?? []).join('; ') || 'Needs a human look'}
+                                </p>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+
             {/* Per-student table */}
             <div className="bg-slate-900/50 border border-slate-800 rounded-2xl overflow-hidden">
                 <div className="px-5 py-3 border-b border-slate-800 flex items-center justify-between">
@@ -314,7 +466,25 @@ export const ClassAnalyticsView: React.FC<ClassAnalyticsViewProps> = ({
                                         className={`hover:bg-slate-800/30 ${onSelectSubmission ? 'cursor-pointer' : ''}`}
                                         onClick={() => onSelectSubmission?.(s)}
                                     >
-                                        <td className="px-4 py-2 text-slate-200">{s.studentName}</td>
+                                        <td className="px-4 py-2 text-slate-200">
+                                            <span className="inline-flex items-center gap-1.5">
+                                                {s.needsReview && !s.instructorReview && (
+                                                    <span
+                                                        className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400"
+                                                        title={(s.reviewReasons ?? []).join('; ') || 'Flagged for review'}
+                                                        aria-label="Flagged for review"
+                                                    />
+                                                )}
+                                                {s.instructorReview && (
+                                                    <span
+                                                        className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400"
+                                                        title={`Reviewed (${s.instructorReview.status})`}
+                                                        aria-label="Reviewed"
+                                                    />
+                                                )}
+                                                {s.studentName}
+                                            </span>
+                                        </td>
                                         <td className="px-4 py-2 text-slate-500 truncate max-w-[16ch]">{s.courseName}</td>
                                         <td className="px-4 py-2 text-right tabular-nums text-slate-100">{s.score}%</td>
                                         <td className="px-4 py-2 text-right tabular-nums text-slate-300">

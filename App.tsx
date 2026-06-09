@@ -3,6 +3,8 @@ import { AppView, Course, InstructorReview, Submission, ADMIN_EMAIL } from './ty
 import { useCourseStorage, useStudentHistory, useAuth, useInstitutions } from './hooks';
 import { isSupabaseConfigured } from './lib/supabase';
 import { AppRouter } from './components/AppRouter';
+import { ToastProvider } from './contexts/ToastContext';
+import { findCourseForSubmission, getPeerSubmissions } from './lib/utils/peerSubmissions';
 
 const SubmissionDetailModal = lazy(() =>
   import('./components/modals').then((module) => ({ default: module.SubmissionDetailModal }))
@@ -270,6 +272,7 @@ const App: React.FC = () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   return (
+    <ToastProvider>
     <div className="min-h-screen bg-slate-950 p-4 md:p-6 lg:p-12 flex flex-col items-center">
       {/* Skip Link for Accessibility */}
       <a href="#main-content" className="skip-link">
@@ -363,13 +366,8 @@ const App: React.FC = () => {
 
       {/* Submission Detail Modal */}
       {selectedSubmission && (() => {
-        const peerCourse = courses.find(c =>
-          c.name === selectedSubmission.courseName ||
-          c.submissions.some(s => s.id === selectedSubmission.id)
-        );
-        const peers = peerCourse
-          ? peerCourse.submissions.filter(s => s.id !== selectedSubmission.id)
-          : [];
+        const peerCourse = findCourseForSubmission(courses, selectedSubmission);
+        const peers = getPeerSubmissions(peerCourse, selectedSubmission.id);
         const matchedSubmission = peerCourse?.submissions.find((submission) => submission.id === selectedSubmission.id) || selectedSubmission;
         const canEditReview = view === AppView.INSTRUCTOR_DASHBOARD || view === AppView.MANAGER_DASHBOARD || userRole === 'instructor';
         const reviewerName = user?.displayName || studentName || 'Instructor';
@@ -400,6 +398,7 @@ const App: React.FC = () => {
         </p>
       </footer>
     </div>
+    </ToastProvider>
   );
 };
 

@@ -25,6 +25,9 @@ interface ArgumentMapViewProps {
     onActiveTurnIndexChange?: (index: number | null) => void;
     onHighlightTurnsChange?: (indices: number[]) => void;
     storageKey?: string;
+    /** Rubric-evidence quotes (from rubricBreakdown). Concepts that appear in
+     *  these get a "cited in score" highlight, tying the map to the grade. */
+    evidenceQuotes?: string[];
 }
 
 type Position = { x: number; y: number };
@@ -50,12 +53,16 @@ function normalizeText(value: string): string {
     return value.toLowerCase().replace(/[^a-z0-9\s]/gi, ' ').replace(/\s+/g, ' ').trim();
 }
 
-function getNodeSize(node: ArgumentNode): { width: number; height: number } {
+function getNodeSize(node: ArgumentNode, degree = 0): { width: number; height: number } {
     const width = Math.max(92, Math.min(190, node.content.length * 8 + 34));
     const level = (node.metadata?.level as number | undefined) ?? 2;
-    if (level === 0) return { width: width + 38, height: 54 };
-    if (level === 1) return { width: width + 14, height: 46 };
-    return { width, height: 40 };
+    // Centrality bump: the more a concept is connected, the more the student
+    // leaned on it, so it reads larger (capped so hubs don't dominate).
+    const w = Math.min(26, degree * 4);
+    const h = Math.min(10, degree * 1.5);
+    if (level === 0) return { width: width + 38 + w, height: 54 + h };
+    if (level === 1) return { width: width + 14 + w, height: 46 + h };
+    return { width: width + w, height: 40 + h };
 }
 
 function getNodeVisual(node: ArgumentNode) {
@@ -98,42 +105,167 @@ function getToulminVisual(node: ArgumentNode) {
     return TOULMIN_VISUALS[node.type] || { fill: '#1e293b', stroke: '#64748b', text: '#e2e8f0' };
 }
 
+// Assessment-aligned edge cue: colour links by the KIND of reasoning move so an
+// instructor reads the discourse structure at a glance — counter-reasoning,
+// causal explanation, support/justification, and dialogue moves each look
+// distinct. This directly serves the "evidence over mystery" principle.
+const EDGE_LEGEND: Array<{ label: string; stroke: string; dash?: string }> = [
+    { label: 'Supports', stroke: '#34d399' },
+    { label: 'Causal', stroke: '#fbbf24' },
+    { label: 'Counter', stroke: '#fb7185', dash: '6 4' },
+    { label: 'Responds', stroke: '#60a5fa' },
+    { label: 'Relates', stroke: '#64748b' }
+];
+function getEdgeVisual(relation: string): { stroke: string; dash?: string } {
+    const r = (relation || '').toLowerCase();
+    if (/(refut|contrast|however|but|counter|rebut)/.test(r)) return { stroke: '#fb7185', dash: '6 4' };
+    if (/(cause|caus|lead|result|because|due to|affect)/.test(r)) return { stroke: '#fbbf24' };
+    if (/(support|justif|evidence|defin|exempl|enable)/.test(r)) return { stroke: '#34d399' };
+    if (/(respond|answer)/.test(r)) return { stroke: '#60a5fa' };
+    if (/(require|located)/.test(r)) return { stroke: '#94a3b8', dash: '5 5' };
+    return { stroke: '#64748b' };
+}
+
+// Assign a depth level + parent to every node. Concept-network graphs carry an
+// explicit metadata.level (0/1/2); the in-session ArgumentGraphBuilder does NOT,
+// so for those we derive a hierarchy via breadth-first search from the most
+// connected node. Without this fallback every node collapsed onto a single ring
+// and the "radial" layout looked like a flat circle (the reported bug).
+export function deriveNodeLevels(
+    nodes: ArgumentNode[],
+    edges: ArgumentEdge[]
+): { levelById: Map<string, number>; parentById: Map<string, string | null> } {
+    const levelById = new Map<string, number>();
+    const parentById = new Map<string, string | null>();
+    if (nodes.length === 0) return { levelById, parentById };
+
+    const adj = new Map<string, string[]>();
+    nodes.forEach((n) => adj.set(n.id, []));
+    edges.forEach((e) => {
+        if (adj.has(e.from) && adj.has(e.to)) {
+            adj.get(e.from)!.push(e.to);
+            adj.get(e.to)!.push(e.from);
+        }
+    });
+
+    const hasExplicit = nodes.some((n) => typeof n.metadata?.level === 'number');
+    if (hasExplicit) {
+        nodes.forEach((n) => levelById.set(n.id, (n.metadata?.level as number | undefined) ?? 2));
+        nodes.forEach((n) => {
+            const lvl = levelById.get(n.id)!;
+            const parent = adj.get(n.id)!.find((nb) => levelById.get(nb) === lvl - 1);
+            parentById.set(n.id, parent ?? null);
+        });
+        return { levelById, parentById };
+    }
+
+    // Derive: BFS from the highest-degree node (the conceptual hub).
+    let root = nodes[0];
+    let bestDeg = -1;
+    for (const n of nodes) {
+        const deg = adj.get(n.id)!.length;
+        if (deg > bestDeg) { bestDeg = deg; root = n; }
+    }
+    const queue = [root.id];
+    levelById.set(root.id, 0);
+    parentById.set(root.id, null);
+    while (queue.length) {
+        const cur = queue.shift()!;
+        for (const nb of adj.get(cur)!) {
+            if (!levelById.has(nb)) {
+                levelById.set(nb, levelById.get(cur)! + 1);
+                parentById.set(nb, cur);
+                queue.push(nb);
+            }
+        }
+    }
+    // Disconnected nodes sit one ring beyond the deepest connected node.
+    let maxDepth = 0;
+    levelById.forEach((d) => { if (d > maxDepth) maxDepth = d; });
+    nodes.forEach((n) => {
+        if (!levelById.has(n.id)) {
+            levelById.set(n.id, maxDepth + 1);
+            parentById.set(n.id, null);
+        }
+    });
+    return { levelById, parentById };
+}
+
 function buildRadialLayout(nodes: ArgumentNode[], edges: ArgumentEdge[]): Record<string, Position> {
     const positions: Record<string, Position> = {};
-    const root = nodes.find((node) => node.metadata?.level === 0) || nodes[0];
-    const level1 = nodes.filter((node) => node.metadata?.level === 1);
-    const level2 = nodes.filter((node) => node.metadata?.level === 2);
+    if (nodes.length === 0) return positions;
+    const cx = VIEW_WIDTH / 2;
+    const cy = VIEW_HEIGHT / 2;
 
-    positions[root.id] = { x: VIEW_WIDTH / 2, y: VIEW_HEIGHT / 2 };
+    const { levelById, parentById } = deriveNodeLevels(nodes, edges);
 
-    level1.forEach((node, index) => {
-        const angle = (-Math.PI / 2) + (index / Math.max(level1.length, 1)) * Math.PI * 2;
-        positions[node.id] = {
-            x: VIEW_WIDTH / 2 + 150 * Math.cos(angle),
-            y: VIEW_HEIGHT / 2 + 150 * Math.sin(angle)
-        };
+    // Group node ids by depth.
+    const byLevel = new Map<number, string[]>();
+    nodes.forEach((n) => {
+        const d = levelById.get(n.id) ?? 2;
+        if (!byLevel.has(d)) byLevel.set(d, []);
+        byLevel.get(d)!.push(n.id);
     });
 
-    level2.forEach((node, index) => {
-        const parent = edges.find((edge) => edge.to === node.id || edge.from === node.id);
-        const parentId = parent?.to === node.id ? parent.from : parent?.to;
-        const base = parentId && positions[parentId]
-            ? Math.atan2(positions[parentId].y - VIEW_HEIGHT / 2, positions[parentId].x - VIEW_WIDTH / 2)
-            : (-Math.PI / 2) + (index / Math.max(level2.length, 1)) * Math.PI * 2;
-        const angle = base + (((index % 3) - 1) * 0.22);
-        positions[node.id] = {
-            x: VIEW_WIDTH / 2 + 255 * Math.cos(angle),
-            y: VIEW_HEIGHT / 2 + 255 * Math.sin(angle)
-        };
-    });
+    const ringRadius = (depth: number) => (depth <= 0 ? 0 : 150 + (depth - 1) * 105);
+    const angleById = new Map<string, number>();
+    const levels = Array.from(byLevel.keys()).sort((a, b) => a - b);
 
+    for (const depth of levels) {
+        const ids = byLevel.get(depth)!;
+
+        if (depth === 0) {
+            // Single root → dead center; multiple roots → a tight inner cluster.
+            ids.forEach((id, i) => {
+                if (ids.length === 1) {
+                    angleById.set(id, 0);
+                    positions[id] = { x: cx, y: cy };
+                } else {
+                    const a = (-Math.PI / 2) + (i / ids.length) * Math.PI * 2;
+                    angleById.set(id, a);
+                    positions[id] = { x: cx + 46 * Math.cos(a), y: cy + 46 * Math.sin(a) };
+                }
+            });
+            continue;
+        }
+
+        // Cluster children near their parent's angle; spread orphans / first
+        // ring evenly around the full circle.
+        const byParent = new Map<string, string[]>();
+        ids.forEach((id) => {
+            const p = parentById.get(id);
+            const key = p && angleById.has(p) ? p : '__spread__';
+            if (!byParent.has(key)) byParent.set(key, []);
+            byParent.get(key)!.push(id);
+        });
+
+        byParent.forEach((siblings, key) => {
+            if (key === '__spread__') {
+                siblings.forEach((id, i) => {
+                    angleById.set(id, (-Math.PI / 2) + (i / Math.max(siblings.length, 1)) * Math.PI * 2);
+                });
+            } else {
+                const base = angleById.get(key)!;
+                const spread = Math.min(1.4, 0.32 * siblings.length);
+                siblings.forEach((id, i) => {
+                    const offset = siblings.length === 1 ? 0 : ((i / (siblings.length - 1)) - 0.5) * spread;
+                    angleById.set(id, base + offset);
+                });
+            }
+        });
+
+        const r = ringRadius(depth);
+        ids.forEach((id) => {
+            const a = angleById.get(id) ?? 0;
+            positions[id] = { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+        });
+    }
+
+    // Safety net: anything somehow unplaced goes on a mid ring.
     nodes.forEach((node, index) => {
         if (!positions[node.id]) {
-            const angle = (-Math.PI / 2) + (index / Math.max(nodes.length, 1)) * Math.PI * 2;
-            positions[node.id] = {
-                x: VIEW_WIDTH / 2 + 210 * Math.cos(angle),
-                y: VIEW_HEIGHT / 2 + 210 * Math.sin(angle)
-            };
+            const a = (-Math.PI / 2) + (index / Math.max(nodes.length, 1)) * Math.PI * 2;
+            positions[node.id] = { x: cx + 210 * Math.cos(a), y: cy + 210 * Math.sin(a) };
         }
     });
 
@@ -227,13 +359,31 @@ function buildForceLayout(
 }
 
 export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
-    graph,
+    graph: rawGraph,
     transcript = [],
     activeTurnIndex = null,
     onActiveTurnIndexChange,
     onHighlightTurnsChange,
-    storageKey
+    storageKey,
+    evidenceQuotes = []
 }) => {
+    // Ensure every node carries a metadata.level. Concept-network graphs already
+    // do; the in-session argument graph does not, so we derive it via BFS. With
+    // levels present, the radial layout, force tuning, and node sizing all read
+    // a consistent hierarchy (root = hub at center, larger).
+    const graph = useMemo(() => {
+        const hasLevels = rawGraph.nodes.some((n) => typeof n.metadata?.level === 'number');
+        if (hasLevels) return rawGraph;
+        const { levelById } = deriveNodeLevels(rawGraph.nodes, rawGraph.edges);
+        return {
+            ...rawGraph,
+            nodes: rawGraph.nodes.map((n) => ({
+                ...n,
+                metadata: { ...n.metadata, level: levelById.get(n.id) ?? 2 }
+            }))
+        };
+    }, [rawGraph]);
+
     const svgRef = useRef<SVGSVGElement | null>(null);
     const [layoutMode, setLayoutMode] = useState<LayoutMode>('radial');
     const [colorMode, setColorMode] = useState<'concept' | 'toulmin'>('concept');
@@ -256,6 +406,52 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
     const deferredSearchQuery = useDeferredValue(searchQuery);
     const nodesById = useMemo(() => Object.fromEntries(graph.nodes.map((node) => [node.id, node] as const)), [graph.nodes]);
     const relationOptions = useMemo(() => Array.from(new Set(graph.edges.map((edge) => edge.relation))), [graph.edges]);
+
+    // Degree (connection count) per node — drives centrality-based node sizing
+    // and flags isolated/unsupported concepts.
+    const degreeById = useMemo(() => {
+        const deg: Record<string, number> = {};
+        graph.nodes.forEach((n) => { deg[n.id] = 0; });
+        graph.edges.forEach((e) => {
+            if (deg[e.from] != null) deg[e.from] += 1;
+            if (deg[e.to] != null) deg[e.to] += 1;
+        });
+        return deg;
+    }, [graph.nodes, graph.edges]);
+
+    // Substantive Toulmin roles missing from the argument — the structural
+    // weaknesses an oral-exam rubric cares about (evidence/warrant/rebuttal).
+    const structureGaps = useMemo(() => {
+        const present = new Set(graph.nodes.map((n) => n.type));
+        const gaps: string[] = [];
+        if (!present.has('evidence')) gaps.push('Evidence');
+        if (!present.has('justification')) gaps.push('Warrant');
+        if (!present.has('counterargument')) gaps.push('Rebuttal');
+        return gaps;
+    }, [graph.nodes]);
+
+    // Reasoning depth = deepest level in the hierarchy. A shallow star (depth 1)
+    // signals thin reasoning; a deeper branching tree signals chained reasoning.
+    const reasoningDepth = useMemo(
+        () => graph.nodes.reduce((m, n) => Math.max(m, (n.metadata?.level as number | undefined) ?? 0), 0),
+        [graph.nodes]
+    );
+
+    // Concepts whose label appears in a rubric-evidence quote — these are what
+    // the scorer actually cited, so we highlight them to connect map → grade.
+    const citedNodeIds = useMemo(() => {
+        const cited = new Set<string>();
+        if (evidenceQuotes.length === 0) return cited;
+        const haystacks = evidenceQuotes.map((q) => normalizeText(q)).filter(Boolean);
+        if (haystacks.length === 0) return cited;
+        graph.nodes.forEach((n) => {
+            const needle = normalizeText(n.content);
+            if (needle.length >= 3 && haystacks.some((h) => h.includes(needle))) {
+                cited.add(n.id);
+            }
+        });
+        return cited;
+    }, [evidenceQuotes, graph.nodes]);
     const persistedLayoutKey = storageKey ? `${STORAGE_PREFIX}:${storageKey}` : null;
 
     useEffect(() => {
@@ -665,6 +861,49 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
                 </div>
             )}
 
+            {/* Edge-relation legend — interprets the link colours (reasoning move). */}
+            {graph.edges.length > 0 && (
+                <div className="flex flex-wrap items-center gap-3">
+                    <span className="text-[10px] uppercase tracking-[0.18em] text-slate-600 font-bold pr-1">Links</span>
+                    {EDGE_LEGEND.map((e) => (
+                        <span key={e.label} className="inline-flex items-center gap-1.5 text-[11px] text-slate-400">
+                            <svg width="20" height="6" aria-hidden="true">
+                                <line x1="0" y1="3" x2="20" y2="3" stroke={e.stroke} strokeWidth="2" strokeDasharray={e.dash} />
+                            </svg>
+                            {e.label}
+                        </span>
+                    ))}
+                </div>
+            )}
+
+            {/* Weak-structure flag — substantive Toulmin roles absent from the argument. */}
+            {structureGaps.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-500/25 bg-amber-500/[0.06] px-3 py-2">
+                    <span className="text-[10px] uppercase tracking-[0.18em] text-amber-300 font-bold">Structure gaps</span>
+                    {structureGaps.map((g) => (
+                        <span key={g} className="px-2 py-0.5 rounded-full text-[11px] border border-amber-500/30 text-amber-200/90 bg-amber-500/10">
+                            No {g}
+                        </span>
+                    ))}
+                    <span className="text-[11px] text-slate-500">— dashed amber nodes are unsupported (no links)</span>
+                </div>
+            )}
+
+            {/* Reasoning-depth caption + cited-concept note. */}
+            <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500">
+                <span>
+                    Reasoning depth:{' '}
+                    <span className="text-slate-300 font-semibold">{reasoningDepth + 1} level{reasoningDepth === 0 ? '' : 's'}</span>
+                    {reasoningDepth <= 1 && <span className="text-amber-300/80"> · shallow (mostly one hop from the core)</span>}
+                </span>
+                {citedNodeIds.size > 0 && (
+                    <span className="inline-flex items-center gap-1.5">
+                        <span aria-hidden="true" className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: '#fcd34d' }} />
+                        Gold ring = cited in the score rationale
+                    </span>
+                )}
+            </div>
+
             {Array.from(clusterMap.keys()).length > 0 && (
                 <div className="flex flex-wrap gap-2">
                     {Array.from(clusterMap.keys()).map((clusterId) => (
@@ -717,9 +956,10 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
                                 const midY = (startY + endY) / 2 + ux * bend;
                                 const edgeKey = `${edge.from}-${edge.to}-${edge.relation}`;
                                 const isFocused = selectedEdgeKey === edgeKey;
+                                const edgeVisual = getEdgeVisual(edge.relation);
                                 return (
                                     <g key={edgeKey}>
-                                        <path d={`M ${startX} ${startY} Q ${midX} ${midY} ${endX} ${endY}`} fill="none" stroke={isFocused ? '#f8fafc' : '#475569'} strokeWidth={isFocused ? 2.4 : 1.35} opacity="0.84" strokeDasharray={edge.relation === 'requires' || edge.relation === 'located_in' ? '5 5' : undefined} />
+                                        <path d={`M ${startX} ${startY} Q ${midX} ${midY} ${endX} ${endY}`} fill="none" stroke={isFocused ? '#f8fafc' : edgeVisual.stroke} strokeWidth={isFocused ? 2.6 : 1.5} opacity={isFocused ? 0.95 : 0.8} strokeDasharray={edgeVisual.dash} />
                                         <path data-edge="true" d={`M ${startX} ${startY} Q ${midX} ${midY} ${endX} ${endY}`} fill="none" stroke="transparent" strokeWidth="12" className="cursor-pointer" onClick={(event) => { event.stopPropagation(); setSelectedEdgeKey(edgeKey); setSelectedRelation(edge.relation); }} />
                                         <text x={midX} y={midY - 7} fill={isFocused ? '#f8fafc' : '#94a3b8'} fontSize="9" fontWeight="600" textAnchor="middle">{RELATION_LABELS[edge.relation] || edge.relation}</text>
                                     </g>
@@ -728,9 +968,12 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
                             {visibleNodes.map((node) => {
                                 const position = positions[node.id];
                                 if (!position) return null;
-                                const size = getNodeSize(node);
+                                const degree = degreeById[node.id] || 0;
+                                const size = getNodeSize(node, degree);
                                 const visual = colorMode === 'toulmin' ? getToulminVisual(node) : getNodeVisual(node);
                                 const isFocused = focusedNodeId === node.id;
+                                const isIsolated = degree === 0;
+                                const isCited = citedNodeIds.has(node.id);
                                 const isMentioned = activeTurnIndex != null && (mentionMap.get(node.id) || []).includes(activeTurnIndex);
                                 const isEntering = newlyVisibleIds.has(node.id);
                                 return (
@@ -755,6 +998,8 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
                                     >
                                         <rect x={-size.width / 2} y={-size.height / 2} width={size.width} height={size.height} rx={node.metadata?.level === 0 ? 18 : 14} fill={visual.fill} stroke={isFocused ? '#f8fafc' : visual.stroke} strokeWidth={isFocused ? 2.8 : 1.8} opacity={selectedRelation && !filteredEdges.some((edge) => edge.from === node.id || edge.to === node.id) ? 0.38 : 1} />
                                         {isMentioned && <rect x={-size.width / 2 - 4} y={-size.height / 2 - 4} width={size.width + 8} height={size.height + 8} rx={node.metadata?.level === 0 ? 20 : 16} fill="none" stroke="#22c55e" strokeWidth={2} strokeDasharray="4 4" />}
+                                        {isIsolated && !isMentioned && <rect x={-size.width / 2 - 3} y={-size.height / 2 - 3} width={size.width + 6} height={size.height + 6} rx={14} fill="none" stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="3 4" opacity={0.7}><title>Unsupported: this concept has no links to the rest of the argument</title></rect>}
+                                        {isCited && !isFocused && <rect x={-size.width / 2 - 5} y={-size.height / 2 - 5} width={size.width + 10} height={size.height + 10} rx={node.metadata?.level === 0 ? 20 : 16} fill="none" stroke="#fcd34d" strokeWidth={1.75} opacity={0.85}><title>Cited in the score rationale</title></rect>}
                                         <text x="0" y="4" fill={visual.text} fontSize={node.metadata?.level === 0 ? 14 : node.metadata?.level === 1 ? 12 : 11} fontWeight={node.metadata?.level === 0 ? 800 : 700} textAnchor="middle">{node.content}</text>
                                     </g>
                                 );

@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+    ArgumentGraph,
     BargeInEvent,
     DialogueMetrics,
     LatencyMetrics,
@@ -116,6 +117,102 @@ export const ReasoningQualityPanel: React.FC<{ rubric: ReasoningRubric }> = ({ r
             <span>Causal patterns: <span className="text-slate-300 tabular-nums">{rubric.causalExplanation.patterns.length}</span></span>
             <span>Counter attempts: <span className="text-slate-300 tabular-nums">{rubric.counterArgumentHandling.attempts}</span></span>
             <span>Generalizations: <span className="text-slate-300 tabular-nums">{rubric.abstractionGeneralization.instances.length}</span></span>
+        </div>
+    </div>
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Toulmin argument completeness (Claim / Data / Warrant / Backing / Qualifier / Rebuttal)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const TOULMIN_ORDER: Array<{
+    key: keyof NonNullable<ReasoningRubric['toulminAnalysis']>;
+    label: string;
+    short: string;
+}> = [
+    { key: 'claim', label: 'Claim', short: 'C' },
+    { key: 'data', label: 'Data / Evidence', short: 'D' },
+    { key: 'warrant', label: 'Warrant', short: 'W' },
+    { key: 'backing', label: 'Backing', short: 'B' },
+    { key: 'qualifier', label: 'Qualifier', short: 'Q' },
+    { key: 'rebuttal', label: 'Rebuttal', short: 'R' },
+];
+
+export const ToulminCompletenessPanel: React.FC<{ rubric: ReasoningRubric }> = ({ rubric }) => {
+    const t = rubric.toulminAnalysis;
+    if (!t) return null;
+    return (
+        <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
+            <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                    <span className="text-2xl">🧱</span>
+                    <h4 className="text-slate-300 font-bold text-sm uppercase tracking-widest">
+                        Argument Completeness
+                    </h4>
+                </div>
+                <div className="text-sm">
+                    <span className="text-slate-500">Toulmin</span>{' '}
+                    <span className="text-indigo-300 font-bold tabular-nums">{t.completenessScore}/100</span>
+                </div>
+            </div>
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                {TOULMIN_ORDER.map(({ key, label, short }) => {
+                    const comp = t[key] as { detected: boolean; count: number; examples: string[] };
+                    const present = comp?.detected;
+                    return (
+                        <div
+                            key={key}
+                            className={`rounded-xl border p-3 text-center ${
+                                present
+                                    ? 'border-emerald-500/30 bg-emerald-500/10'
+                                    : 'border-slate-700/60 bg-slate-950/40'
+                            }`}
+                            title={comp?.examples?.[0] ? `"${comp.examples[0]}"` : label}
+                        >
+                            <div
+                                className={`mx-auto mb-1 flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${
+                                    present ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-800 text-slate-500'
+                                }`}
+                            >
+                                {short}
+                            </div>
+                            <div className={`text-[10px] uppercase tracking-wide ${present ? 'text-emerald-300/80' : 'text-slate-500'}`}>
+                                {label}
+                            </div>
+                            {present && comp.count > 0 && (
+                                <div className="text-[10px] text-slate-500 tabular-nums mt-0.5">×{comp.count}</div>
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
+            {t.missingComponents.length > 0 && (
+                <p className="mt-4 text-xs text-slate-400">
+                    <span className="text-slate-500 uppercase tracking-widest text-[10px] font-bold">To strengthen: </span>
+                    {t.missingComponents.join(', ')}
+                </p>
+            )}
+        </div>
+    );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Argument-graph structure (coherence + complexity)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const ArgumentStructurePanel: React.FC<{ graph: ArgumentGraph }> = ({ graph }) => (
+    <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
+        <div className="flex items-center gap-2 mb-4">
+            <span className="text-2xl">🕸️</span>
+            <h4 className="text-slate-300 font-bold text-sm uppercase tracking-widest">
+                Argument Structure
+            </h4>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <MetricCard label="Coherence" value={`${Math.round(graph.coherenceScore)}%`} sublabel="Logical connectedness" tone="indigo" />
+            <MetricCard label="Complexity" value={graph.complexity} sublabel="Nodes + links" tone="default" />
+            <MetricCard label="Nodes" value={graph.nodes.length} tone="emerald" />
+            <MetricCard label="Links" value={graph.edges.length} tone="amber" />
         </div>
     </div>
 );
@@ -269,6 +366,12 @@ export const SubmissionAnalyticsSection: React.FC<{ submission: Submission }> = 
         )}
         {submission.reasoningRubric && (
             <ReasoningQualityPanel rubric={submission.reasoningRubric} />
+        )}
+        {submission.reasoningRubric?.toulminAnalysis && (
+            <ToulminCompletenessPanel rubric={submission.reasoningRubric} />
+        )}
+        {submission.argumentGraph && submission.argumentGraph.nodes.length > 0 && (
+            <ArgumentStructurePanel graph={submission.argumentGraph} />
         )}
         {submission.latencyMetrics && submission.latencyMetrics.turnCount > 0 && (
             <SessionTimingPanel

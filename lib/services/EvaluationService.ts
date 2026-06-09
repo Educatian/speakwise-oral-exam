@@ -10,7 +10,19 @@ import {
     ReasoningRubric,
     RawTranscriptTurn
 } from '../../types';
-import { chatCompleteJson } from './aiClient';
+import { chatCompleteJson, DEFAULT_MODEL } from './aiClient';
+
+// Version stamps written onto every Submission so an exported cohort row can be
+// traced back to the exact analytics pipeline + prompt that produced it. Bump
+// these whenever the scoring logic or feedback prompt changes materially.
+const ANALYSIS_VERSION = '2.4.0';
+const PROMPT_VERSION = 'feedback+toulmin-v1';
+
+// Thresholds for the human-review triage. Kept here (not magic numbers inline)
+// so the policy is auditable and tunable in one place.
+const LOW_CONFIDENCE_THRESHOLD = 0.6;
+const SCORE_DISAGREEMENT_THRESHOLD = 30; // points, on a 0-100 scale
+const MIN_STUDENT_TURNS = 3;
 
 interface EvaluationPayload {
     courseName: string;
@@ -144,13 +156,75 @@ export class EvaluationService {
             };
         }
 
+        // ── Confidence calibration against objective session signals ──
+        // The LLM self-reports confidence, but it cannot see how much of the
+        // session was actually captured. Cap its self-rating using signals it
+        // is blind to (dropped transcriptions, a sparse dialogue) so a high
+        // self-rating can never mask a thin evidence base. This serves the
+        // "evidence over mystery" principle and protects instructor trust.
+        const rawConfidence =
+            typeof analysis.confidenceScore === 'number'
+                ? Math.max(0, Math.min(1, analysis.confidenceScore))
+                : undefined;
+        const studentTurns = transcriptions.filter((t) => t.speaker === 'user').length;
+        const failedCount = failedTranscriptions?.length ?? 0;
+
+        let calibratedConfidence = rawConfidence;
+        const calibrationNotes: string[] = [];
+        if (rawConfidence != null) {
+            if (failedCount > 0) {
+                calibratedConfidence = Math.min(calibratedConfidence!, 0.5);
+                calibrationNotes.push(`${failedCount} response(s) could not be transcribed`);
+            }
+            if (studentTurns < MIN_STUDENT_TURNS) {
+                calibratedConfidence = Math.min(calibratedConfidence!, 0.6);
+                calibrationNotes.push(`only ${studentTurns} student turn(s) captured`);
+            }
+        }
+
+        // ── LLM ↔ pattern agreement (validity cross-check) ──
+        // submission.score comes purely from the LLM; reasoningRubric.overall
+        // comes purely from deterministic pattern matching. They measure
+        // related-but-distinct things, so a large gap is a signal to look, not
+        // proof of error. We surface the gap rather than silently averaging.
+        const llmScore = Math.min(100, Math.max(0, Math.round(analysis.score || 0)));
+        const patternScore = Math.round(mergedRubric.overallReasoningScore ?? 0);
+        const scoreAgreement = Math.abs(llmScore - patternScore);
+
+        // ── Human-review triage ──
+        const reviewReasons: string[] = [];
+        if (calibratedConfidence != null && calibratedConfidence < LOW_CONFIDENCE_THRESHOLD) {
+            reviewReasons.push(`Low model confidence (${Math.round(calibratedConfidence * 100)}%)`);
+        }
+        if (scoreAgreement > SCORE_DISAGREEMENT_THRESHOLD) {
+            reviewReasons.push(
+                `LLM score (${llmScore}) and reasoning score (${patternScore}) disagree by ${scoreAgreement} points`
+            );
+        }
+        if (failedCount > 0) {
+            reviewReasons.push(`${failedCount} untranscribed response(s) may have lowered the score`);
+        }
+        if (studentTurns < MIN_STUDENT_TURNS) {
+            reviewReasons.push('Very short session — limited evidence for scoring');
+        }
+        const needsReview = reviewReasons.length > 0;
+
+        const confidenceRationale =
+            [
+                analysis.confidenceRationale,
+                calibrationNotes.length ? `Adjusted for: ${calibrationNotes.join('; ')}.` : ''
+            ]
+                .filter(Boolean)
+                .join(' ')
+                .trim() || undefined;
+
         const submission: Submission = {
             id: Math.random().toString(36).substr(2, 9),
             studentName,
             courseName,
             timestamp: Date.now(),
             transcript: transcriptions,
-            score: Math.min(100, Math.max(0, Math.round(analysis.score || 0))),
+            score: llmScore,
             feedback: analysis.feedback || 'No feedback generated.',
 
             latencyMetrics,
@@ -162,9 +236,17 @@ export class EvaluationService {
             argumentGraph,
             reasoningRubric: mergedRubric,
 
-            confidenceScore: analysis.confidenceScore,
-            confidenceRationale: analysis.confidenceRationale,
-            rubricBreakdown: analysis.rubricBreakdown as RubricBreakdown
+            confidenceScore: calibratedConfidence,
+            confidenceRationale,
+            rubricBreakdown: analysis.rubricBreakdown as RubricBreakdown,
+
+            // Review triage + provenance
+            scoreAgreement,
+            needsReview,
+            reviewReasons,
+            analysisVersion: ANALYSIS_VERSION,
+            promptVersion: PROMPT_VERSION,
+            evalModel: DEFAULT_MODEL
         };
 
         return submission;

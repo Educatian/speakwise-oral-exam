@@ -53,6 +53,12 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
     const [isSavingAnnotation, setIsSavingAnnotation] = useState(false);
     const transcriptRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
+    // Flatten all rubric-evidence quotes so the concept map can highlight the
+    // concepts the scorer actually cited (map → grade traceability).
+    const evidenceQuotes: string[] = submission?.rubricBreakdown
+        ? (Object.values(submission.rubricBreakdown) as Array<{ evidence?: string[] }>).flatMap((d) => d?.evidence ?? [])
+        : [];
+
     useEffect(() => {
         if (!submission) {
             setArgumentGraph(null);
@@ -498,6 +504,7 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                                     onActiveTurnIndexChange={setActiveTranscriptIndex}
                                     onHighlightTurnsChange={setHighlightedTranscriptIndices}
                                     storageKey={submission.id}
+                                    evidenceQuotes={evidenceQuotes}
                                 />
                             ) : (
                                 <div className="text-center py-8 text-slate-500">
@@ -650,6 +657,7 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                             onActiveTurnIndexChange={setActiveTranscriptIndex}
                             onHighlightTurnsChange={setHighlightedTranscriptIndices}
                             storageKey={submission.id}
+                            evidenceQuotes={evidenceQuotes}
                         />
                     ) : (
                         <div className="text-center py-6 text-slate-500">
