@@ -1,11 +1,24 @@
 /**
- * App-managed authentication module.
- * Supabase is used as a database only; session state is stored locally.
+ * Authentication module — backed by Supabase Auth.
+ *
+ * SpeakWise previously used app-managed auth (a custom `app_users` table +
+ * client-supplied identity), which left `auth.uid()` null and meant the
+ * institution-scoped RLS policies never fired. This module switches to real
+ * Supabase Auth so `auth.uid()` / `auth.email()` are populated and the existing
+ * scoped policies (see supabase/production_schema.sql) actually enforce
+ * isolation.
+ *
+ * The exported surface (AuthUser, signUp/signIn/signOut/resetPassword,
+ * getCurrentUser, updateUserSchool, getSavedSchool, getAuthEventName) is kept
+ * identical so useAuth.ts and the views do not need to change.
+ *
+ * Authoritative role/school live in `public.user_profiles` (created by the
+ * `handle_new_user` trigger on signup, with instructor role gated by the
+ * `instructors` whitelist — a self-claimed role at signup is NOT trusted).
  */
 
 import { supabase, isSupabaseConfigured } from './client';
 
-const USER_STORAGE_KEY = 'speakwise_user';
 const SCHOOL_STORAGE_KEY = 'speakwise_school';
 const AUTH_EVENT_NAME = 'speakwise-auth-changed';
 
@@ -40,58 +53,52 @@ function normalizeRole(role: string | undefined | null): 'student' | 'instructor
         : 'student';
 }
 
-async function hashCredential(email: string, password: string): Promise<string> {
-    const encoder = new TextEncoder();
-    const payload = encoder.encode(`${email.trim().toLowerCase()}::${password}`);
-    const digest = await crypto.subtle.digest('SHA-256', payload);
-    return Array.from(new Uint8Array(digest))
-        .map((byte) => byte.toString(16).padStart(2, '0'))
-        .join('');
+const NOT_CONFIGURED: AuthResult = {
+    success: false,
+    error: 'Authentication is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.'
+};
+
+interface ProfileRow {
+    id: string;
+    email: string;
+    display_name: string;
+    role: string;
+    school_id: string | null;
+    school_name: string | null;
 }
 
-function persistUser(user: AuthUser, shouldEmit = true): void {
-    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
-    if (user.schoolId && user.schoolName) {
-        localStorage.setItem(SCHOOL_STORAGE_KEY, JSON.stringify({
-            schoolId: user.schoolId,
-            schoolName: user.schoolName
-        }));
+/**
+ * Build an AuthUser from the Supabase session user plus the authoritative
+ * user_profiles row. Falls back to auth metadata if the profile row is not yet
+ * readable (e.g. immediately after signup before the trigger commits).
+ */
+async function buildAuthUser(authUserId: string, email: string, metadata: Record<string, any>): Promise<AuthUser> {
+    let profile: ProfileRow | null = null;
+    try {
+        const { data } = await supabase
+            .from('user_profiles')
+            .select('id,email,display_name,role,school_id,school_name')
+            .eq('id', authUserId)
+            .single();
+        profile = (data as ProfileRow) || null;
+    } catch {
+        profile = null;
     }
-    if (shouldEmit) {
-        emitAuthChanged();
-    }
-}
 
-function mapAppUser(record: any): AuthUser {
     return {
-        id: record.id,
-        email: record.email,
-        displayName: record.display_name || record.displayName || record.email,
-        role: normalizeRole(record.role),
-        schoolId: record.school_id || record.schoolId || undefined,
-        schoolName: record.school_name || record.schoolName || undefined
+        id: authUserId,
+        email: profile?.email || email,
+        displayName: profile?.display_name || metadata.display_name || metadata.displayName || email,
+        role: normalizeRole(profile?.role ?? metadata.role),
+        schoolId: profile?.school_id || metadata.school_id || undefined,
+        schoolName: profile?.school_name || metadata.school_name || undefined
     };
 }
 
-async function fetchAppUserById(userId: string): Promise<AuthUser | null> {
-    if (!isSupabaseConfigured()) {
-        return null;
+function persistSchool(schoolId?: string, schoolName?: string): void {
+    if (schoolId && schoolName) {
+        localStorage.setItem(SCHOOL_STORAGE_KEY, JSON.stringify({ schoolId, schoolName }));
     }
-
-    // app_users.email is column-grant-revoked from anon/authenticated, so
-    // direct SELECT on email would fail. Go through the SECURITY DEFINER RPC.
-    const { data, error } = await supabase.rpc('get_app_user_by_id', {
-        user_id_input: userId
-    });
-
-    if (error) {
-        return null;
-    }
-    const record = Array.isArray(data) ? data[0] : data;
-    if (!record) {
-        return null;
-    }
-    return mapAppUser(record);
 }
 
 export async function signUp(
@@ -102,162 +109,126 @@ export async function signUp(
     schoolId?: string,
     schoolName?: string
 ): Promise<AuthResult> {
+    if (!isSupabaseConfigured()) return NOT_CONFIGURED;
+
     const normalizedEmail = email.trim().toLowerCase();
-
-    if (!isSupabaseConfigured()) {
-        const localUser: AuthUser = {
-            id: `local_${Date.now()}`,
-            email: normalizedEmail,
-            displayName,
-            role,
-            schoolId,
-            schoolName
-        };
-        persistUser(localUser);
-        return { success: true, user: localUser };
-    }
-
     try {
-        const id = crypto.randomUUID();
-        const passwordHash = await hashCredential(normalizedEmail, password);
-
-        const { data, error } = await supabase.rpc('register_app_user', {
-            user_id_input: id,
-            email_input: normalizedEmail,
-            password_hash_input: passwordHash,
-            display_name_input: displayName,
-            role_input: role,
-            school_id_input: schoolId || null,
-            school_name_input: schoolName || null
+        // Role/displayName/school are passed as user metadata; the
+        // handle_new_user trigger consumes them to create the user_profiles row
+        // (and gates instructor role against the instructors whitelist).
+        const { data, error } = await supabase.auth.signUp({
+            email: normalizedEmail,
+            password,
+            options: {
+                data: {
+                    display_name: displayName,
+                    role,
+                    school_id: schoolId || null,
+                    school_name: schoolName || null
+                }
+            }
         });
 
-        if (error) {
-            return { success: false, error: error.message };
+        if (error) return { success: false, error: error.message };
+
+        // If email confirmation is enabled there is no session yet.
+        if (!data.session || !data.user) {
+            return {
+                success: false,
+                error: 'Account created. Please check your email to confirm before signing in.'
+            };
         }
 
-        const created = Array.isArray(data) ? data[0] : data;
-        const user = mapAppUser(created || {
-            id,
-            email: normalizedEmail,
-            display_name: displayName,
-            role,
-            school_id: schoolId,
-            school_name: schoolName
-        });
-
-        persistUser(user);
+        persistSchool(schoolId, schoolName);
+        const user = await buildAuthUser(data.user.id, normalizedEmail, data.user.user_metadata || {});
+        emitAuthChanged();
         return { success: true, user };
-    } catch (error) {
+    } catch {
         return { success: false, error: 'Account creation failed. Please try again.' };
     }
 }
 
 export async function signIn(email: string, password: string): Promise<AuthResult> {
+    if (!isSupabaseConfigured()) return NOT_CONFIGURED;
+
     const normalizedEmail = email.trim().toLowerCase();
-
-    if (!isSupabaseConfigured()) {
-        const stored = localStorage.getItem(USER_STORAGE_KEY);
-        if (stored) {
-            const user = JSON.parse(stored);
-            if (user.email === normalizedEmail) {
-                return { success: true, user };
-            }
-        }
-        return { success: false, error: 'Invalid email or password' };
-    }
-
     try {
-        const passwordHash = await hashCredential(normalizedEmail, password);
-        const { data, error } = await supabase.rpc('authenticate_app_user', {
-            email_input: normalizedEmail,
-            password_hash_input: passwordHash
+        const { data, error } = await supabase.auth.signInWithPassword({
+            email: normalizedEmail,
+            password
         });
 
-        if (error) {
-            return { success: false, error: error.message };
-        }
+        if (error) return { success: false, error: 'Invalid email or password' };
+        if (!data.user) return { success: false, error: 'Invalid email or password' };
 
-        const matchedUser = Array.isArray(data) ? data[0] : data;
-        if (!matchedUser?.id) {
-            return { success: false, error: 'Invalid email or password' };
-        }
-
-        const user = mapAppUser(matchedUser);
-        persistUser(user);
+        const user = await buildAuthUser(data.user.id, normalizedEmail, data.user.user_metadata || {});
+        persistSchool(user.schoolId, user.schoolName);
+        emitAuthChanged();
         return { success: true, user };
-    } catch (error) {
+    } catch {
         return { success: false, error: 'Sign in failed. Please try again.' };
     }
 }
 
 export async function signOut(): Promise<void> {
-    localStorage.removeItem(USER_STORAGE_KEY);
     localStorage.removeItem(SCHOOL_STORAGE_KEY);
+    if (isSupabaseConfigured()) {
+        try {
+            await supabase.auth.signOut();
+        } catch {
+            // Ignore network errors on sign-out; local session is cleared below.
+        }
+    }
     emitAuthChanged();
 }
 
-export async function resetPassword(_email: string): Promise<AuthResult> {
-    return {
-        success: true
-    };
+export async function resetPassword(email: string): Promise<AuthResult> {
+    if (!isSupabaseConfigured()) return NOT_CONFIGURED;
+    try {
+        const redirectTo = typeof window !== 'undefined' ? `${window.location.origin}` : undefined;
+        const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), { redirectTo });
+        if (error) return { success: false, error: error.message };
+        return { success: true };
+    } catch {
+        return { success: false, error: 'Could not send the reset email. Please try again.' };
+    }
 }
 
 export async function getCurrentUser(): Promise<AuthUser | null> {
-    const stored = localStorage.getItem(USER_STORAGE_KEY);
-    if (!stored) {
-        return null;
-    }
-
+    if (!isSupabaseConfigured()) return null;
     try {
-        const parsed = JSON.parse(stored) as AuthUser;
-        if (!parsed.id) {
-            localStorage.removeItem(USER_STORAGE_KEY);
-            return null;
-        }
-
-        const freshUser = await fetchAppUserById(parsed.id);
-        if (freshUser) {
-            persistUser(freshUser, false);
-            return freshUser;
-        }
-
-        return parsed;
+        const { data } = await supabase.auth.getSession();
+        const session = data.session;
+        if (!session?.user) return null;
+        return await buildAuthUser(session.user.id, session.user.email || '', session.user.user_metadata || {});
     } catch {
-        localStorage.removeItem(USER_STORAGE_KEY);
         return null;
     }
 }
 
-export async function updateUserSchool(userId: string, schoolId: string, schoolName: string): Promise<boolean> {
-    localStorage.setItem(SCHOOL_STORAGE_KEY, JSON.stringify({ schoolId, schoolName }));
-
-    const stored = localStorage.getItem(USER_STORAGE_KEY);
-    if (stored) {
-        try {
-            const parsed = JSON.parse(stored) as AuthUser;
-            if (parsed.id === userId) {
-                localStorage.setItem(USER_STORAGE_KEY, JSON.stringify({
-                    ...parsed,
-                    schoolId,
-                    schoolName
-                }));
-            }
-        } catch {
-            // Ignore corrupted local session and continue with persistence below.
-        }
-    }
-
+export async function updateUserSchool(_userId: string, schoolId: string, schoolName: string): Promise<boolean> {
+    persistSchool(schoolId, schoolName);
     if (!isSupabaseConfigured()) {
         emitAuthChanged();
         return true;
     }
 
     try {
-        const { error } = await supabase.rpc('update_app_user_school', {
-            user_id_input: userId,
-            school_id_input: schoolId,
-            school_name_input: schoolName
-        });
+        const { data: sessionData } = await supabase.auth.getSession();
+        const uid = sessionData.session?.user?.id;
+        if (!uid) {
+            emitAuthChanged();
+            return false;
+        }
+
+        // Update the authoritative profile (RLS: users update own profile)…
+        const { error } = await supabase
+            .from('user_profiles')
+            .update({ school_id: schoolId, school_name: schoolName })
+            .eq('id', uid);
+
+        // …and mirror onto auth metadata so a fresh session reflects it too.
+        await supabase.auth.updateUser({ data: { school_id: schoolId, school_name: schoolName } });
 
         emitAuthChanged();
         return !error;
@@ -277,6 +248,14 @@ export function getSavedSchool(): { schoolId: string; schoolName: string } | nul
         }
     }
     return null;
+}
+
+// Re-emit the app's auth-changed event whenever Supabase's session changes
+// (sign-in, sign-out, token refresh) so useAuth refreshes without polling.
+if (isSupabaseConfigured()) {
+    supabase.auth.onAuthStateChange(() => {
+        emitAuthChanged();
+    });
 }
 
 export default {

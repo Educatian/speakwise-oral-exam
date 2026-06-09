@@ -466,7 +466,7 @@ export async function getStudentHistory(): Promise<Submission[]> {
         const { data, error } = await supabase
             .from('student_history')
             .select('*')
-            .eq('app_user_id', currentUser.id)
+            .eq('user_id', currentUser.id)
             .order('timestamp', { ascending: false });
 
         if (error) throw error;
@@ -500,6 +500,10 @@ export async function addToStudentHistory(submission: Submission): Promise<void>
         const savedSchool = savedSchoolRaw ? JSON.parse(savedSchoolRaw) : null;
         const { error } = await supabase.from('student_history').insert({
             id: submission.id,
+            // user_id (auth.uid) drives the scoped RLS policy; app_user_id is
+            // kept for continuity. Since the Supabase session is mirrored into
+            // the persisted user, currentUser.id IS the auth uid.
+            user_id: currentUser.id,
             app_user_id: currentUser.id,
             device_id: deviceId,
             institution_id: savedSchool?.schoolId || null,
@@ -1271,17 +1275,21 @@ const FALLBACK_INSTRUCTORS = [
  * Check if an email has instructor privileges (from database)
  * Falls back to hardcoded list if Supabase unavailable
  */
+const isBootstrapInstructor = (normalizedEmail: string): boolean =>
+    FALLBACK_INSTRUCTORS.some(e => e.toLowerCase() === normalizedEmail);
+
 export async function checkInstructorStatus(email: string): Promise<boolean> {
     if (!email) return false;
     const normalizedEmail = email.toLowerCase().trim();
 
-    // Check fallback list first (for known admins/instructors)
-    if (FALLBACK_INSTRUCTORS.some(e => e.toLowerCase() === normalizedEmail)) {
-        return true;
-    }
-
+    // When Supabase is unavailable, fall back to the bootstrap allowlist so the
+    // app stays usable offline. When Supabase IS configured the database is the
+    // single source of truth: the hardcoded list is NO LONGER an unconditional
+    // override, so a revoked instructor correctly loses access even if they were
+    // a bootstrap admin. (The fallback only re-applies on a hard DB error, to
+    // avoid locking admins out during a transient outage.)
     if (!isSupabaseConfigured()) {
-        return false;
+        return isBootstrapInstructor(normalizedEmail);
     }
 
     try {
@@ -1304,13 +1312,15 @@ export async function checkInstructorStatus(email: string): Promise<boolean> {
 
         if (error && error.code !== 'PGRST116') { // PGRST116 = row not found
             console.warn('Error checking instructor status:', error);
-            return false;
+            // Transient DB failure — fall back to the bootstrap allowlist so a
+            // known admin is not locked out, but do not grant anyone else.
+            return isBootstrapInstructor(normalizedEmail);
         }
 
         return !!data;
     } catch (error) {
         console.error('Error checking instructor status:', error);
-        return false;
+        return isBootstrapInstructor(normalizedEmail);
     }
 }
 

@@ -52,6 +52,15 @@ export function useAuth(): UseAuthReturn {
                 const currentUser = await getCurrentUser();
                 setUser(currentUser);
 
+                // Mirror the Supabase session into the legacy `speakwise_user`
+                // key that App/AppRouter/LandingView still read as a cached
+                // session. Keeping it in sync avoids rewriting those readers.
+                if (currentUser) {
+                    localStorage.setItem('speakwise_user', JSON.stringify(currentUser));
+                } else {
+                    localStorage.removeItem('speakwise_user');
+                }
+
                 // Load saved school
                 const school = getSavedSchool();
                 setSavedSchool(school);
@@ -121,6 +130,7 @@ export function useAuth(): UseAuthReturn {
 
     const signOut = useCallback(async () => {
         await authSignOut();
+        localStorage.removeItem('speakwise_user');
         setUser(null);
         setSavedSchool(null);
     }, []);
