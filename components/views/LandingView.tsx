@@ -90,9 +90,8 @@ export const LandingView: React.FC<LandingViewProps> = ({ onNavigate }) => {
                     </span>
                 </div>
 
-                <div className="relative w-24 h-24 mx-auto mb-6 rounded-[2rem] flex items-center justify-center border border-cyan-400/20 bg-[radial-gradient(circle_at_30%_30%,rgba(56,189,248,0.26),rgba(15,23,42,0.85)_65%)] shadow-[0_0_70px_-32px_rgba(56,189,248,0.85)]">
-                    <div className="absolute inset-[10px] rounded-[1.4rem] border border-white/8" />
-                    <span className="text-white text-3xl font-black italic">W</span>
+                <div className="relative w-24 h-24 mx-auto mb-6 rounded-[2rem] overflow-hidden ring-1 ring-cyan-400/20 shadow-[0_0_70px_-28px_rgba(56,189,248,0.85)]">
+                    <img src="/logo.png" alt="SpeakWise" className="w-full h-full object-cover" />
                 </div>
 
                 <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-white mb-4 tracking-tight">
