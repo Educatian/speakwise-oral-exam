@@ -108,7 +108,7 @@ export interface BargeInEvent {
   recoveredFromTranscript?: boolean;
 }
 
-export type RawTranscriptTurnStatus = 'pending' | 'transcribed' | 'failed' | 'too_short';
+export type RawTranscriptTurnStatus = 'pending' | 'transcribed' | 'failed' | 'too_short' | 'empty';
 
 export interface RawTranscriptTurn {
   id: string;
@@ -391,6 +391,8 @@ export interface UseGeminiLiveReturn {
   pendingAIText: string;          // Real-time partial AI transcription
   error: string | null;
   turnPhase: TurnPhase;           // Current turn phase
+  isReconnecting: boolean;        // A dropped session is being auto-restored
+  recognitionNotice: string | null; // Transient "didn't catch that" hint to the student
 
   // Learning Analytics (Basic)
   latencyMetrics: LatencyMetrics;

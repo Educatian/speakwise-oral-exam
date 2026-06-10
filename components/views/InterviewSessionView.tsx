@@ -46,6 +46,8 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
         pendingAIText,
         error,
         turnPhase,
+        isReconnecting,
+        recognitionNotice,
         latencyMetrics,
         bargeInEvents,
         rawTranscriptTurns,
@@ -178,7 +180,7 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
 
                     <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
                         <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600 font-bold mb-2">Current state</p>
-                        <p className="text-base font-semibold text-white">{statusCopy(status, turnPhase)}</p>
+                        <p className="text-base font-semibold text-white">{isReconnecting ? 'Reconnecting…' : statusCopy(status, turnPhase)}</p>
                         <p className="text-xs text-slate-500 mt-2">
                             {status === InterviewStatus.IDLE
                                 ? 'Prepare your microphone, then begin when you feel ready.'
@@ -187,6 +189,21 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
                                     : 'Your work is being prepared for review.'}
                         </p>
                     </div>
+
+                    {isReconnecting && (
+                        <div className="flex items-center gap-3 p-3 bg-indigo-500/10 border border-indigo-500/25 rounded-xl" role="status" aria-live="polite">
+                            <span className="spinner w-4 h-4 flex-shrink-0" />
+                            <p className="text-indigo-200 text-sm">
+                                Connection dropped — restoring your session. Your progress is safe; please hold on.
+                            </p>
+                        </div>
+                    )}
+
+                    {recognitionNotice && !isReconnecting && (
+                        <div className="p-3 bg-amber-500/10 border border-amber-500/25 rounded-xl" role="status" aria-live="polite">
+                            <p className="text-amber-200 text-sm font-medium">{recognitionNotice}</p>
+                        </div>
+                    )}
 
                     <div className="grid grid-cols-2 gap-2">
                         {phaseCards.map((phase) => (

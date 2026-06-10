@@ -19,6 +19,7 @@
     "@supabase/supabase-js": "^2.93.2",
     "d3": "^7.9.0",
     "mammoth": "^1.11.0",
+    "pdfjs-dist": "^4.10.38",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "sharp": "^0.34.5"
