@@ -34,6 +34,9 @@ export interface ChatCompleteOptions {
      *  Default omitted — most chat responses are text. Pass ['text'] when
      *  sending audio input so the provider doesn't try to also return audio. */
     modalities?: Array<'text' | 'audio'>;
+    /** Abort the request after this many ms. Omitted = rely on the browser
+     *  default (which can hang a student in "transcribing" for a minute+). */
+    timeoutMs?: number;
 }
 
 // All LLM traffic goes through the same-origin proxy (Cloudflare Pages worker
@@ -58,18 +61,40 @@ export async function chatComplete(options: ChatCompleteOptions): Promise<string
     if (options.maxTokens != null) payload.max_tokens = options.maxTokens;
     if (options.modalities) payload.modalities = options.modalities;
 
-    const res = await fetch(ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    });
+    // Bound the WHOLE request — including the response-body read — so a slow or
+    // stalled upstream can't hang the caller indefinitely (critical for the
+    // live-interview transcription path). fetch() resolves on headers, so the
+    // timer must stay armed through res.json()/res.text() too, or a "headers
+    // fast, body dripping" upstream slips past the cap.
+    const controller = new AbortController();
+    const timer = options.timeoutMs
+        ? setTimeout(() => controller.abort(), options.timeoutMs)
+        : null;
 
-    if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`OpenRouter ${res.status}: ${text.slice(0, 500)}`);
+    let data: any;
+    try {
+        const res = await fetch(ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            signal: controller.signal
+        });
+
+        if (!res.ok) {
+            const text = await res.text();
+            throw new Error(`OpenRouter ${res.status}: ${text.slice(0, 500)}`);
+        }
+
+        data = await res.json();
+    } catch (err) {
+        if (controller.signal.aborted) {
+            throw new Error(`Request timed out after ${options.timeoutMs}ms`);
+        }
+        throw err;
+    } finally {
+        if (timer) clearTimeout(timer);
     }
 
-    const data = await res.json();
     const content = data?.choices?.[0]?.message?.content;
     if (typeof content !== 'string') {
         throw new Error('OpenRouter returned no text content');
@@ -114,11 +139,14 @@ export async function chatCompleteJson<T>(
 export async function transcribeAudio(
     audioBase64: string,
     format: 'wav' | 'mp3' = 'wav',
-    instruction = 'Transcribe this audio exactly as spoken. Return ONLY the transcription text, nothing else. If the audio is silent or unintelligible, return an empty string.'
+    instruction = 'You are a transcription engine for an academic oral examination. Transcribe the student\'s spoken answer verbatim, in the language actually spoken. Preserve technical and domain-specific terminology, proper names, acronyms, and numbers exactly as said. Do NOT summarize, paraphrase, translate, correct grammar, or add any commentary, labels, or punctuation that was not spoken. Return ONLY the raw transcription text. If the audio contains no intelligible speech, return an empty string.'
 ): Promise<string> {
     const text = await chatComplete({
         model: AUDIO_TRANSCRIPTION_MODEL,
         modalities: ['text'],
+        // A spoken turn should resolve quickly; cap it so a stalled upstream
+        // surfaces as a retryable error instead of an indefinite hang.
+        timeoutMs: 20000,
         messages: [
             {
                 role: 'user',

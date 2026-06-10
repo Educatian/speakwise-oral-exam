@@ -16,6 +16,13 @@ const SAMPLE_RATE = 16000;
 const NUM_CHANNELS = 1;
 const BITS_PER_SAMPLE = 16;
 
+// A turn whose loudest sample never rises above this (Int16 full-scale is
+// 32767) is effectively silence/room-noise after AEC+NS. Real speech — even a
+// soft talker — peaks well above this, so the floor rejects noise-only turns
+// without dropping genuine answers. Tuned conservatively low to avoid false
+// rejections.
+const MIN_PEAK_AMPLITUDE = 500;
+
 export interface CapturedAudioTurn {
     id: string;
     wavBase64: string;
@@ -95,10 +102,25 @@ export class TranscriptionService {
         this.pcmChunks.push(new Int16Array(pcmData));
     }
 
+    /** Loudest absolute sample across the accumulated PCM. */
+    private peakAmplitude(): number {
+        let peak = 0;
+        for (const chunk of this.pcmChunks) {
+            for (let i = 0; i < chunk.length; i++) {
+                const a = chunk[i] < 0 ? -chunk[i] : chunk[i];
+                if (a > peak) peak = a;
+            }
+        }
+        return peak;
+    }
+
     hasAudio(): boolean {
         let total = 0;
         for (const chunk of this.pcmChunks) total += chunk.length;
-        return total > SAMPLE_RATE * 0.5;
+        if (total <= SAMPLE_RATE * 0.5) return false;
+        // Reject near-silent / noise-only turns so we don't burn a transcription
+        // call (and confuse the student with an empty result) on room noise.
+        return this.peakAmplitude() >= MIN_PEAK_AMPLITUDE;
     }
 
     getSampleCount(): number {
@@ -137,16 +159,27 @@ export class TranscriptionService {
         if (!turn) {
             return { text: null, error: 'No captured audio turn was available.' };
         }
+        const durationSec = turn.durationMs / 1000;
+        console.log(`[Transcription] Sending ${durationSec.toFixed(1)}s via OpenRouter → gpt-4o-audio`);
+
         try {
-            const durationSec = turn.durationMs / 1000;
-            console.log(`[Transcription] Sending ${durationSec.toFixed(1)}s via OpenRouter → gpt-4o-audio`);
             const text = await transcribeAudio(turn.wavBase64, 'wav');
             console.log(`[Transcription] Result: "${(text || '').substring(0, 60)}..."`);
             return { text: text || null };
-        } catch (err) {
-            console.error('[Transcription] Failed:', err);
-            const error = err instanceof Error ? err.message : 'Transcription request failed.';
-            return { text: null, error };
+        } catch (firstErr) {
+            // Transient upstream failures (timeout, 5xx, dropped fetch) are
+            // common enough that one immediate retry recovers most of them
+            // before the student notices.
+            console.warn('[Transcription] First attempt failed, retrying once:', firstErr);
+            try {
+                const text = await transcribeAudio(turn.wavBase64, 'wav');
+                console.log(`[Transcription] Retry result: "${(text || '').substring(0, 60)}..."`);
+                return { text: text || null };
+            } catch (retryErr) {
+                console.error('[Transcription] Retry failed:', retryErr);
+                const error = retryErr instanceof Error ? retryErr.message : 'Transcription request failed.';
+                return { text: null, error };
+            }
         }
     }
 }

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { chatComplete, chatCompleteJson } from '../../lib/services/aiClient';
-import mammoth from 'mammoth';
+import { chatComplete } from '../../lib/services/aiClient';
+import { extractDocumentText } from '../../lib/utils/documentText';
+import { extractExamFromText } from '../../lib/services/questionExtraction';
 import { Course, CourseTemplate, Institution, Submission } from '../../types';
 import { GroupKnowledgeService } from '../../lib/services/GroupKnowledgeService';
 import { Button, Input, Textarea, Modal, PinVerifyModal } from '../ui';
@@ -158,6 +159,7 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
     const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
     const [isDragging, setIsDragging] = useState(false);
     const [isExtracting, setIsExtracting] = useState(false);
+    const [extractStatus, setExtractStatus] = useState('');
 
     // Class analytics collapsible + per-course filter.
     const [showAnalytics, setShowAnalytics] = useState(true);
@@ -197,73 +199,60 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
         setShowQuestionReview(false);
     };
 
-    // Extract questions from uploaded files using Gemini
+    // Read uploaded documents (TXT / DOCX / PDF) and extract a knowledge base +
+    // oral-exam questions. Long documents are chunked and consolidated (RAG-style)
+    // by the extraction service so nothing is silently truncated.
     const handleExtractFromFiles = async () => {
         if (uploadedFiles.length === 0) return;
         setIsExtracting(true);
         setFormError(null);
 
         try {
-            // Convert every upload to text client-side. The OpenRouter-based
-            // aiClient doesn't pipe raw binaries for PDF; users with PDF-only
-            // sources can either convert to DOCX/TXT, or we'll drop in a
-            // client-side pdf-parse pass when that feature is funded.
+            setExtractStatus('Reading documents…');
             const fileContents = await Promise.all(
                 uploadedFiles.map(async (file) => {
-                    if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
-                        return { name: file.name, text: await file.text() };
+                    try {
+                        return { name: file.name, text: await extractDocumentText(file) };
+                    } catch (readErr) {
+                        console.error(`Could not read ${file.name}:`, readErr);
+                        return { name: file.name, text: '' };
                     }
-                    if (
-                        file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-                        file.name.endsWith('.docx')
-                    ) {
-                        const arrayBuffer = await file.arrayBuffer();
-                        const result = await mammoth.extractRawText({ arrayBuffer });
-                        return { name: file.name, text: result.value };
-                    }
-                    // PDF: skipped for now with a clear note embedded into the
-                    // prompt so the model knows that file was unreadable.
-                    return {
-                        name: file.name,
-                        text: `[PDF content unavailable — this deployment of SpeakWise extracts text from TXT and DOCX only. Please convert the PDF or ask the platform admin to enable PDF extraction.]`
-                    };
                 })
             );
 
-            const joinedSources = fileContents
-                .map((fc) => `--- File: ${fc.name} ---\n${fc.text}`)
-                .join('\n\n');
+            const readable = fileContents.filter((fc) => fc.text.trim().length > 0);
+            if (readable.length === 0) {
+                setFormError(
+                    'Could not read any text from the uploaded file(s). If a PDF is scanned (an image), it has no selectable text — please upload a text-based PDF, DOCX, or TXT.'
+                );
+                return;
+            }
 
-            const extractionPrompt = `You are analyzing course materials for an oral examination platform.
-Based on the uploaded document(s) below, extract:
-1. A concise knowledge base summary (2-3 paragraphs) covering the key concepts, topics, and learning objectives.
-2. A list of 5-7 high-quality interview questions that an AI interviewer should ask students. Questions should test understanding, not just recall.
-
-Course name context: "${courseName || 'Unknown Course'}"
-
-Return ONLY this JSON shape (no markdown fences):
-{
-  "knowledgeBase": "...",
-  "questions": ["Question 1?", "Question 2?", ...]
-}
-
-${joinedSources}`;
-
-            const parsed = await chatCompleteJson<{ knowledgeBase?: string; questions?: string[] }>(
-                extractionPrompt
+            const skipped = fileContents.filter((fc) => fc.text.trim().length === 0);
+            setExtractStatus('Analyzing material and drafting questions…');
+            const { knowledgeBase, questions } = await extractExamFromText(
+                readable,
+                courseName || 'Unknown Course'
             );
-            if (Array.isArray(parsed.questions) && parsed.questions.length > 0) {
-                setExtractedQuestions(parsed.questions);
-                setExtractedContext(parsed.knowledgeBase || '');
-                setShowQuestionReview(true);
-            } else {
-                setFormError('Failed to parse questions from documents. Try again.');
+
+            setExtractedQuestions(questions);
+            setExtractedContext(knowledgeBase);
+            setShowQuestionReview(true);
+            if (skipped.length > 0) {
+                setFormError(
+                    `Note: no text could be read from ${skipped.map((s) => s.name).join(', ')} (likely a scanned/image PDF). Questions were generated from the remaining file(s).`
+                );
             }
         } catch (err) {
             console.error('Extraction failed:', err);
-            setFormError('Failed to extract questions. Please check your files and try again.');
+            setFormError(
+                err instanceof Error
+                    ? `Extraction failed: ${err.message}`
+                    : 'Failed to extract questions. Please check your files and try again.'
+            );
         } finally {
             setIsExtracting(false);
+            setExtractStatus('');
         }
     };
 
@@ -273,7 +262,17 @@ ${joinedSources}`;
             .map((q, i) => `${i + 1}. ${q}`)
             .join('\n');
 
-        const prompt = `## Knowledge Base (from uploaded documents)\n${extractedContext}\n\n## Required Interview Questions\nYou MUST ask these questions in order:\n${questionsBlock}\n\nEvaluate the student's answers against the Knowledge Base above. Be thorough but encouraging.`;
+        // Only reference a Knowledge Base if one was actually extracted —
+        // otherwise the examiner is told to grade against a blank section.
+        const kb = extractedContext.trim();
+        const kbSection = kb
+            ? `## Knowledge Base (from uploaded documents)\n${kb}\n\n`
+            : '';
+        const evalLine = kb
+            ? "Evaluate the student's answers against the Knowledge Base above. Be thorough but encouraging."
+            : "Evaluate the student's answers for conceptual understanding and accuracy. Be thorough but encouraging.";
+
+        const prompt = `${kbSection}## Required Interview Questions\nYou MUST ask these questions in order:\n${questionsBlock}\n\n${evalLine}`;
 
         setCoursePrompt(prompt);
         setShowQuestionReview(false);
@@ -826,7 +825,7 @@ ${joinedSources}`;
                                             {isExtracting ? (
                                                 <>
                                                     <span className="spinner w-3 h-3" />
-                                                    Analyzing documents...
+                                                    {extractStatus || 'Analyzing documents…'}
                                                 </>
                                             ) : (
                                                 <>
