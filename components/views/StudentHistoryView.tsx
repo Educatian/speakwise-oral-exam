@@ -36,20 +36,7 @@ export const StudentHistoryView: React.FC<StudentHistoryViewProps> = ({
                 <div className="p-6 md:p-8 space-y-4">
                     {submissions.length === 0 ? (
                         <div className="text-center py-20 text-slate-600 space-y-4">
-                            <svg
-                                className="w-16 h-16 mx-auto opacity-20"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                                aria-hidden="true"
-                            >
-                                <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={1}
-                                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                                />
-                            </svg>
+                            <img src="/empty/submissions.png" alt="" aria-hidden="true" className="w-32 h-32 mx-auto object-contain opacity-90" />
                             <p>No completed interviews yet.</p>
                             <p className="text-sm">Complete an interview to see your results here.</p>
                         </div>

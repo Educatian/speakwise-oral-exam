@@ -1616,3 +1616,23 @@ button:focus-visible,
     transition: none !important;
   }
 }
+
+/* ── SpeakWise logo loader (logo-4 + spinning brand ring) ───────────────── */
+@keyframes sw-breathe { 0%,100%{ transform: scale(0.93); } 50%{ transform: scale(1.07); } }
+@keyframes sw-ring-spin { to { transform: rotate(360deg); } }
+.sw-loader { position: relative; width: 84px; height: 84px; }
+.sw-loader__ring {
+  position: absolute; inset: -7px; border-radius: 22px;
+  background: conic-gradient(from 0deg, #34d399, #22d3ee, #818cf8, #34d399);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 5px));
+          mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 5px));
+  animation: sw-ring-spin 1.15s linear infinite; opacity: .92;
+}
+.sw-loader__logo {
+  position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 16px;
+  object-fit: cover; box-shadow: 0 10px 30px rgba(16,185,129,.22);
+  animation: sw-breathe 1.7s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sw-loader__ring, .sw-loader__logo { animation: none; }
+}

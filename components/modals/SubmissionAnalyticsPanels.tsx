@@ -44,7 +44,7 @@ export const RubricBreakdownPanel: React.FC<{ rubric: RubricBreakdown }> = ({ ru
     return (
         <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
             <div className="flex items-center gap-2 mb-4">
-                <span className="text-2xl">🎯</span>
+                <img src="/icons/analytics/rubric.png" alt="" aria-hidden="true" className="w-6 h-6 object-contain opacity-80" />
                 <h4 className="text-slate-300 font-bold text-sm uppercase tracking-widest">
                     Rubric Breakdown
                 </h4>
@@ -91,7 +91,7 @@ export const ReasoningQualityPanel: React.FC<{ rubric: ReasoningRubric }> = ({ r
     <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
         <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
-                <span className="text-2xl">🧠</span>
+                <img src="/icons/analytics/reasoning.png" alt="" aria-hidden="true" className="w-6 h-6 object-contain opacity-80" />
                 <h4 className="text-slate-300 font-bold text-sm uppercase tracking-widest">
                     Reasoning Quality
                 </h4>
@@ -145,7 +145,7 @@ export const ToulminCompletenessPanel: React.FC<{ rubric: ReasoningRubric }> = (
         <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
             <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
-                    <span className="text-2xl">🧱</span>
+                    <img src="/icons/analytics/toulmin.png" alt="" aria-hidden="true" className="w-6 h-6 object-contain opacity-80" />
                     <h4 className="text-slate-300 font-bold text-sm uppercase tracking-widest">
                         Argument Completeness
                     </h4>
@@ -203,7 +203,7 @@ export const ToulminCompletenessPanel: React.FC<{ rubric: ReasoningRubric }> = (
 export const ArgumentStructurePanel: React.FC<{ graph: ArgumentGraph }> = ({ graph }) => (
     <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
         <div className="flex items-center gap-2 mb-4">
-            <span className="text-2xl">🕸️</span>
+            <img src="/icons/analytics/graph.png" alt="" aria-hidden="true" className="w-6 h-6 object-contain opacity-80" />
             <h4 className="text-slate-300 font-bold text-sm uppercase tracking-widest">
                 Argument Structure
             </h4>
@@ -239,7 +239,7 @@ export const SessionTimingPanel: React.FC<{
     return (
         <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
             <div className="flex items-center gap-2 mb-4">
-                <span className="text-2xl">⏱️</span>
+                <img src="/icons/analytics/timing.png" alt="" aria-hidden="true" className="w-6 h-6 object-contain opacity-80" />
                 <h4 className="text-slate-300 font-bold text-sm uppercase tracking-widest">
                     Session Timing
                 </h4>
@@ -324,7 +324,7 @@ export const BargeInPanel: React.FC<{ events: BargeInEvent[] }> = ({ events }) =
     return (
         <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
             <div className="flex items-center gap-2 mb-4">
-                <span className="text-2xl">↩️</span>
+                <img src="/icons/analytics/interruptions.png" alt="" aria-hidden="true" className="w-6 h-6 object-contain opacity-80" />
                 <h4 className="text-slate-300 font-bold text-sm uppercase tracking-widest">
                     Interruptions <span className="text-slate-500 font-normal">({events.length})</span>
                 </h4>

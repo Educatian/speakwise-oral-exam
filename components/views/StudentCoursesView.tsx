@@ -79,11 +79,7 @@ export const StudentCoursesView: React.FC<StudentCoursesViewProps> = ({
                 {/* Course Grid */}
                 {filteredCourses.length === 0 ? (
                     <div className="text-center py-16">
-                        <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-800 flex items-center justify-center">
-                            <svg className="w-8 h-8 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                        </div>
+                        <img src="/empty/courses.png" alt="" aria-hidden="true" className="w-32 h-32 mx-auto mb-4 object-contain opacity-90" />
                         <p className="text-slate-500">
                             {searchQuery ? 'No courses match your search' : 'No courses available yet'}
                         </p>

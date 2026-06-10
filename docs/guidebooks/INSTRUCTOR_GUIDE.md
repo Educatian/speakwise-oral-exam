@@ -68,7 +68,11 @@ Open any submission for the full evidence view:
 
 ---
 
-> **Note on the submission-review + concept-map frames (§6):** these need a completed student submission carrying an argument graph, which requires a live voice interview (Gemini/OpenRouter keys configured). On the current keyless preview the demo institution has no submissions yet, so §6 is documented but not yet in the video. Once keys are set and one interview is completed, re-run the recorder to capture those frames.
+🎬 **Concept-map walkthrough video:** [`videos/concept-map.webm`](videos/concept-map.webm) — the radial argument map (Radial/Force layouts, Toulmin colour mode, semantic edge legend, timeline replay) on a real seeded submission.
+
+![Radial concept map](screenshots/instructor/41-concept-map-radial.png)
+
+![Toulmin colour mode](screenshots/instructor/42-concept-map-toulmin.png)
 
 ## Regenerating this walkthrough
 
