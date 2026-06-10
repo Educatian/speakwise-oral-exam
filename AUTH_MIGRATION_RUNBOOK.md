@@ -24,7 +24,8 @@
 3. **Deploy the client build** from this branch (so the app uses Supabase Auth) with `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` set (already in `.env.local` for local dev).
 4. **Re-create accounts** (see data migration below) and **verify** you can sign in and that a `user_profiles` row appears with the right role.
 5. **GATE — only when step 4 passes:** apply **`supabase/migrations/20260609_isolation_lockdown.sql`** (the breaking change: drops catch-all anon policies, adds scoped template/annotation/audit policies, revokes legacy RPC grants).
-6. **Verify isolation** (see checklist).
+6. **Apply `supabase/migrations/20260610_close_isolation_gaps.sql`** — closes the holes the lockdown left: staff-only reads on `submissions`/`submission_reviews` (students could read every submission in their institution), role-gates the anon-callable SECURITY DEFINER RPCs (user/email/audit dumps), hides `institutions.access_code`, and adds the `admin_*` RPCs the updated admin console calls. See **`APPLY_RLS.md`** for the full copy-paste sequence + checklist.
+7. **Verify isolation** (see checklist).
 
 ### Data migration for the 11 existing `app_users`
 Supabase Auth users must exist in `auth.users` (you can't copy password hashes in). At pilot scale the simplest paths:

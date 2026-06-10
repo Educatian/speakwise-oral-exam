@@ -628,9 +628,10 @@ export async function getUserProfiles(): Promise<UserProfile[]> {
     }
 
     try {
-        // email column is grant-revoked on app_users; route through the
-        // SECURITY DEFINER RPC so admin UI keeps working.
-        const { data, error } = await supabase.rpc('list_app_users_for_admin');
+        // user_profiles is the authoritative role/school store under Supabase
+        // Auth. The RPC is SECURITY DEFINER and admin-gated server-side
+        // (returns no rows for non-admin callers).
+        const { data, error } = await supabase.rpc('admin_list_user_profiles');
 
         if (error) throw error;
 
@@ -681,7 +682,11 @@ export async function updateUserRole(userId: string, role: UserRole): Promise<bo
     }
 
     try {
-        const { error } = await supabase.rpc('set_app_user_role', {
+        // Admin-gated SECURITY DEFINER RPC over the authoritative
+        // user_profiles table (also syncs the instructors whitelist and the
+        // legacy app_users mirror). The old set_app_user_role RPC is revoked
+        // by the isolation lockdown.
+        const { error } = await supabase.rpc('admin_set_user_role', {
             user_id_input: userId,
             role_input: role
         });
