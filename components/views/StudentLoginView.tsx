@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Course } from '../../types';
 import { Button, Input, MicTest } from '../ui';
 import { sanitizeStudentName } from '../../lib/security/sanitize';
+import { verifyCourseEntry, CourseEntryGrant } from '../../lib/supabase';
 
 interface StudentLoginViewProps {
     courses: Course[];
@@ -11,6 +12,37 @@ interface StudentLoginViewProps {
     onViewHistory: () => void;
     onManagerAccess: () => void;
     onBack?: () => void;
+}
+
+/**
+ * Build the session Course from the server-issued entry grant. The grant is
+ * the ONLY source of the examiner prompt for students (course rows no longer
+ * carry it); the known course row (if any) contributes submissions for the
+ * results/peer views. Works even when the course is not in the student's
+ * visible list (e.g. joining another institution's course by number + code).
+ */
+function mergeGrantIntoCourse(knownCourse: Course | null, grant: CourseEntryGrant): Course {
+    const base: Course = knownCourse ?? {
+        id: grant.id,
+        name: grant.name,
+        instructorName: grant.instructorName,
+        instructorPinHash: '',
+        prompt: '',
+        submissions: []
+    };
+
+    return {
+        ...base,
+        id: grant.id,
+        name: grant.name || base.name,
+        instructorName: grant.instructorName || base.instructorName,
+        prompt: grant.prompt,
+        institutionId: grant.institutionId || base.institutionId,
+        institutionName: grant.institutionName || base.institutionName,
+        ownerEmail: grant.ownerEmail || base.ownerEmail,
+        interviewSettings: grant.interviewSettings ?? base.interviewSettings,
+        createdAt: grant.createdAt ?? base.createdAt
+    };
 }
 
 /**
@@ -56,31 +88,54 @@ export const StudentLoginView: React.FC<StudentLoginViewProps> = ({
             return;
         }
 
-        setIsLoading(true);
-
-        // Simplified mode: verify passcode against selected course
-        if (isSimplifiedMode && selectedCourse) {
-            if (selectedCourse.password === passcode) {
-                onLogin(selectedCourse, trimmedName);
-            } else {
-                setError('Invalid entry code. Please try again.');
-            }
-        } else {
-            // Full mode: find course by number and passcode
-            if (!courseNumber || courseNumber.length !== 6) {
-                setError('Course number must be 6 digits.');
-                setIsLoading(false);
-                return;
-            }
-            const course = courses.find(c => c.id === courseNumber && c.password === passcode);
-            if (course) {
-                onLogin(course, trimmedName);
-            } else {
-                setError('Invalid course number or passcode.');
-            }
+        // Full mode needs a well-formed course number before we try anything.
+        if (!isSimplifiedMode && (!courseNumber || courseNumber.length !== 6)) {
+            setError('Course number must be 6 digits.');
+            return;
         }
 
-        setIsLoading(false);
+        setIsLoading(true);
+
+        try {
+            const courseId = isSimplifiedMode && selectedCourse ? selectedCourse.id : courseNumber;
+            const knownCourse = isSimplifiedMode && selectedCourse
+                ? selectedCourse
+                : courses.find(c => c.id === courseId) ?? null;
+
+            // Server-side check: the passcode never gets compared in the
+            // browser, and the examiner prompt arrives ONLY on a match.
+            const result = await verifyCourseEntry(courseId, passcode);
+
+            if (result.status === 'granted') {
+                onLogin(mergeGrantIntoCourse(knownCourse, result.grant), trimmedName);
+            } else if (result.status === 'denied') {
+                setError(isSimplifiedMode
+                    ? 'Invalid entry code. Please try again.'
+                    : 'Invalid course number or passcode.');
+            } else {
+                // 'unavailable' — Supabase off or verify RPC not deployed yet.
+                // Legacy local comparison (course rows still carry the secret
+                // on the old schema / in localStorage-only mode).
+                if (isSimplifiedMode && selectedCourse) {
+                    if (selectedCourse.password !== undefined && selectedCourse.password === passcode) {
+                        onLogin(selectedCourse, trimmedName);
+                    } else {
+                        setError('Invalid entry code. Please try again.');
+                    }
+                } else {
+                    const course = courses.find(c =>
+                        c.id === courseId && c.password !== undefined && c.password === passcode
+                    );
+                    if (course) {
+                        onLogin(course, trimmedName);
+                    } else {
+                        setError('Invalid course number or passcode.');
+                    }
+                }
+            }
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const handleKeyDown = (e: React.KeyboardEvent) => {

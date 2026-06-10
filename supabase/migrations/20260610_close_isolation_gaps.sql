@@ -359,11 +359,11 @@ grant execute on function public.admin_set_user_role(text, text)    to authentic
 --   * Instructor flows (dashboard, analytics, reviews, annotations) unchanged.
 --
 -- KNOWN, ACCEPTED (documented for the next hardening pass):
---   * Students in an institution can still read that institution's courses
---     (incl. the entry passcode and the exam prompt) — the client matches the
---     entry code and builds the examiner prompt in the browser, so this needs
---     a client redesign (server-side passcode check + prompt delivery), see
---     SECURITY_HARDENING.md §5.
+--   * [CLOSED 2026-06-10] Students in an institution could read that
+--     institution's courses (incl. the entry passcode and the exam prompt).
+--     Fixed by 20260610_course_passcode_server_side.sql (server-side
+--     verify_course_entry + get_staff_course_secrets + column-level grants
+--     on courses); apply order in APPLY_HARDENING_S5.md.
 --   * "authenticated users can insert submissions" stays unscoped so the
 --     guest-institution exam flow keeps working; submissions remain
 --     unreadable to students either way.

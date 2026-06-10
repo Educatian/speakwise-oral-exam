@@ -46,7 +46,7 @@ Signed in as an **instructor** (institution A): dashboard lists only A's courses
 Signed in as the **admin**: admin console lists users (now from `user_profiles`) and role changes persist (`select email, role from public.user_profiles`); promoting to instructor also inserts into `public.instructors`.
 
 ## Known, accepted residual exposure (next hardening pass)
-- Institution students can still read their institution's `courses` rows including the entry **passcode** and the exam **prompt** — the current client checks the passcode and builds the examiner prompt in the browser. Fixing this needs a server-side join/verify RPC (`SECURITY_HARDENING.md` §5).
+- ~~Institution students can still read their institution's `courses` rows including the entry **passcode** and the exam **prompt**~~ — **CLOSED 2026-06-10** by step 5: `supabase/migrations/20260610_course_passcode_server_side.sql` (server-side `verify_course_entry` + staff secrets RPC + column grants). Apply order + curls: `APPLY_HARDENING_S5.md` (deploy the matching client build FIRST).
 - `submissions` INSERT stays open to any authenticated user so the guest-institution exam flow keeps working (writes only; reads are staff-scoped).
 - `log_audit_event` actor fields are still caller-supplied (now signed-in callers only).
 

@@ -2,6 +2,7 @@ import { supabase, isSupabaseConfigured } from './client';
 import {
     AuditLogEntry,
     Course,
+    CourseInterviewSettings,
     CourseTemplate,
     Institution,
     InstructorReview,
@@ -116,6 +117,165 @@ function createClientId(prefix: string): string {
 // Course Service - Supabase Operations for Courses
 // ═══════════════════════════════════════════════════════════════════════════
 
+// Non-secret course columns. password / prompt / instructor_pin_hash are
+// column-revoked from `authenticated` by 20260610_course_passcode_server_side
+// .sql — selecting them (or '*') fails OUTRIGHT under PostgREST column
+// grants, so every direct courses read must use this explicit list. The
+// secrets travel only through get_staff_course_secrets (staff) or
+// verify_course_entry (student with the right entry code).
+const COURSE_SAFE_COLUMNS =
+    'id, institution_id, institution_name, name, instructor_name, owner_email, created_at, interview_settings';
+
+interface CourseSecretRecord {
+    password?: string;
+    prompt?: string;
+    instructorPinHash?: string;
+}
+
+/** PostgREST "function not found" (schema not migrated yet) detection. */
+function isMissingFunctionError(error: { code?: string; message?: string } | null | undefined): boolean {
+    if (!error) return false;
+    if (error.code === 'PGRST202' || error.code === '42883') return true;
+    return /could not find the function|function .* does not exist/i.test(error.message || '');
+}
+
+// Once the secrets RPC is known to be absent (schema not migrated yet),
+// remember it for the session — getAllCourses re-runs on every realtime
+// event and a repeating 404 probe is just noise.
+let staffSecretsRpcMissing = false;
+
+/**
+ * Secret course columns for the courses the caller may MANAGE.
+ * - New schema: staff-gated SECURITY DEFINER RPC (students get {}).
+ * - Old schema (RPC missing): the columns are still directly selectable, so
+ *   fall back to the legacy projection. If that also fails (e.g. column
+ *   grants applied before this client knows the RPC — shouldn't happen with
+ *   the documented apply order), degrade to "no secrets" instead of
+ *   breaking the whole course list.
+ */
+async function fetchCourseSecrets(): Promise<Record<string, CourseSecretRecord>> {
+    const map: Record<string, CourseSecretRecord> = {};
+
+    if (!staffSecretsRpcMissing) {
+        const { data, error } = await supabase.rpc('get_staff_course_secrets');
+        if (!error) {
+            for (const row of (data || []) as Array<{
+                id: string; password: string | null; prompt: string | null; instructor_pin_hash: string | null;
+            }>) {
+                map[row.id] = {
+                    password: row.password ?? undefined,
+                    prompt: row.prompt ?? undefined,
+                    instructorPinHash: row.instructor_pin_hash ?? undefined
+                };
+            }
+            return map;
+        }
+
+        if (!isMissingFunctionError(error)) {
+            console.warn('get_staff_course_secrets failed; continuing without course secrets:', error.message);
+            return map;
+        }
+        staffSecretsRpcMissing = true;
+    }
+
+    // Legacy schema: migration not applied yet, direct select still allowed.
+    const legacy = await supabase
+        .from('courses')
+        .select('id, password, prompt, instructor_pin_hash');
+
+    if (legacy.error) {
+        return map;
+    }
+
+    for (const row of (legacy.data || []) as Array<{
+        id: string; password: string | null; prompt: string | null; instructor_pin_hash: string | null;
+    }>) {
+        map[row.id] = {
+            password: row.password ?? undefined,
+            prompt: row.prompt ?? undefined,
+            instructorPinHash: row.instructor_pin_hash ?? undefined
+        };
+    }
+    return map;
+}
+
+export interface CourseEntryGrant {
+    id: string;
+    name: string;
+    instructorName: string;
+    prompt: string;
+    institutionId: string;
+    institutionName: string;
+    ownerEmail: string;
+    interviewSettings?: CourseInterviewSettings;
+    createdAt?: number;
+}
+
+export type CourseEntryVerification =
+    | { status: 'granted'; grant: CourseEntryGrant }
+    | { status: 'denied' }
+    | { status: 'unavailable' };
+
+/**
+ * Server-side course entry check. The passcode never gets compared in the
+ * browser and the examiner prompt is delivered ONLY on a successful match.
+ * 'unavailable' = Supabase off or the verify RPC not deployed yet — callers
+ * fall back to the legacy local comparison (which still works on the old
+ * schema, where the course rows carry the secrets).
+ */
+export async function verifyCourseEntry(
+    courseId: string,
+    passcode: string
+): Promise<CourseEntryVerification> {
+    if (!isSupabaseConfigured()) {
+        return { status: 'unavailable' };
+    }
+
+    try {
+        const { data, error } = await supabase.rpc('verify_course_entry', {
+            course_id_input: courseId,
+            passcode_input: passcode
+        });
+
+        if (error) {
+            if (isMissingFunctionError(error)) {
+                return { status: 'unavailable' };
+            }
+            console.error('verify_course_entry failed:', error.message);
+            return { status: 'unavailable' };
+        }
+
+        const row = (Array.isArray(data) ? data[0] : data) as {
+            id: string; name: string; instructor_name: string | null; prompt: string | null;
+            institution_id: string | null; institution_name: string | null;
+            owner_email: string | null; interview_settings: CourseInterviewSettings | null;
+            created_at: string | null;
+        } | undefined;
+
+        if (!row) {
+            return { status: 'denied' };
+        }
+
+        return {
+            status: 'granted',
+            grant: {
+                id: row.id,
+                name: row.name,
+                instructorName: row.instructor_name || 'Instructor',
+                prompt: row.prompt || '',
+                institutionId: row.institution_id || '',
+                institutionName: row.institution_name || '',
+                ownerEmail: row.owner_email || '',
+                interviewSettings: row.interview_settings || undefined,
+                createdAt: row.created_at ? new Date(row.created_at).getTime() : undefined
+            }
+        };
+    } catch (error) {
+        console.error('verify_course_entry threw:', error);
+        return { status: 'unavailable' };
+    }
+}
+
 /**
  * Get all courses with their submissions from Supabase
  */
@@ -125,13 +285,16 @@ export async function getAllCourses(): Promise<Course[]> {
     }
 
     try {
-        // Get courses
+        // Get courses (safe columns only — see COURSE_SAFE_COLUMNS note)
         const { data: courses, error: coursesError } = await supabase
             .from('courses')
-            .select('*')
+            .select(COURSE_SAFE_COLUMNS)
             .order('created_at', { ascending: false });
 
         if (coursesError) throw coursesError;
+
+        // Secret columns arrive separately, and only for staff.
+        const secrets = await fetchCourseSecrets();
 
         // Get submissions for all courses
         const { data: submissions, error: submissionsError } = await supabase
@@ -142,14 +305,16 @@ export async function getAllCourses(): Promise<Course[]> {
         if (submissionsError) throw submissionsError;
         const reviewMap = await getSubmissionReviewMap();
 
-        // Map submissions to courses
+        // Map submissions to courses. Secret fields come from the staff
+        // secrets map; for students they stay empty — the exam prompt is
+        // delivered through verifyCourseEntry at join time instead.
         return (courses || []).map(course => ({
             id: course.id,
             name: course.name,
             instructorName: course.instructor_name || 'Instructor',
-            instructorPinHash: course.instructor_pin_hash || '',
-            password: course.password,
-            prompt: course.prompt,
+            instructorPinHash: secrets[course.id]?.instructorPinHash || '',
+            password: secrets[course.id]?.password,
+            prompt: secrets[course.id]?.prompt || '',
             createdAt: course.created_at ? new Date(course.created_at).getTime() : Date.now(),
             ownerEmail: course.owner_email || '',
             institutionId: course.institution_id || '',
@@ -178,7 +343,7 @@ export async function addCourse(course: Course): Promise<void> {
                 name: course.name,
                 instructor_name: course.instructorName || 'Instructor',
                 instructor_pin_hash: course.instructorPinHash || '',
-                password: course.password,
+                password: course.password ?? '',
                 prompt: course.prompt,
                 owner_email: course.ownerEmail || '',
                 institution_id: course.institutionId || null,

@@ -337,9 +337,9 @@ export interface Course {
   id: string;
   name: string;
   instructorName: string;      // Instructor display name
-  instructorPinHash: string;   // SHA-256 hashed PIN (for submission viewing)
-  password: string;            // Student passcode
-  prompt: string;
+  instructorPinHash: string;   // SHA-256 hashed PIN (for submission viewing) — staff-only (secrets RPC); '' for students
+  password?: string;           // Student entry passcode — SECRET. Present only for staff (get_staff_course_secrets) or in localStorage-only mode; students verify via the verify_course_entry RPC
+  prompt: string;              // Examiner brief — '' in student course lists; delivered at join time through verify_course_entry
   submissions: Submission[];
   createdAt?: number;          // Creation timestamp
   ownerEmail?: string;         // Owner's email for visibility control

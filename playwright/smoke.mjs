@@ -8,7 +8,15 @@ const errors = [];
 
 const browser = await chromium.launch();
 const page = await browser.newContext({ viewport: { width: 1440, height: 900 } }).then((c) => c.newPage());
-page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
+page.on('console', (m) => {
+  if (m.type() !== 'error') return;
+  // Expected during the §5 transition window: the client feature-detects the
+  // new course RPCs; on a not-yet-migrated database PostgREST answers 404 and
+  // the client falls back to the legacy path. Not a runtime defect.
+  const url = m.location()?.url || '';
+  if (/\/rest\/v1\/rpc\//.test(url) && /404/.test(m.text())) return;
+  errors.push(`console: ${m.text()}`);
+});
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
 
 await page.goto(BASE_URL, { waitUntil: 'networkidle' });
@@ -25,6 +33,17 @@ try {
   if (await btn.count()) { await btn.click(); await page.waitForTimeout(800); routed = true; }
 } catch (e) { errors.push(`route: ${e.message}`); }
 console.log(`Routed off landing: ${routed ? 'YES' : 'n/a'}`);
+
+// Exercise the student entry route too (the §5 server-side passcode change
+// rewired StudentLoginView/getAllCourses — make sure the student path still
+// mounts without runtime errors).
+let studentRouted = false;
+try {
+  await page.goto(BASE_URL, { waitUntil: 'networkidle' });
+  const sbtn = page.getByRole('button', { name: /Student/i }).first();
+  if (await sbtn.count()) { await sbtn.click(); await page.waitForTimeout(800); studentRouted = true; }
+} catch (e) { errors.push(`student-route: ${e.message}`); }
+console.log(`Student route: ${studentRouted ? 'YES' : 'n/a'}`);
 
 await page.screenshot({ path: 'playwright/smoke-landing.png' });
 console.log('Screenshot: playwright/smoke-landing.png');
