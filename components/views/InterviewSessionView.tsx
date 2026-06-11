@@ -14,6 +14,11 @@ interface InterviewSessionViewProps {
     onBack: () => void;
 }
 
+// Mobile touch hardening for the primary action buttons: guaranteed 44px
+// minimum target (WCAG 2.5.8 / Apple HIG) and `touch-action: manipulation`
+// to remove the 300ms double-tap-zoom delay on phones.
+const touchTargetStyle: React.CSSProperties = { minHeight: 44, touchAction: 'manipulation' };
+
 const statusCopy = (status: InterviewStatus, turnPhase: string) => {
     if (status === InterviewStatus.CONNECTING) return 'Connecting to interviewer...';
     if (status === InterviewStatus.ENDED) return 'Interview completed';
@@ -220,22 +225,22 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
                     {status === InterviewStatus.IDLE ? (
                         <div className="space-y-4">
                             <MicTest className="mb-4" />
-                            <Button onClick={startSession} variant="primary" size="lg" className="w-full">
+                            <Button onClick={startSession} variant="primary" size="lg" className="w-full" style={touchTargetStyle}>
                                 Start Interview Session
                             </Button>
                             <p className="text-xs text-slate-500 text-center">Run the microphone check above before starting.</p>
                         </div>
                     ) : status === InterviewStatus.ENDED ? (
-                        <Button onClick={onBack} variant="ghost" size="lg" className="w-full">
+                        <Button onClick={onBack} variant="ghost" size="lg" className="w-full" style={touchTargetStyle}>
                             Return to Login
                         </Button>
                     ) : (
                         <div className="space-y-3">
-                            <Button onClick={handleEndAndSubmit} variant="danger" size="lg" className="w-full">
+                            <Button onClick={handleEndAndSubmit} variant="danger" size="lg" className="w-full" style={touchTargetStyle}>
                                 End and Submit Session
                             </Button>
                             {status === InterviewStatus.LIVE && turnPhase === 'recording' && (
-                                <Button onClick={stopRecording} variant="primary" size="md" className="w-full">
+                                <Button onClick={stopRecording} variant="primary" size="md" className="w-full" style={touchTargetStyle}>
                                     Done Speaking
                                 </Button>
                             )}
@@ -293,7 +298,7 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
                             <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600 font-bold">Student support</p>
                             <p className="text-sm text-white mt-1">Keep the session calm and deliberate.</p>
                         </div>
-                        <button type="button" onClick={() => setShowAnalytics((current) => !current)} className="results-tab">
+                        <button type="button" onClick={() => setShowAnalytics((current) => !current)} className="results-tab" style={{ touchAction: 'manipulation' }}>
                             {showAnalytics ? 'Hide analytics' : 'Show analytics'}
                         </button>
                     </div>
@@ -329,7 +334,10 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
                 )}
             </div>
 
-            <div className="xl:col-span-8 h-[52vh] min-h-[360px] sm:h-[500px] lg:h-[600px] flex flex-col">
+            {/* 52dvh (not vh): mobile URL-bar collapse changes the visual viewport;
+                dvh tracks it so the transcript pane never overflows under the bar.
+                min-h-[360px] doubles as the floor for browsers without dvh. */}
+            <div className="xl:col-span-8 h-[52dvh] min-h-[360px] sm:h-[500px] lg:h-[600px] flex flex-col">
                 <div className="glass-panel rounded-3xl flex-1 flex flex-col overflow-hidden">
                     <div className="px-4 sm:px-6 py-4 border-b border-slate-800 bg-slate-900/30 flex justify-between items-center gap-3">
                         <div className="flex items-center gap-3">

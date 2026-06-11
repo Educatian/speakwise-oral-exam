@@ -922,3 +922,35 @@ node playwright/mux.mjs
 ```
 
 Sync model: narration starts exactly at each scene's measured start; a scene never ends before its narration does (runner waits out the remainder + 1s pad). Demo accounts and codes are read from env (`STUDENT_EMAIL`, `INSTRUCTOR_EMAIL`, `COURSE_PASSCODE`, ...), with speakwise-test.com demo defaults.
+
+---
+
+## 20. Mobile Browsers (iOS Safari / Android Chrome) Hardening (2026-06-11)
+
+Mobile browsers enforce stricter audio/lifecycle policies than desktop. The voice pipeline handles them in four layers (all feature-detected; nothing throws on browsers lacking an API):
+
+### 20.1 Audio gesture unlock
+
+iOS Safari only lets an `AudioContext` start (and audio playback begin) inside a user gesture. `useGeminiLive.startSession()` therefore calls `AudioStreamService.unlock()` **synchronously at the top of the Start-button click**, before the token fetch / WebSocket awaits:
+
+- `unlock()` creates BOTH contexts (capture: native rate; playback: 24 kHz, with webkit/options-bag fallbacks), fires `resume()` without awaiting, and plays a zero-length buffer on the playback context so later examiner-TTS chunks (which arrive over the network, outside any gesture) are allowed.
+- `initialize()` (run after the socket opens) **reuses** the unlocked contexts instead of creating new ones.
+- iOS's non-standard `state === 'interrupted'` (phone call / Siri): a `statechange` watcher arms a one-shot `touchend`/`click` listener that re-`resume()`s the contexts on the next gesture.
+
+### 20.2 Screen wake lock
+
+While a session is LIVE, the hook requests `navigator.wakeLock.request('screen')` (try/catch, no-op where unsupported) so the phone can't sleep mid-exam and kill the mic/WS. The OS releases the lock when the page hides; it is re-acquired on `visibilitychange → visible`, and released in `cleanup()`.
+
+### 20.3 Visibility & device interruptions
+
+- Going hidden does **not** tear anything down. On return to visible: audio contexts are re-kicked, the wake lock re-acquired, and the socket health-checked via `GeminiWebsocketClient.isLikelyAlive()` (own close flag + defensive `readyState` introspection). A dead socket enters the **existing** `attemptReconnect` backoff path (guarded by `reconnectingRef`/`intentionalCloseRef`, so close-event-driven reconnects never double-fire).
+- Mic-track `ended` + `devicechange` (headphones unplugged, incoming call): `AudioStreamService.restartCapture()` re-acquires the mic on the same unlocked contexts behind a calm notice; only an unrecoverable failure surfaces the error/retry UX.
+
+### 20.4 Viewport & touch
+
+- `index.html` viewport meta: `viewport-fit=cover, interactive-widget=resizes-content`.
+- Interview/login full-height panes use `dvh` (not `vh`) so the collapsing URL bar can't clip the layout (`min-h` px floors remain the fallback for non-dvh browsers).
+- Primary action buttons (Start / Done Speaking / End and Submit / mic test) have ≥44 px touch targets and `touch-action: manipulation` (no 300 ms double-tap-zoom delay).
+- `MicTest` no longer calls `getUserMedia` on mount (out-of-gesture prompts can be auto-denied on iOS); device labels are refreshed after the first successful in-gesture test, and a stale `deviceId: exact` retries once with the default mic.
+
+Known limitation (needs a real device to verify): zombie sockets that still report `readyState === OPEN` after backgrounding can't be detected without a ping; recovery then relies on the deferred close event, which mobile browsers deliver on foregrounding.

@@ -20,13 +20,37 @@ export interface GeminiLiveClientOptions {
 export class GeminiWebsocketClient {
     private session: any = null;
     private options: GeminiLiveClientOptions;
+    private closed = false;
 
     constructor(options: GeminiLiveClientOptions) {
         this.options = options;
     }
 
+    /**
+     * Best-effort liveness probe for the visibility-return health check
+     * (mobile browsers can kill a backgrounded socket without delivering the
+     * close event until much later). Returns false when we KNOW the socket is
+     * gone (close fired, or the underlying WebSocket reports CLOSING/CLOSED);
+     * returns true when it can't tell, so the normal onClose-driven reconnect
+     * path stays authoritative and we never double-trigger recovery.
+     */
+    isLikelyAlive(): boolean {
+        if (!this.session || this.closed) return false;
+        try {
+            const conn = (this.session as { conn?: { readyState?: number } }).conn;
+            if (conn && typeof conn.readyState === 'number') {
+                // 0 = CONNECTING, 1 = OPEN
+                return conn.readyState === 0 || conn.readyState === 1;
+            }
+        } catch {
+            // SDK internals changed — fall through to "assume alive".
+        }
+        return true;
+    }
+
     async connect(): Promise<void> {
         if (this.session) return;
+        this.closed = false;
 
         // apiKey here is a short-lived ephemeral token minted server-side; the
         // Live API requires the v1alpha surface for ephemeral-token auth so the
@@ -58,7 +82,10 @@ export class GeminiWebsocketClient {
             },
             callbacks: {
                 onopen: () => this.options.onOpen(),
-                onclose: (event: any) => this.options.onClose(event),
+                onclose: (event: any) => {
+                    this.closed = true;
+                    this.options.onClose(event);
+                },
                 onerror: (error: any) => this.options.onError(error),
                 onmessage: (data: any) => this.options.onMessage(data)
             }
@@ -81,6 +108,7 @@ export class GeminiWebsocketClient {
     }
 
     disconnect(): void {
+        this.closed = true;
         if (this.session) {
             try {
                 this.session.close();

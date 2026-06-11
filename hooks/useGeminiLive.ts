@@ -35,6 +35,13 @@ interface UseGeminiLiveOptions {
     minTurnDurationMs?: number;
 }
 
+// navigator.wakeLock is feature-detected (absent on iOS < 16.4 and in tests);
+// minimal structural type so we never depend on lib.dom having WakeLock types.
+interface WakeLockSentinelLike {
+    release: () => Promise<void>;
+    released?: boolean;
+}
+
 export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveReturn {
     const {
         systemInstruction,
@@ -108,9 +115,49 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
     const MAX_RECONNECT_ATTEMPTS = 4;
     const MAX_RECORDING_MS = 90000; // hard stop so a missed silence event can't strand the recorder
 
+    // ── Mobile session hardening ─────────────────────────────────────────────
+    const statusRef = useRef<InterviewStatus>(InterviewStatus.IDLE);
+    const wakeLockRef = useRef<WakeLockSentinelLike | null>(null);
+    const wakeLockPendingRef = useRef(false);
+    const handleDeviceLostRef = useRef<() => void>(() => {});
+
     useEffect(() => {
         turnPhaseRef.current = turnPhase;
     }, [turnPhase]);
+
+    useEffect(() => {
+        statusRef.current = status;
+    }, [status]);
+
+    // Screen wake lock: keeps the phone from sleeping mid-exam (sleep kills
+    // the mic and the WebSocket). Feature-detected; every failure is silent
+    // and non-fatal (denied permission, low battery, unsupported browser).
+    const requestWakeLock = useCallback(async () => {
+        try {
+            const wakeLock = (navigator as Navigator & {
+                wakeLock?: { request: (type: 'screen') => Promise<WakeLockSentinelLike> };
+            }).wakeLock;
+            if (!wakeLock || typeof wakeLock.request !== 'function') return;
+            if (wakeLockPendingRef.current) return;
+            if (wakeLockRef.current && wakeLockRef.current.released === false) return;
+            wakeLockPendingRef.current = true;
+            wakeLockRef.current = await wakeLock.request('screen');
+        } catch {
+            wakeLockRef.current = null;
+        } finally {
+            wakeLockPendingRef.current = false;
+        }
+    }, []);
+
+    const releaseWakeLock = useCallback(() => {
+        const sentinel = wakeLockRef.current;
+        wakeLockRef.current = null;
+        if (sentinel) {
+            try {
+                sentinel.release().catch(() => { /* already released by the OS */ });
+            } catch { /* non-fatal */ }
+        }
+    }, []);
 
     const syncRawTurns = useCallback((next: RawTranscriptTurn[]) => {
         rawTranscriptTurnsRef.current = next;
@@ -155,6 +202,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
         // Any teardown is, by definition, an expected close — never reconnect.
         intentionalCloseRef.current = true;
         reconnectingRef.current = false;
+        releaseWakeLock();
         if (reconnectTimerRef.current) {
             clearTimeout(reconnectTimerRef.current);
             reconnectTimerRef.current = null;
@@ -196,7 +244,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
             sessionRef.current = null;
         }
         transcriptionsRef.current = [];
-    }, []);
+    }, [releaseWakeLock]);
 
     const noteBargeInIfNeeded = useCallback(() => {
         if (pendingBargeInRef.current) return;
@@ -487,10 +535,40 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
             });
     }, [appendTranscription, patchRawTurn, processCapturedTurn, queueFailedTurn, startRecordingPhase, updateLatencyMetrics]);
 
+    // The OS took the mic away mid-session (headphones unplugged, incoming
+    // call, permission revoked). Keep the WebSocket and transcript; calmly
+    // re-acquire the mic on the already-unlocked contexts. Only if that fails
+    // do we surface the existing error/retry UX.
+    const handleDeviceLost = useCallback(() => {
+        if (intentionalCloseRef.current || !mountedRef.current) return;
+        const service = audioServiceRef.current;
+        if (!service) return;
+        setRecognitionNotice('Your microphone changed or disconnected — reconnecting audio. One moment…');
+        service.restartCapture()
+            .then(() => {
+                if (mountedRef.current && !intentionalCloseRef.current) {
+                    setRecognitionNotice(null);
+                }
+            })
+            .catch((restartError) => {
+                console.error('[Audio] Mic re-acquire failed after device loss:', restartError);
+                if (!mountedRef.current || intentionalCloseRef.current) return;
+                setError('The microphone was disconnected and could not be restored. Check your microphone or headset, then end this attempt and re-enter with the same name to continue.');
+                setStatus(InterviewStatus.ERROR);
+                cleanup();
+            });
+    }, [cleanup]);
+
+    useEffect(() => { handleDeviceLostRef.current = handleDeviceLost; }, [handleDeviceLost]);
+
     // Initialize the microphone + audio pipeline. Extracted so the reconnect
     // path can reuse the already-running mic instead of re-prompting the user.
+    // Reuses the AudioStreamService created (and gesture-unlocked) in
+    // startSession instead of constructing a fresh one after network awaits.
     const initAudio = useCallback(async () => {
-        audioServiceRef.current = new AudioStreamService();
+        if (!audioServiceRef.current) {
+            audioServiceRef.current = new AudioStreamService();
+        }
         await audioServiceRef.current.initialize({
             onAudioLevel: (level) => setAudioLevel(level),
             onVoiceActivity: (isSpeaking) => {
@@ -533,7 +611,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                     console.log(`[Audio] Calibrated - Noise: ${noiseFloor.toFixed(4)}, Threshold: ${threshold.toFixed(4)}`);
                 }
             }
-        });
+        }, () => handleDeviceLostRef.current());
     }, [noteBargeInIfNeeded, stopRecording, silenceThresholdMs]);
 
     // After an unexpected drop, schedule an exponential-backoff reconnect that
@@ -594,6 +672,19 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
 
     const startSession = useCallback(async () => {
         try {
+            // ── GESTURE-CHAIN GUARANTEE (mobile) ─────────────────────────────
+            // startSession is invoked directly by the Start-button click, and
+            // everything up to the first `await` below runs synchronously in
+            // that gesture. unlock() therefore creates + resumes BOTH
+            // AudioContexts and plays a silent buffer INSIDE the gesture —
+            // before the token fetch / WebSocket awaits — which is what iOS
+            // Safari requires for capture and for later programmatic TTS
+            // playback. It never throws and is a no-op where unnecessary.
+            if (!audioServiceRef.current) {
+                audioServiceRef.current = new AudioStreamService();
+            }
+            audioServiceRef.current.unlock();
+
             setStatus(InterviewStatus.CONNECTING);
             setError(null);
             setTranscriptions([]);
@@ -652,13 +743,17 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                         reconnectingRef.current = false;
                         setIsReconnecting(false);
                         setStatus(InterviewStatus.LIVE);
+                        void requestWakeLock();
 
-                        if (!audioServiceRef.current) {
+                        // The service may already exist from the gesture unlock
+                        // in startSession — what matters is whether the mic
+                        // pipeline is actually running yet.
+                        if (!audioServiceRef.current || !audioServiceRef.current.isCaptureReady()) {
                             try {
                                 await initAudio();
                             } catch (micErr: any) {
                                 setError(micErr?.name === 'NotAllowedError'
-                                    ? 'Microphone access denied. Please allow microphone access and try again.'
+                                    ? 'Microphone access is blocked. Tap the lock or settings icon next to the address bar (Settings > Safari/Chrome > Microphone on a phone), allow the microphone for this site, then try again.'
                                     : 'Could not access the microphone. Please check your device and try again.');
                                 setStatus(InterviewStatus.ERROR);
                                 cleanup();
@@ -804,9 +899,9 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
         } catch (sessionError: any) {
             console.error('Failed to start session:', sessionError);
             if (sessionError?.name === 'NotAllowedError') {
-                setError('Microphone access denied. Please allow microphone access and try again.');
+                setError('Microphone access is blocked. Tap the lock or settings icon next to the address bar (Settings > Safari/Chrome > Microphone on a phone), allow the microphone for this site, then try again.');
             } else if (sessionError?.name === 'NotFoundError') {
-                setError('No microphone found. Please connect a microphone and try again.');
+                setError('No microphone found. Please connect a microphone (or check that another app is not blocking it) and try again.');
             } else {
                 setError('Failed to start interview session. Please check your connection and try again.');
             }
@@ -817,6 +912,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
         cleanup,
         initAudio,
         onTranscriptionComplete,
+        requestWakeLock,
         startRecordingPhase,
         syncFailedTurns,
         syncRawTurns,
@@ -825,6 +921,35 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
         voiceName,
         appendTranscription
     ]);
+
+    // ── Visibility / backgrounding ──────────────────────────────────────────
+    // Going hidden mid-exam (app switch, screen lock, incoming call) must NOT
+    // tear anything down. On return to visible we re-kick the audio contexts,
+    // re-acquire the wake lock (the OS releases it on hide), and health-check
+    // the socket: mobile browsers can kill a backgrounded WebSocket without
+    // delivering the close event until much later — if it died, enter the
+    // EXISTING reconnect path (attemptReconnect already guards against
+    // double-entry via reconnectingRef / intentionalCloseRef).
+    useEffect(() => {
+        if (typeof document === 'undefined') return;
+        const onVisibilityChange = () => {
+            if (document.visibilityState !== 'visible') return;
+            if (intentionalCloseRef.current) return;
+            const active = statusRef.current === InterviewStatus.LIVE
+                || statusRef.current === InterviewStatus.CONNECTING;
+            if (!active) return;
+
+            audioServiceRef.current?.resumeContexts();
+            void requestWakeLock();
+
+            const client = sessionRef.current;
+            if (client && !reconnectingRef.current && !client.isLikelyAlive()) {
+                attemptReconnectRef.current();
+            }
+        };
+        document.addEventListener('visibilitychange', onVisibilityChange);
+        return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+    }, [requestWakeLock]);
 
     const endSession = useCallback(async () => {
         const now = Date.now();

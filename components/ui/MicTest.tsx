@@ -37,27 +37,40 @@ export const MicTest: React.FC<MicTestProps> = ({ className = '', onDeviceSelect
     const animationFrameRef = useRef<number | null>(null);
     const clippingTimeoutRef = useRef<number | null>(null);
 
-    // Enumerate audio devices on mount
-    useEffect(() => {
-        const enumerateDevices = async () => {
-            try {
-                await navigator.mediaDevices.getUserMedia({ audio: true })
-                    .then(stream => stream.getTracks().forEach(t => t.stop()));
+    const refreshDeviceList = useCallback(async () => {
+        try {
+            if (!navigator.mediaDevices?.enumerateDevices) return;
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            // Dedupe by deviceId: pre-permission, some browsers report several
+            // inputs that all carry an empty id (they would render as duplicate,
+            // unselectable options).
+            const seen = new Set<string>();
+            const audioInputs = devices.filter(d => {
+                if (d.kind !== 'audioinput') return false;
+                if (seen.has(d.deviceId)) return false;
+                seen.add(d.deviceId);
+                return true;
+            });
+            setAvailableDevices(audioInputs);
 
-                const devices = await navigator.mediaDevices.enumerateDevices();
-                const audioInputs = devices.filter(d => d.kind === 'audioinput');
-                setAvailableDevices(audioInputs);
-
-                if (audioInputs.length > 0 && !selectedDeviceId) {
-                    setSelectedDeviceId(audioInputs[0].deviceId);
-                }
-            } catch (err) {
-                console.error('Failed to enumerate devices:', err);
-            }
-        };
-
-        enumerateDevices();
+            setSelectedDeviceId(current => {
+                if (current) return current;
+                // Before permission is granted, mobile browsers return empty
+                // deviceIds — leave selection empty so getUserMedia picks the default.
+                return audioInputs[0]?.deviceId || '';
+            });
+        } catch (err) {
+            console.error('Failed to enumerate devices:', err);
+        }
     }, []);
+
+    // Enumerate audio devices on mount WITHOUT forcing a permission prompt:
+    // calling getUserMedia outside a user gesture on page load is hostile on
+    // mobile (iOS may auto-deny it). Labels stay generic until the first
+    // successful test, after which the list is refreshed with real names.
+    useEffect(() => {
+        refreshDeviceList();
+    }, [refreshDeviceList]);
 
     const stopTest = useCallback(() => {
         if (animationFrameRef.current) {
@@ -87,6 +100,30 @@ export const MicTest: React.FC<MicTestProps> = ({ className = '', onDeviceSelect
         setError(null);
 
         try {
+            // Create + resume the AudioContext SYNCHRONOUSLY, before any await:
+            // iOS Safari only lets audio contexts start inside the tap that
+            // invoked this handler. (webkitAudioContext fallback for older iOS.)
+            const Ctor = (typeof AudioContext !== 'undefined'
+                ? AudioContext
+                : (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext);
+            if (!Ctor) {
+                setError('This browser does not support the audio features needed for the test.');
+                return;
+            }
+            let audioContext: AudioContext;
+            try {
+                audioContext = new Ctor({ latencyHint: 'interactive' });
+            } catch {
+                audioContext = new Ctor(); // older implementations reject the options bag
+            }
+            audioContextRef.current = audioContext;
+            if (audioContext.state !== 'running') {
+                audioContext.resume().catch(() => { /* retried below if needed */ });
+            }
+
+            // Mobile-safe constraints: echo/noise/AGC on (essential for phone
+            // mics + speakers), everything else `ideal` so nothing can throw
+            // OverconstrainedError on limited hardware.
             const constraints: MediaStreamConstraints = {
                 audio: {
                     echoCancellation: true,
@@ -98,14 +135,34 @@ export const MicTest: React.FC<MicTestProps> = ({ className = '', onDeviceSelect
                 }
             };
 
-            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            let stream: MediaStream;
+            try {
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+            } catch (gumErr) {
+                // The selected device may have disappeared (unplugged headset,
+                // stale id after backgrounding) — retry once with the default mic.
+                if (gumErr instanceof DOMException && gumErr.name === 'OverconstrainedError' && selectedDeviceId) {
+                    stream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            autoGainControl: true,
+                            // @ts-ignore
+                            sampleRate: { ideal: 48000 }
+                        }
+                    });
+                } else {
+                    throw gumErr;
+                }
+            }
             streamRef.current = stream;
 
             const audioTrack = stream.getAudioTracks()[0];
-            setDeviceName(audioTrack.label || 'Unknown Microphone');
+            setDeviceName(audioTrack?.label || 'Unknown Microphone');
 
-            const audioContext = new AudioContext({ latencyHint: 'interactive' });
-            audioContextRef.current = audioContext;
+            // Permission is granted now — refresh the device list so real
+            // labels/ids replace the generic pre-permission entries.
+            refreshDeviceList();
 
             // Display latency
             const baseLatency = (audioContext.baseLatency || 0) * 1000;
@@ -193,17 +250,22 @@ export const MicTest: React.FC<MicTestProps> = ({ className = '', onDeviceSelect
             updateLevel();
 
         } catch (err: unknown) {
+            // The context was created before getUserMedia — don't leak it.
+            if (audioContextRef.current) {
+                audioContextRef.current.close().catch(() => { });
+                audioContextRef.current = null;
+            }
             const errName = err instanceof DOMException ? err.name : '';
             if (errName === 'NotAllowedError') {
-                setError('Microphone access was blocked. Please allow it in your browser settings, then try again.');
+                setError('Microphone access was blocked. Tap the lock or settings icon next to the address bar — on a phone, check Settings > Safari (or Chrome) > Microphone — allow it for this site, then try again.');
             } else if (errName === 'NotFoundError') {
-                setError('No microphone was found. Please check that one is connected.');
+                setError('No microphone was found. Please check that one is connected and not in use by another app.');
             } else {
-                setError('The microphone test could not start. Please try again.');
+                setError('The microphone test could not start. Close other apps using the microphone, then try again.');
             }
             console.error('Mic test error:', err);
         }
-    }, [selectedDeviceId]);
+    }, [selectedDeviceId, refreshDeviceList]);
 
     useEffect(() => {
         return () => {
@@ -279,9 +341,11 @@ export const MicTest: React.FC<MicTestProps> = ({ className = '', onDeviceSelect
                     type="button"
                     onClick={handleToggle}
                     style={{
-                        padding: '6px 12px',
+                        padding: '6px 16px',
+                        minHeight: '44px',          // mobile touch target (WCAG 2.5.8)
+                        touchAction: 'manipulation', // kill 300ms double-tap-zoom delay
                         borderRadius: '8px',
-                        fontSize: '11px',
+                        fontSize: '12px',
                         fontWeight: 600,
                         border: 'none',
                         cursor: 'pointer',
@@ -317,9 +381,9 @@ export const MicTest: React.FC<MicTestProps> = ({ className = '', onDeviceSelect
                             opacity: isTesting ? 0.5 : 1,
                         }}
                     >
-                        {availableDevices.map(device => (
-                            <option key={device.deviceId} value={device.deviceId}>
-                                {device.label || `Microphone ${availableDevices.indexOf(device) + 1}`}
+                        {availableDevices.map((device, index) => (
+                            <option key={device.deviceId || `mic-${index}`} value={device.deviceId}>
+                                {device.label || `Microphone ${index + 1}`}
                             </option>
                         ))}
                     </select>

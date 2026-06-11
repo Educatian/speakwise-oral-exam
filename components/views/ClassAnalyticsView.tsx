@@ -264,7 +264,7 @@ export const ClassAnalyticsView: React.FC<ClassAnalyticsViewProps> = ({
                         </p>
                     )}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                     {onSelectCourse && courses.length > 1 && (
                         <select
                             className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200"
@@ -302,7 +302,7 @@ export const ClassAnalyticsView: React.FC<ClassAnalyticsViewProps> = ({
             </div>
 
             {/* Top metrics */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                 <MetricCard
                     label="Submissions"
                     value={totals.count}
@@ -449,8 +449,10 @@ export const ClassAnalyticsView: React.FC<ClassAnalyticsViewProps> = ({
                     </h4>
                     <span className="text-[10px] text-slate-500">click headers to sort</span>
                 </div>
-                <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
+                {/* Horizontal scroll on narrow screens; min-width keeps the 8
+                    columns readable instead of squashing them. */}
+                <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+                    <table className="w-full min-w-[640px] text-sm">
                         <thead className="bg-slate-950/40 text-xs text-slate-400 uppercase tracking-widest">
                             <tr>
                                 <TableHeader label="Student" active={sortKey === 'name'} dir={sortDir} onClick={() => toggleSort('name')} />

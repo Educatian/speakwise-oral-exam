@@ -149,7 +149,9 @@ export const StudentLoginView: React.FC<StudentLoginViewProps> = ({
     };
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-[70vh] animate-fade-in">
+        // 70dvh (not vh): tracks the mobile visual viewport as the URL bar
+        // collapses/expands; harmlessly degrades to content height elsewhere.
+        <div className="flex flex-col items-center justify-center min-h-[70dvh] animate-fade-in">
             <form
                 onSubmit={handleSubmit}
                 className="glass-panel p-8 rounded-3xl w-full max-w-md space-y-6"
@@ -239,6 +241,8 @@ export const StudentLoginView: React.FC<StudentLoginViewProps> = ({
                         size="lg"
                         loading={isLoading}
                         className="w-full"
+                        // ≥44px touch target + no 300ms double-tap-zoom delay on phones
+                        style={{ minHeight: 44, touchAction: 'manipulation' }}
                     >
                         {isSimplifiedMode ? 'Start Interview' : 'Enter Classroom'}
                     </Button>

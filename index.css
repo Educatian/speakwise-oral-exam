@@ -1636,3 +1636,102 @@ button:focus-visible,
 @media (prefers-reduced-motion: reduce) {
   .sw-loader__ring, .sw-loader__logo { animation: none; }
 }
+
+/* === Mobile: concept map / modal === */
+/* Appended section (owned by the concept-map mobile pass). Everything below
+   is additive: fullscreen overlay for ArgumentMapView, touch gesture opt-out
+   on the map SVG only, and a <640px full-bleed treatment for the
+   SubmissionDetailModal. Desktop appearance is unchanged. */
+
+/* The map SVG owns its gestures (pointer-event pan / pinch-zoom). Disable
+   native scroll/zoom hijacking ON THE SVG ONLY — the page around it still
+   scrolls normally. */
+.arg-map-svg {
+  touch-action: none;
+}
+
+/* Fullscreen concept-map overlay (the "Expand" toggle in ArgumentMapView).
+   z-index sits between --z-modal (200) and --z-popover (300) so it covers the
+   SubmissionDetailModal it lives inside. dvh with svh/vh fallbacks. */
+.arg-map-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 260;
+  height: 100vh;
+  height: 100svh;
+  height: 100dvh;
+  margin: 0 !important; /* neutralize parent space-y-* margins */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: #020617;
+  padding: max(0.75rem, env(safe-area-inset-top))
+           max(0.75rem, env(safe-area-inset-right))
+           max(0.75rem, env(safe-area-inset-bottom))
+           max(0.75rem, env(safe-area-inset-left));
+}
+
+/* Reserve room at the top for the fixed action cluster (exit / hide controls):
+   the cluster itself is fixed (out of flow), so push the first in-flow
+   sibling down instead. */
+.arg-map-fullscreen > .arg-map-fs-actions + * {
+  /* !important: must beat the Tailwind CDN space-y-4 sibling rule (0-3-0). */
+  margin-top: 3.25rem !important;
+}
+
+/* Fixed action cluster: always-visible exit + controls toggle. */
+.arg-map-fs-actions {
+  position: fixed;
+  top: max(0.75rem, env(safe-area-inset-top));
+  right: max(0.75rem, env(safe-area-inset-right));
+  z-index: 261;
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* Give the canvas most of the viewport while fullscreen. The pointer math in
+   ArgumentMapView is letterbox-aware, so a non-natural aspect box is safe. */
+.arg-map-fullscreen .arg-map-svg {
+  width: 100%;
+  height: calc(100vh - 16rem);
+  height: calc(100svh - 16rem);
+  height: calc(100dvh - 16rem);
+  min-height: 320px;
+}
+
+/* With the chrome collapsed ("Hide controls") the map is nearly edge-to-edge. */
+.arg-map-fullscreen.arg-map-chromeless .arg-map-svg {
+  height: calc(100vh - 5.5rem);
+  height: calc(100svh - 5.5rem);
+  height: calc(100dvh - 5.5rem);
+}
+
+/* Small screens: SubmissionDetailModal (and any Modal) goes full-bleed.
+   These rules intentionally come after the earlier 639px block so they win. */
+@media (max-width: 639px) {
+  .modal-overlay {
+    padding: 0;
+    align-items: stretch;
+    justify-content: stretch;
+  }
+
+  .modal-content {
+    width: 100%;
+    max-width: 100% !important;
+    height: 100vh;
+    height: 100svh;
+    height: 100dvh;
+    max-height: 100vh !important;
+    max-height: 100svh !important;
+    max-height: 100dvh !important;
+    margin: 0;
+    border-radius: 0;
+    /* Keep the header (with the close button) pinned: the inner flex body
+       scrolls, not the whole panel. Overrides the earlier overflow-y: auto. */
+    overflow: hidden;
+  }
+
+  /* Tighter chrome so content gets the width; header close button stays put. */
+  .modal-content > .p-6 {
+    padding: 1rem;
+  }
+}

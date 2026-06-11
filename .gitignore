@@ -33,6 +33,7 @@ videos/_raw_*/
 docs/guidebooks/videos/_raw_*/
 docs/guidebooks/videos/*-tutorial.webm
 /_frames/
+/_mobile/
 /.wrangler/
 /.next/
 playwright/smoke-landing.png

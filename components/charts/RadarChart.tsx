@@ -1,4 +1,5 @@
 import React from 'react';
+import { useContainerWidth } from './useContainerWidth';
 
 export interface RadarSeries {
     label: string;
@@ -37,10 +38,23 @@ export const RadarChart: React.FC<RadarChartProps> = ({
     max = 100,
     size = 280,
 }) => {
+    const [containerRef, containerWidth] = useContainerWidth<HTMLDivElement>();
     const cx = size / 2;
     const cy = size / 2;
     const radius = (size / 2) * 0.72; // leave room for axis labels
     const n = axes.length;
+
+    // The SVG renders at min(container width, 320px) thanks to `w-full max-w-xs`.
+    // When that rendered width drops below the viewBox size, the 10px axis
+    // labels would scale below 10px effective — compensate by growing the
+    // viewBox-space font size so labels stay ~10px on screen. When the
+    // container is wide (rendered >= viewBox size) this is exactly 10, i.e.
+    // desktop rendering is unchanged.
+    const MAX_RENDERED_WIDTH = 320; // Tailwind max-w-xs, matches the className below
+    const renderedWidth =
+        containerWidth == null ? size : Math.min(containerWidth, MAX_RENDERED_WIDTH);
+    const labelFontSize =
+        renderedWidth > 0 && renderedWidth < size ? (10 * size) / renderedWidth : 10;
     if (n < 3) {
         return <div className="text-xs text-slate-500">RadarChart needs at least 3 axes.</div>;
     }
@@ -75,10 +89,11 @@ export const RadarChart: React.FC<RadarChartProps> = ({
     };
 
     return (
-        <div className="w-full flex flex-col items-center gap-3">
+        <div ref={containerRef} className="w-full flex flex-col items-center gap-3">
             <svg
                 viewBox={`0 0 ${size} ${size}`}
                 className="w-full max-w-xs"
+                style={{ overflow: 'visible' }}
                 role="img"
                 aria-label={`Radar chart with ${n} axes. ${ariaSummary}`}
             >
@@ -130,7 +145,7 @@ export const RadarChart: React.FC<RadarChartProps> = ({
                             key={i}
                             x={p.x + dx}
                             y={p.y + dy}
-                            fontSize={10}
+                            fontSize={labelFontSize}
                             fontWeight={600}
                             fill="#94a3b8"
                             textAnchor={textAnchor}

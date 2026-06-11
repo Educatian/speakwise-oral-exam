@@ -1,4 +1,5 @@
 import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
     forceCenter,
     forceCollide,
@@ -358,6 +359,38 @@ function buildForceLayout(
     return result;
 }
 
+// Fit-to-view: compute a viewport that frames every laid-out node inside the
+// SVG viewBox. Used on narrow containers (<480px) where the default 0.92
+// zoom clips the outer radial ring. Margins approximate the widest node box.
+function fitViewport(positions: Record<string, Position>): ViewportState {
+    const points = Object.values(positions);
+    if (points.length === 0) return DEFAULT_VIEWPORT;
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    points.forEach((p) => {
+        minX = Math.min(minX, p.x);
+        maxX = Math.max(maxX, p.x);
+        minY = Math.min(minY, p.y);
+        maxY = Math.max(maxY, p.y);
+    });
+    minX -= 130;
+    maxX += 130;
+    minY -= 48;
+    maxY += 48;
+    const scale = clamp(
+        Math.min(VIEW_WIDTH / Math.max(1, maxX - minX), VIEW_HEIGHT / Math.max(1, maxY - minY)) * 0.96,
+        0.45,
+        DEFAULT_VIEWPORT.scale
+    );
+    return {
+        scale,
+        x: VIEW_WIDTH / 2 - ((minX + maxX) / 2) * scale,
+        y: VIEW_HEIGHT / 2 - ((minY + maxY) / 2) * scale
+    };
+}
+
 export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
     graph: rawGraph,
     transcript = [],
@@ -396,11 +429,25 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
     const [collapsedClusterIds, setCollapsedClusterIds] = useState<string[]>([]);
     const [isPlaying, setIsPlaying] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
+    // Mobile/fullscreen state: the Expand toggle promotes the whole map block
+    // to a fixed overlay (see .arg-map-fullscreen in index.css); hideControls
+    // collapses the filter chrome so the canvas gets the screen on phones.
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    const [hideControls, setHideControls] = useState(false);
+    const [canvasEl, setCanvasEl] = useState<HTMLDivElement | null>(null);
+    const [containerWidth, setContainerWidth] = useState(0);
     const dragRef = useRef<
         | { type: 'pan'; x: number; y: number; viewport: ViewportState }
         | { type: 'node'; nodeId: string; pointer: Position; origin: Position; moved: boolean }
         | null
     >(null);
+    // Active pointers on the SVG (pointerId → client coords) and the pinch
+    // gesture baseline. Two simultaneous pointers = pinch-zoom.
+    const pointersRef = useRef<Map<number, Position>>(new Map());
+    const pinchRef = useRef<{ dist: number; scale: number; world: Position } | null>(null);
+    // Set once the user (or a persisted layout) has deliberately positioned the
+    // viewport — the narrow-container auto-fit must not fight them.
+    const viewportTouchedRef = useRef(false);
 
     const radialPositions = useMemo(() => buildRadialLayout(graph.nodes, graph.edges), [graph.edges, graph.nodes]);
     const deferredSearchQuery = useDeferredValue(searchQuery);
@@ -484,6 +531,7 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
             }
 
             if (parsed.viewport) {
+                viewportTouchedRef.current = true;
                 setViewport({
                     x: Number.isFinite(parsed.viewport.x) ? parsed.viewport.x : DEFAULT_VIEWPORT.x,
                     y: Number.isFinite(parsed.viewport.y) ? parsed.viewport.y : DEFAULT_VIEWPORT.y,
@@ -532,6 +580,49 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
             collapsedClusterIds
         }));
     }, [collapsedClusterIds, layoutMode, persistedLayoutKey, positions, viewport]);
+
+    // Track the rendered width of the map canvas so small containers can get
+    // smaller labels and a fitted initial viewport (task: <480px readability).
+    useEffect(() => {
+        if (!canvasEl || typeof ResizeObserver === 'undefined') return;
+        const observer = new ResizeObserver((entries) => {
+            const width = entries[0]?.contentRect.width ?? canvasEl.clientWidth;
+            setContainerWidth(width);
+        });
+        observer.observe(canvasEl);
+        return () => observer.disconnect();
+    }, [canvasEl]);
+
+    const isNarrow = containerWidth > 0 && containerWidth < 480;
+
+    // On narrow containers, zoom out to a fit-to-view framing once — unless the
+    // user (or a persisted layout) already adjusted the viewport.
+    const positionsRef = useRef(positions);
+    positionsRef.current = positions;
+    useEffect(() => {
+        if (!isNarrow || viewportTouchedRef.current) return;
+        setViewport(fitViewport(positionsRef.current));
+    }, [isNarrow]);
+
+    // Fullscreen mode: lock body scroll while the overlay is up and let Escape
+    // exit the map without also closing a parent modal (capture + stop).
+    useEffect(() => {
+        if (!isFullscreen) return;
+        const previousOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        const handleEscape = (event: KeyboardEvent) => {
+            if (event.key !== 'Escape') return;
+            event.preventDefault();
+            event.stopPropagation();
+            setIsFullscreen(false);
+            setHideControls(false);
+        };
+        window.addEventListener('keydown', handleEscape, true);
+        return () => {
+            window.removeEventListener('keydown', handleEscape, true);
+            document.body.style.overflow = previousOverflow;
+        };
+    }, [isFullscreen]);
 
     const mentionMap = useMemo(() => {
         const result = new Map<string, number[]>();
@@ -726,25 +817,64 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
         return () => window.clearInterval(timer);
     }, [activeTurnIndex, isPlaying, onActiveTurnIndexChange, transcript.length]);
 
-    const clientToWorld = (clientX: number, clientY: number): Position | null => {
-        const rect = svgRef.current?.getBoundingClientRect();
-        if (!rect) return null;
-        const svgX = ((clientX - rect.left) / rect.width) * VIEW_WIDTH;
-        const svgY = ((clientY - rect.top) / rect.height) * VIEW_HEIGHT;
-        return { x: (svgX - viewport.x) / viewport.scale, y: (svgY - viewport.y) / viewport.scale };
-    };
-
+    // Map client coords → SVG viewBox coords. The viewBox is rendered with the
+    // default preserveAspectRatio ("xMidYMid meet"), so when CSS gives the SVG
+    // a box with a different aspect ratio (e.g. fullscreen mode) the drawing is
+    // uniformly scaled and letterboxed — account for that here so pointer math
+    // stays exact in every mode.
     const clientToSvg = (clientX: number, clientY: number): Position | null => {
         const rect = svgRef.current?.getBoundingClientRect();
-        if (!rect) return null;
-        return { x: ((clientX - rect.left) / rect.width) * VIEW_WIDTH, y: ((clientY - rect.top) / rect.height) * VIEW_HEIGHT };
+        if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+        const k = Math.min(rect.width / VIEW_WIDTH, rect.height / VIEW_HEIGHT);
+        if (k <= 0) return null;
+        const offsetX = (rect.width - VIEW_WIDTH * k) / 2;
+        const offsetY = (rect.height - VIEW_HEIGHT * k) / 2;
+        return { x: (clientX - rect.left - offsetX) / k, y: (clientY - rect.top - offsetY) / k };
+    };
+
+    const clientToWorld = (clientX: number, clientY: number): Position | null => {
+        const svgPoint = clientToSvg(clientX, clientY);
+        if (!svgPoint) return null;
+        return { x: (svgPoint.x - viewport.x) / viewport.scale, y: (svgPoint.y - viewport.y) / viewport.scale };
+    };
+
+    // Snapshot the active pointers (Map iteration via forEach: this tsconfig's
+    // lib types Array.from(iterator) as unknown[]).
+    const getActivePointers = (): Position[] => {
+        const points: Position[] = [];
+        pointersRef.current.forEach((point) => points.push(point));
+        return points;
     };
 
     useEffect(() => {
         const handleMove = (event: PointerEvent) => {
+            if (pointersRef.current.has(event.pointerId)) {
+                pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+            }
+
+            // Pinch-zoom: two active pointers scale around their midpoint,
+            // keeping the world point that started under the fingers anchored.
+            const pinch = pinchRef.current;
+            if (pinch && pointersRef.current.size >= 2) {
+                const [a, b] = getActivePointers();
+                const dist = Math.hypot(b.x - a.x, b.y - a.y);
+                if (dist <= 0 || pinch.dist <= 0) return;
+                const midSvg = clientToSvg((a.x + b.x) / 2, (a.y + b.y) / 2);
+                if (!midSvg) return;
+                const nextScale = clamp(pinch.scale * (dist / pinch.dist), 0.45, 2.8);
+                viewportTouchedRef.current = true;
+                setViewport({
+                    scale: nextScale,
+                    x: midSvg.x - pinch.world.x * nextScale,
+                    y: midSvg.y - pinch.world.y * nextScale
+                });
+                return;
+            }
+
             const drag = dragRef.current;
             if (!drag) return;
             if (drag.type === 'pan') {
+                viewportTouchedRef.current = true;
                 setViewport({ ...drag.viewport, x: drag.viewport.x + (event.clientX - drag.x), y: drag.viewport.y + (event.clientY - drag.y) });
                 return;
             }
@@ -755,12 +885,18 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
             if (Math.abs(dx) > 1 || Math.abs(dy) > 1) drag.moved = true;
             setPositions((current) => ({ ...current, [drag.nodeId]: { x: clamp(drag.origin.x + dx, 40, VIEW_WIDTH - 40), y: clamp(drag.origin.y + dy, 40, VIEW_HEIGHT - 40) } }));
         };
-        const handleUp = () => { dragRef.current = null; };
+        const handleUp = (event: PointerEvent) => {
+            pointersRef.current.delete(event.pointerId);
+            if (pointersRef.current.size < 2) pinchRef.current = null;
+            dragRef.current = null;
+        };
         window.addEventListener('pointermove', handleMove);
         window.addEventListener('pointerup', handleUp);
+        window.addEventListener('pointercancel', handleUp);
         return () => {
             window.removeEventListener('pointermove', handleMove);
             window.removeEventListener('pointerup', handleUp);
+            window.removeEventListener('pointercancel', handleUp);
         };
     }, [viewport]);
 
@@ -798,8 +934,37 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
         );
     };
 
-    return (
-        <div className="space-y-4">
+    // In fullscreen the filter/legend chrome can be collapsed so the canvas
+    // gets the whole screen (important on phones); the fixed action cluster
+    // always keeps "Show controls" and the exit button reachable.
+    const chromeVisible = !isFullscreen || !hideControls;
+    const exitFullscreen = () => {
+        setIsFullscreen(false);
+        setHideControls(false);
+    };
+
+    const content = (
+        <div className={`space-y-4${isFullscreen ? ` arg-map-fullscreen${hideControls ? ' arg-map-chromeless' : ''}` : ''}`}>
+            {isFullscreen && (
+                <div className="arg-map-fs-actions">
+                    <button
+                        type="button"
+                        onClick={() => setHideControls((current) => !current)}
+                        className="px-3 py-2 rounded-xl text-xs border border-slate-700 bg-slate-900/90 text-slate-300"
+                    >
+                        {hideControls ? 'Show controls' : 'Hide controls'}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={exitFullscreen}
+                        aria-label="Exit full screen"
+                        className="px-3 py-2 rounded-xl text-xs border border-cyan-500/30 bg-cyan-500/10 text-cyan-300"
+                    >
+                        ✕ Exit full screen
+                    </button>
+                </div>
+            )}
+            {chromeVisible && (<>
             <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
                 <div>
                     <h4 className="text-slate-300 font-semibold">Interactive concept map</h4>
@@ -818,13 +983,21 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
                     <button type="button" onClick={() => { setLayoutMode('force'); setPositions((current) => buildForceLayout(graph.nodes, graph.edges, current)); }} className={`px-3 py-2 rounded-xl text-xs border ${layoutMode === 'force' ? 'border-indigo-500/30 bg-indigo-500/10 text-indigo-300' : 'border-slate-700 bg-slate-900/60 text-slate-400'}`}>Force</button>
                     <button
                         type="button"
+                        onClick={() => { if (isFullscreen) { exitFullscreen(); } else { setIsFullscreen(true); } }}
+                        className={`px-3 py-2 rounded-xl text-xs border ${isFullscreen ? 'border-cyan-500/30 bg-cyan-500/10 text-cyan-300' : 'border-slate-700 bg-slate-900/60 text-slate-400'}`}
+                        title={isFullscreen ? 'Exit full screen (Esc)' : 'Expand the map to full screen'}
+                    >
+                        {isFullscreen ? 'Exit full screen' : 'Expand'}
+                    </button>
+                    <button
+                        type="button"
                         onClick={() => setColorMode((m) => (m === 'concept' ? 'toulmin' : 'concept'))}
                         className={`px-3 py-2 rounded-xl text-xs border ${colorMode === 'toulmin' ? 'border-amber-500/30 bg-amber-500/10 text-amber-300' : 'border-slate-700 bg-slate-900/60 text-slate-400'}`}
                         title="Toggle between concept-type and Toulmin colouring"
                     >
                         {colorMode === 'toulmin' ? 'Color: Toulmin' : 'Color: Concept'}
                     </button>
-                    <button type="button" onClick={() => setViewport(DEFAULT_VIEWPORT)} className="px-3 py-2 rounded-xl text-xs border border-slate-700 bg-slate-900/60 text-slate-400">Reset view</button>
+                    <button type="button" onClick={() => { viewportTouchedRef.current = true; setViewport(DEFAULT_VIEWPORT); }} className="px-3 py-2 rounded-xl text-xs border border-slate-700 bg-slate-900/60 text-slate-400">Reset view</button>
                     <button type="button" onClick={() => { setSelectedRelation(null); setSelectedEdgeKey(null); setToulminFilter(null); }} className="px-3 py-2 rounded-xl text-xs border border-slate-700 bg-slate-900/60 text-slate-400">Clear filter</button>
                     <button type="button" onClick={handleExportJson} className="px-3 py-2 rounded-xl text-xs border border-slate-700 bg-slate-900/60 text-slate-400">Export JSON</button>
                     <button type="button" onClick={handleExportSvg} className="px-3 py-2 rounded-xl text-xs border border-slate-700 bg-slate-900/60 text-slate-400">Export SVG</button>
@@ -926,13 +1099,15 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
                     ))}
                 </div>
             )}
+            </>)}
 
-            <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.9fr)] gap-4">
-                <div className="relative rounded-3xl border border-slate-800 bg-slate-950 overflow-hidden">
+            <div className={`grid grid-cols-1 ${chromeVisible ? 'xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.9fr)] ' : ''}gap-4`}>
+                <div ref={setCanvasEl} className="arg-map-canvas relative rounded-3xl border border-slate-800 bg-slate-950 overflow-hidden">
                     <svg
                         ref={svgRef}
                         viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`}
-                        className="w-full h-auto block"
+                        className="arg-map-svg w-full h-auto block"
+                        style={{ touchAction: 'none' }}
                         aria-label={screenReaderSummary}
                         onWheel={(event) => {
                             event.preventDefault();
@@ -941,9 +1116,26 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
                             const nextScale = clamp(viewport.scale * (event.deltaY > 0 ? 0.92 : 1.08), 0.45, 2.8);
                             const worldX = (anchor.x - viewport.x) / viewport.scale;
                             const worldY = (anchor.y - viewport.y) / viewport.scale;
+                            viewportTouchedRef.current = true;
                             setViewport({ scale: nextScale, x: anchor.x - worldX * nextScale, y: anchor.y - worldY * nextScale });
                         }}
+                        onPointerDownCapture={(event) => {
+                            // Bookkeep every pointer (capture phase so node-drag
+                            // stopPropagation can't hide a finger from us). A
+                            // second pointer starts a pinch and cancels pan/drag.
+                            pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+                            if (pointersRef.current.size === 2) {
+                                const [a, b] = getActivePointers();
+                                const dist = Math.hypot(b.x - a.x, b.y - a.y);
+                                const world = clientToWorld((a.x + b.x) / 2, (a.y + b.y) / 2);
+                                if (dist > 0 && world) {
+                                    pinchRef.current = { dist, scale: viewport.scale, world };
+                                    dragRef.current = null;
+                                }
+                            }
+                        }}
                         onPointerDown={(event) => {
+                            if (pinchRef.current) return;
                             if ((event.target as Element).closest('[data-node="true"], [data-edge="true"]')) return;
                             dragRef.current = { type: 'pan', x: event.clientX, y: event.clientY, viewport };
                         }}
@@ -975,7 +1167,7 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
                                     <g key={edgeKey}>
                                         <path d={`M ${startX} ${startY} Q ${midX} ${midY} ${endX} ${endY}`} fill="none" stroke={isFocused ? '#f8fafc' : edgeVisual.stroke} strokeWidth={isFocused ? 2.6 : 1.5} opacity={isFocused ? 0.95 : 0.8} strokeDasharray={edgeVisual.dash} />
                                         <path data-edge="true" d={`M ${startX} ${startY} Q ${midX} ${midY} ${endX} ${endY}`} fill="none" stroke="transparent" strokeWidth="12" className="cursor-pointer" onClick={(event) => { event.stopPropagation(); setSelectedEdgeKey(edgeKey); setSelectedRelation(edge.relation); }} />
-                                        <text x={midX} y={midY - 7} fill={isFocused ? '#f8fafc' : '#94a3b8'} fontSize="9" fontWeight="600" textAnchor="middle">{RELATION_LABELS[edge.relation] || edge.relation}</text>
+                                        <text x={midX} y={midY - 7} fill={isFocused ? '#f8fafc' : '#94a3b8'} fontSize={isNarrow ? 8 : 9} fontWeight="600" textAnchor="middle">{RELATION_LABELS[edge.relation] || edge.relation}</text>
                                     </g>
                                 );
                             })}
@@ -1014,7 +1206,7 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
                                         {isMentioned && <rect x={-size.width / 2 - 4} y={-size.height / 2 - 4} width={size.width + 8} height={size.height + 8} rx={node.metadata?.level === 0 ? 20 : 16} fill="none" stroke="#22c55e" strokeWidth={2} strokeDasharray="4 4" />}
                                         {isIsolated && !isMentioned && <rect x={-size.width / 2 - 3} y={-size.height / 2 - 3} width={size.width + 6} height={size.height + 6} rx={14} fill="none" stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="3 4" opacity={0.7}><title>Unsupported: this concept has no links to the rest of the argument</title></rect>}
                                         {isCited && !isFocused && <rect x={-size.width / 2 - 5} y={-size.height / 2 - 5} width={size.width + 10} height={size.height + 10} rx={node.metadata?.level === 0 ? 20 : 16} fill="none" stroke="#fcd34d" strokeWidth={1.75} opacity={0.85}><title>Cited in the score rationale</title></rect>}
-                                        <text x="0" y="4" fill={visual.text} fontSize={node.metadata?.level === 0 ? 14 : node.metadata?.level === 1 ? 12 : 11} fontWeight={node.metadata?.level === 0 ? 800 : 700} textAnchor="middle">{node.content}</text>
+                                        <text x="0" y="4" fill={visual.text} fontSize={(node.metadata?.level === 0 ? 14 : node.metadata?.level === 1 ? 12 : 11) - (isNarrow ? 1.5 : 0)} fontWeight={node.metadata?.level === 0 ? 800 : 700} textAnchor="middle">{node.content}</text>
                                     </g>
                                 );
                             })}
@@ -1034,6 +1226,7 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
                     </div>
                 </div>
 
+                {chromeVisible && (
                 <aside className="rounded-3xl border border-slate-800 bg-slate-950/80 p-5 space-y-5">
                     <div>
                         <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600 font-bold mb-2">Focused concept</p>
@@ -1102,9 +1295,16 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
                         </div>
                     )}
                 </aside>
+                )}
             </div>
         </div>
     );
+
+    // While fullscreen, render through a portal on <body>: the SubmissionDetail
+    // modal panel uses backdrop-filter (glass-panel), which would otherwise
+    // become the containing block for our position:fixed overlay and trap the
+    // "fullscreen" map inside the modal box.
+    return isFullscreen ? createPortal(content, document.body) : content;
 };
 
 export default ArgumentMapView;

@@ -5,3 +5,4 @@ export { RadarChart } from './RadarChart';
 export type { RadarSeries } from './RadarChart';
 export { Histogram } from './Histogram';
 export { Sparkline } from './Sparkline';
+export { useContainerWidth } from './useContainerWidth';

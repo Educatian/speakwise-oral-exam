@@ -4,6 +4,37 @@ All notable changes to the SpeakWise oral-exam platform are documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project follows [Semantic Versioning](https://semver.org/).
 
+## [2.3.0] - 2026-06-11
+
+### Added
+
+- **SaaS landing page**: multi-section landing (sticky nav, hero with Higgsfield-generated
+  concept-map constellation backdrop, browser-framed product shots, how-it-works,
+  evidence/trust sections, voice band, footer) — `components/views/LandingView.tsx`,
+  assets under `public/landing/`.
+- **Concept map fullscreen mode**: Expand/Exit toggle rendering through a portal above the
+  modal, with chrome-collapse, Escape handling, body-scroll locking, and pinch-zoom /
+  one-finger pan via Pointer Events (`touch-action: none` scoped to the SVG).
+- Screen Wake Lock during active interviews; AudioContext gesture-unlock chain for iOS
+  Safari (contexts created synchronously inside the Start tap, silent-buffer playback
+  unlock, `interrupted`-state recovery on next touch).
+- `playwright/probe-mobile.mjs`: reusable mobile-viewport regression probe.
+
+### Changed
+
+- **Mobile**: submission modal full-bleed under 640px; analytics stat cards stack to one
+  column; per-student table scrolls horizontally instead of squashing; radar axis labels
+  hold ~10px effective size at narrow widths (and the long-standing "Engagement" label
+  clipping is fixed via SVG overflow); narrow concept maps auto-fit to view with slightly
+  reduced label fonts.
+- Interview/pre-interview screens use `dvh` units and ≥44px touch targets with
+  `touch-action: manipulation`; viewport meta gains `viewport-fit=cover` and
+  `interactive-widget=resizes-content`.
+- Visibility handling: backgrounding no longer risks silent session death — on return the
+  socket is health-checked and the existing reconnect path triggers; microphone
+  disconnects (device change, calls) recover via capture restart with a calm notice.
+- Mic-permission error copy now explains how to re-enable access in browser settings.
+
 ## [2.2.0] - 2026-06-11
 
 ### Added
