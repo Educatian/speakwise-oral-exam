@@ -145,8 +145,11 @@ export async function transcribeAudio(
         model: AUDIO_TRANSCRIPTION_MODEL,
         modalities: ['text'],
         // A spoken turn should resolve quickly; cap it so a stalled upstream
-        // surfaces as a retryable error instead of an indefinite hang.
-        timeoutMs: 20000,
+        // surfaces as a retryable error instead of an indefinite hang. 10s is
+        // tight on purpose: the retry loop in TranscriptionService gets up to
+        // three attempts, and a student staring at "transcribing" for 20s+
+        // reads as a frozen exam.
+        timeoutMs: 10000,
         messages: [
             {
                 role: 'user',

@@ -55,6 +55,16 @@ export const RadarChart: React.FC<RadarChartProps> = ({
 
     const gridRings = [0.33, 0.66, 1];
 
+    // Screen-reader summary carrying the actual numbers, since the polygon
+    // itself is purely visual.
+    const ariaSummary = series
+        .map((s) =>
+            `${s.label}: ${axes
+                .map((axis, i) => `${axis} ${Math.round((s.values[i] ?? 0) * 10) / 10} of ${max}`)
+                .join(', ')}`
+        )
+        .join('. ');
+
     const polygonFor = (s: RadarSeries) => {
         const pts = angles.map((a, i) => {
             const v = Math.min(max, Math.max(0, s.values[i] ?? 0));
@@ -70,7 +80,7 @@ export const RadarChart: React.FC<RadarChartProps> = ({
                 viewBox={`0 0 ${size} ${size}`}
                 className="w-full max-w-xs"
                 role="img"
-                aria-label={`Radar chart with ${n} axes: ${axes.join(', ')}`}
+                aria-label={`Radar chart with ${n} axes. ${ariaSummary}`}
             >
                 {/* grid rings */}
                 {gridRings.map((f) => (

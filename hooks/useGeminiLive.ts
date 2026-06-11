@@ -393,7 +393,10 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                 if (!text) {
                     // Tell the student why nothing happened, then let them retry.
                     if (outcome === 'failed') {
-                        setRecognitionNotice("I didn't catch that clearly. Please repeat your answer.");
+                        // Calm, non-alarming: the turn is recorded as a dropped
+                        // response (failedTranscriptions) so the evaluation can
+                        // note it; the student just needs to keep going.
+                        setRecognitionNotice("We didn't quite catch that. Your next answer will still be recorded.");
                     } else if (outcome === 'too_short') {
                         setRecognitionNotice('That was very brief — please say a bit more.');
                     } else if (outcome === 'empty') {
@@ -461,10 +464,28 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                 }, 1500);
             })
             .catch((transcriptionError) => {
+                // Unexpected throw (the typed failure path returns normally) —
+                // still record the dropped turn for evaluation provenance and
+                // keep the student moving with a calm notice.
                 console.error('[TurnBased] Transcription failed:', transcriptionError);
+                const droppedTurn: RawTranscriptTurn = {
+                    id: capturedTurn.id,
+                    speaker: 'user',
+                    timestamp: capturedTurn.createdAt,
+                    durationMs: capturedTurn.durationMs,
+                    sampleCount: capturedTurn.sampleCount,
+                    audioBase64: capturedTurn.wavBase64,
+                    status: 'failed',
+                    error: transcriptionError instanceof Error
+                        ? transcriptionError.message
+                        : 'Transcription pipeline error.'
+                };
+                patchRawTurn(capturedTurn.id, droppedTurn);
+                queueFailedTurn(droppedTurn);
+                setRecognitionNotice("We didn't quite catch that. Your next answer will still be recorded.");
                 startRecordingPhase();
             });
-    }, [appendTranscription, processCapturedTurn, startRecordingPhase, updateLatencyMetrics]);
+    }, [appendTranscription, patchRawTurn, processCapturedTurn, queueFailedTurn, startRecordingPhase, updateLatencyMetrics]);
 
     // Initialize the microphone + audio pipeline. Extracted so the reconnect
     // path can reuse the already-running mic instead of re-prompting the user.
@@ -508,7 +529,9 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                 transcriptionServiceRef.current.addChunk(bytes.buffer);
             },
             onCalibration: (noiseFloor, threshold) => {
-                console.log(`[Audio] Calibrated - Noise: ${noiseFloor.toFixed(4)}, Threshold: ${threshold.toFixed(4)}`);
+                if (import.meta.env.DEV) {
+                    console.log(`[Audio] Calibrated - Noise: ${noiseFloor.toFixed(4)}, Threshold: ${threshold.toFixed(4)}`);
+                }
             }
         });
     }, [noteBargeInIfNeeded, stopRecording, silenceThresholdMs]);

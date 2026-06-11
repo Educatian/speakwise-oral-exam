@@ -37,8 +37,11 @@ export const StudentHistoryView: React.FC<StudentHistoryViewProps> = ({
                     {submissions.length === 0 ? (
                         <div className="text-center py-20 text-slate-600 space-y-4">
                             <img src="/empty/submissions.png" alt="" aria-hidden="true" className="w-32 h-32 mx-auto object-contain opacity-90" />
-                            <p>No completed interviews yet.</p>
-                            <p className="text-sm">Complete an interview to see your results here.</p>
+                            <p className="text-slate-400 font-medium">You haven't completed an interview yet — your record starts with your first one.</p>
+                            <p className="text-sm max-w-sm mx-auto">
+                                Pick a course from your course list and complete the oral exam.
+                                Your score, feedback, and concept map will be saved here so you can track your progress over time.
+                            </p>
                         </div>
                     ) : (
                         <ul className="space-y-4" role="list" aria-label="Interview history">

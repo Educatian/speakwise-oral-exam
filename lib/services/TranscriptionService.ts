@@ -31,10 +31,27 @@ export interface CapturedAudioTurn {
     createdAt: number;
 }
 
+/**
+ * Outcome of a transcription attempt.
+ * - `text` set, no `error`  → transcribed (empty string = no speech detected).
+ * - `text` null + `error`   → typed failure: every attempt (initial + retries)
+ *   failed. Callers MUST check `error` and surface the dropped turn rather
+ *   than silently discarding it.
+ */
 export interface TranscriptionAttemptResult {
     text: string | null;
     error?: string;
+    /** How many attempts were made before giving up (1..MAX). */
+    attempts?: number;
 }
+
+// Retry policy for the OpenRouter transcription call. Each attempt is bounded
+// by the 10s AbortController timeout inside aiClient.transcribeAudio, so the
+// worst case is ~10s + 1.5s + 10s + 3s + 10s ≈ 34.5s before a typed failure.
+const MAX_TRANSCRIPTION_ATTEMPTS = 3; // 1 initial + 2 retries
+const RETRY_BACKOFF_MS = [1500, 3000];
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /** Wraps raw PCM Int16 data in a WAV container. */
 function pcmToWav(pcmChunks: Int16Array[]): string {
@@ -160,26 +177,38 @@ export class TranscriptionService {
             return { text: null, error: 'No captured audio turn was available.' };
         }
         const durationSec = turn.durationMs / 1000;
-        console.log(`[Transcription] Sending ${durationSec.toFixed(1)}s via OpenRouter → gpt-4o-audio`);
+        if (import.meta.env.DEV) {
+            console.log(`[Transcription] Sending ${durationSec.toFixed(1)}s via OpenRouter → gpt-4o-audio`);
+        }
 
-        try {
-            const text = await transcribeAudio(turn.wavBase64, 'wav');
-            console.log(`[Transcription] Result: "${(text || '').substring(0, 60)}..."`);
-            return { text: text || null };
-        } catch (firstErr) {
-            // Transient upstream failures (timeout, 5xx, dropped fetch) are
-            // common enough that one immediate retry recovers most of them
-            // before the student notices.
-            console.warn('[Transcription] First attempt failed, retrying once:', firstErr);
+        // Transient upstream failures (timeout, 5xx, dropped fetch) are common
+        // enough that a couple of backed-off retries recover most of them
+        // before the student notices. Each attempt is hard-capped at 10s by
+        // the AbortController inside aiClient, so this loop cannot strand the
+        // turn in "transcribing" indefinitely.
+        let lastError: unknown;
+        for (let attempt = 1; attempt <= MAX_TRANSCRIPTION_ATTEMPTS; attempt++) {
             try {
                 const text = await transcribeAudio(turn.wavBase64, 'wav');
-                console.log(`[Transcription] Retry result: "${(text || '').substring(0, 60)}..."`);
-                return { text: text || null };
-            } catch (retryErr) {
-                console.error('[Transcription] Retry failed:', retryErr);
-                const error = retryErr instanceof Error ? retryErr.message : 'Transcription request failed.';
-                return { text: null, error };
+                if (import.meta.env.DEV) {
+                    console.log(`[Transcription] Attempt ${attempt} result: "${(text || '').substring(0, 60)}..."`);
+                }
+                return { text: text || null, attempts: attempt };
+            } catch (err) {
+                lastError = err;
+                if (attempt < MAX_TRANSCRIPTION_ATTEMPTS) {
+                    const backoff = RETRY_BACKOFF_MS[attempt - 1] ?? RETRY_BACKOFF_MS[RETRY_BACKOFF_MS.length - 1];
+                    console.warn(`[Transcription] Attempt ${attempt} failed, retrying in ${backoff}ms:`, err);
+                    await sleep(backoff);
+                }
             }
         }
+
+        // Typed failure: do NOT silently drop the turn. The caller records it
+        // as a failed turn (provenance for the evaluation) and tells the
+        // student calmly.
+        console.error('[Transcription] All attempts failed:', lastError);
+        const error = lastError instanceof Error ? lastError.message : 'Transcription request failed.';
+        return { text: null, error, attempts: MAX_TRANSCRIPTION_ATTEMPTS };
     }
 }

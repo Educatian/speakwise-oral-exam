@@ -1,10 +1,27 @@
 import React, { Suspense, lazy, useState, useEffect, useCallback } from 'react';
-import { AppView, Course, InstructorReview, Submission, ADMIN_EMAIL } from './types';
+import { AppView, Course, InstructorReview, Submission } from './types';
 import { useCourseStorage, useStudentHistory, useAuth, useInstitutions } from './hooks';
 import { isSupabaseConfigured } from './lib/supabase';
 import { AppRouter } from './components/AppRouter';
-import { ToastProvider } from './contexts/ToastContext';
+import { ToastProvider, useToastContext } from './contexts/ToastContext';
 import { findCourseForSubmission, getPeerSubmissions } from './lib/utils/peerSubmissions';
+
+/**
+ * Surfaces course-storage failures (e.g. a Supabase write rejected) as a calm
+ * toast instead of letting them die in the console. Lives INSIDE ToastProvider
+ * so it can use the context; clears the error after notifying so an identical
+ * follow-up failure re-notifies.
+ */
+const StorageErrorNotifier: React.FC<{ error: string | null; onClear: () => void }> = ({ error, onClear }) => {
+  const toast = useToastContext();
+  useEffect(() => {
+    if (error) {
+      toast.error(error);
+      onClear();
+    }
+  }, [error, onClear, toast]);
+  return null;
+};
 
 const SubmissionDetailModal = lazy(() =>
   import('./components/modals').then((module) => ({ default: module.SubmissionDetailModal }))
@@ -38,6 +55,8 @@ const App: React.FC = () => {
   const {
     courses,
     loading: coursesLoading,
+    error: storageError,
+    clearError: clearStorageError,
     addCourse,
     updateCourse,
     deleteCourse,
@@ -66,20 +85,26 @@ const App: React.FC = () => {
   };
 
   const handleInterviewComplete = async (submission: Submission) => {
-    console.log('[App] handleInterviewComplete called:', {
-      hasTranscript: submission.transcript?.length,
-      studentName: submission.studentName,
-      courseName: submission.courseName,
-      score: submission.score,
-      hasFeedback: !!submission.feedback,
-      hasArgumentGraph: !!submission.argumentGraph
-    });
+    if (import.meta.env.DEV) {
+      console.log('[App] handleInterviewComplete called:', {
+        hasTranscript: submission.transcript?.length,
+        studentName: submission.studentName,
+        courseName: submission.courseName,
+        score: submission.score,
+        hasFeedback: !!submission.feedback,
+        hasArgumentGraph: !!submission.argumentGraph
+      });
+    }
 
-    // Save to course submissions
+    // Save to course submissions. A failed server write surfaces via the
+    // storage-error toast (useCourseStorage sets `error`); the student still
+    // proceeds to their results with the in-session copy.
     if (activeCourse) {
       try {
         await addSubmission(activeCourse.id, submission);
-        console.log('[App] Submission saved to course:', activeCourse.id);
+        if (import.meta.env.DEV) {
+          console.log('[App] Submission saved to course:', activeCourse.id);
+        }
       } catch (e) {
         console.error('[App] Failed to save submission to course:', e);
       }
@@ -90,7 +115,9 @@ const App: React.FC = () => {
     // Save to student history
     try {
       await addToHistory(submission);
-      console.log('[App] Submission saved to student history');
+      if (import.meta.env.DEV) {
+        console.log('[App] Submission saved to student history');
+      }
     } catch (e) {
       console.error('[App] Failed to save to history:', e);
     }
@@ -155,6 +182,9 @@ const App: React.FC = () => {
       email: resolvedUser.email.toLowerCase(),
       displayName: resolvedUser.displayName,
       role: resolvedUser.role,
+      // Raw user_profiles.role (e.g. 'admin'/'moderator') — the DB-backed
+      // authority that admin gating reads (see lib/utils/adminAccess.ts).
+      profileRole: resolvedUser.profileRole,
       schoolId: resolvedUser.schoolId,
       schoolName: resolvedUser.schoolName
     }));
@@ -273,6 +303,7 @@ const App: React.FC = () => {
 
   return (
     <ToastProvider>
+    <StorageErrorNotifier error={storageError} onClear={clearStorageError} />
     <div className="min-h-screen bg-slate-950 p-4 md:p-6 lg:p-12 flex flex-col items-center">
       {/* Skip Link for Accessibility */}
       <a href="#main-content" className="skip-link">

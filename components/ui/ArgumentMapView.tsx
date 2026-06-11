@@ -437,6 +437,18 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
         [graph.nodes]
     );
 
+    // Plain-text digest of the visual graph for screen readers: counts plus the
+    // hub concepts (highest degree), since the SVG itself is not readable.
+    const screenReaderSummary = useMemo(() => {
+        const top = [...graph.nodes]
+            .sort((a, b) => (degreeById[b.id] || 0) - (degreeById[a.id] || 0))
+            .slice(0, 5)
+            .map((n) => n.content)
+            .join(', ');
+        return `Concept map with ${graph.nodes.length} concept${graph.nodes.length === 1 ? '' : 's'} and ${graph.edges.length} link${graph.edges.length === 1 ? '' : 's'}.` +
+            (top ? ` Most connected concepts: ${top}.` : '');
+    }, [degreeById, graph.edges.length, graph.nodes]);
+
     // Concepts whose label appears in a rubric-evidence quote — these are what
     // the scorer actually cited, so we highlight them to connect map → grade.
     const citedNodeIds = useMemo(() => {
@@ -792,6 +804,7 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
                 <div>
                     <h4 className="text-slate-300 font-semibold">Interactive concept map</h4>
                     <p className="text-xs text-slate-500 mt-1">Pan, zoom, drag nodes, focus concepts, filter edges, and replay the interview.</p>
+                    <p className="sr-only">{screenReaderSummary}</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                     <input
@@ -920,6 +933,7 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
                         ref={svgRef}
                         viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`}
                         className="w-full h-auto block"
+                        aria-label={screenReaderSummary}
                         onWheel={(event) => {
                             event.preventDefault();
                             const anchor = clientToSvg(event.clientX, event.clientY);
@@ -1012,7 +1026,7 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
                             <span className="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-bold">Minimap</span>
                             <span className="text-[10px] text-slate-600">{Math.round(viewport.scale * 100)}%</span>
                         </div>
-                        <svg viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`} className="w-full h-auto rounded-lg bg-slate-900/80">
+                        <svg viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`} className="w-full h-auto rounded-lg bg-slate-900/80" aria-hidden="true">
                             {graph.edges.map((edge) => <line key={`${edge.from}-${edge.to}-${edge.relation}`} x1={positions[edge.from]?.x || 0} y1={positions[edge.from]?.y || 0} x2={positions[edge.to]?.x || 0} y2={positions[edge.to]?.y || 0} stroke="#334155" strokeWidth="1" opacity="0.5" />)}
                             {graph.nodes.map((node) => <circle key={node.id} cx={positions[node.id]?.x || 0} cy={positions[node.id]?.y || 0} r={node.metadata?.level === 0 ? 10 : node.metadata?.level === 1 ? 7 : 5} fill={focusedNodeId === node.id ? '#f8fafc' : (colorMode === 'toulmin' ? getToulminVisual(node).stroke : getNodeVisual(node).stroke)} opacity={visibleNodeIds.has(node.id) ? 0.95 : 0.24} />)}
                             <rect x={minimapViewport.x} y={minimapViewport.y} width={minimapViewport.width} height={minimapViewport.height} fill="none" stroke="#22d3ee" strokeWidth="8" opacity="0.75" />

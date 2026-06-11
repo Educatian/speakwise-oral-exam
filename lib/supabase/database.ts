@@ -114,6 +114,47 @@ function createClientId(prefix: string): string {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Degraded-mode tracking ("not configured" vs "configured but failing")
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// localStorage-only mode (Supabase NOT configured) is a fully supported,
+// intentional deployment. But when Supabase IS configured and a call fails,
+// silently serving/saving local data instead is split-brain: the instructor
+// and the student each see a different truth. Policy:
+//   - WRITES: never fall back silently — propagate the error so the UI can
+//     surface it (see addCourse / deleteCourse / addSubmissionToCourse /
+//     updateSubmissionReview / deleteSubmission / annotation & template
+//     writes).
+//   - READS: may serve a local fallback so the UI stays usable, but must
+//     warn (once per call site per session) and flip the degraded flag.
+
+let supabaseDegraded = false;
+const degradedWarnings = new Set<string>();
+
+/** True if any Supabase read failed this session and local fallback data was served. */
+export function isSupabaseDegraded(): boolean {
+    return supabaseDegraded;
+}
+
+function noteDegradedRead(context: string, error: unknown): void {
+    supabaseDegraded = true;
+    if (degradedWarnings.has(context)) return;
+    degradedWarnings.add(context);
+    console.warn(
+        `[Supabase] ${context} failed — serving local fallback data, which may be stale or empty. ` +
+        'Further failures of this call are not re-logged this session.',
+        error
+    );
+}
+
+/** Normalize a Supabase error object (PostgrestError is not an Error instance) into a throwable Error. */
+function asError(error: unknown, fallbackMessage: string): Error {
+    if (error instanceof Error) return error;
+    const message = (error as { message?: string } | null)?.message;
+    return new Error(message || fallbackMessage);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Course Service - Supabase Operations for Courses
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -172,7 +213,7 @@ async function fetchCourseSecrets(): Promise<Record<string, CourseSecretRecord>>
         }
 
         if (!isMissingFunctionError(error)) {
-            console.warn('get_staff_course_secrets failed; continuing without course secrets:', error.message);
+            noteDegradedRead('get_staff_course_secrets', error.message);
             return map;
         }
         staffSecretsRpcMissing = true;
@@ -214,7 +255,16 @@ export interface CourseEntryGrant {
 export type CourseEntryVerification =
     | { status: 'granted'; grant: CourseEntryGrant }
     | { status: 'denied' }
+    | { status: 'rate_limited'; message: string }
     | { status: 'unavailable' };
+
+/** Matches the exception raised by the passcode throttle in
+ *  20260611_passcode_rate_limit.sql (errcode P0429 / "Too many ... attempts"). */
+function isRateLimitError(error: { code?: string; message?: string } | null | undefined): boolean {
+    if (!error) return false;
+    if (error.code === 'P0429') return true;
+    return /too many (incorrect |failed )?(entry[- ]code |passcode )?attempts/i.test(error.message || '');
+}
 
 /**
  * Server-side course entry check. The passcode never gets compared in the
@@ -240,6 +290,15 @@ export async function verifyCourseEntry(
         if (error) {
             if (isMissingFunctionError(error)) {
                 return { status: 'unavailable' };
+            }
+            if (isRateLimitError(error)) {
+                // Brute-force throttle tripped server-side. Do NOT fall through
+                // to 'unavailable' — that path retries against legacy local
+                // comparison, which would defeat the throttle.
+                return {
+                    status: 'rate_limited',
+                    message: 'Too many incorrect entry codes. Please wait a few minutes and try again.'
+                };
             }
             console.error('verify_course_entry failed:', error.message);
             return { status: 'unavailable' };
@@ -325,7 +384,7 @@ export async function getAllCourses(): Promise<Course[]> {
                 .map(s => mapSubmissionRecord(s, reviewMap))
         }));
     } catch (error) {
-        console.error('Error fetching courses from Supabase:', error);
+        noteDegradedRead('getAllCourses', error);
         return [];
     }
 }
@@ -337,24 +396,25 @@ export async function addCourse(course: Course): Promise<void> {
     if (!isSupabaseConfigured()) {
         addCourseToLocalStorage(course);
     } else {
-        try {
-            const { error } = await supabase.from('courses').insert({
-                id: course.id,
-                name: course.name,
-                instructor_name: course.instructorName || 'Instructor',
-                instructor_pin_hash: course.instructorPinHash || '',
-                password: course.password ?? '',
-                prompt: course.prompt,
-                owner_email: course.ownerEmail || '',
-                institution_id: course.institutionId || null,
-                institution_name: course.institutionName || null,
-                interview_settings: course.interviewSettings || null
-            });
+        const { error } = await supabase.from('courses').insert({
+            id: course.id,
+            name: course.name,
+            instructor_name: course.instructorName || 'Instructor',
+            instructor_pin_hash: course.instructorPinHash || '',
+            password: course.password ?? '',
+            prompt: course.prompt,
+            owner_email: course.ownerEmail || '',
+            institution_id: course.institutionId || null,
+            institution_name: course.institutionName || null,
+            interview_settings: course.interviewSettings || null
+        });
 
-            if (error) throw error;
-        } catch (error) {
+        if (error) {
+            // Supabase is configured: a silent localStorage fallback here would
+            // create a course only this browser can see (split-brain). Propagate
+            // so the UI can tell the instructor the save failed.
             console.error('Error adding course to Supabase:', error);
-            addCourseToLocalStorage(course);
+            throw asError(error, 'Course could not be saved to the server.');
         }
     }
 
@@ -379,16 +439,16 @@ export async function deleteCourse(courseId: string): Promise<void> {
     if (!isSupabaseConfigured()) {
         deleteCourseFromLocalStorage(courseId);
     } else {
-        try {
-            const { error } = await supabase
-                .from('courses')
-                .delete()
-                .eq('id', courseId);
+        const { error } = await supabase
+            .from('courses')
+            .delete()
+            .eq('id', courseId);
 
-            if (error) throw error;
-        } catch (error) {
+        if (error) {
+            // Don't pretend the delete worked by only removing the local copy —
+            // the course would reappear on the next server fetch. Propagate.
             console.error('Error deleting course from Supabase:', error);
-            deleteCourseFromLocalStorage(courseId);
+            throw asError(error, 'Course could not be deleted on the server.');
         }
     }
 
@@ -411,11 +471,8 @@ export async function addSubmissionToCourse(
     courseId: string,
     submission: Submission
 ): Promise<void> {
-    let institutionId: string | null = null;
-
     if (!isSupabaseConfigured()) {
         addSubmissionToLocalStorage(courseId, submission);
-        institutionId = getPersistedAppUser()?.schoolId || null;
     } else {
         try {
             const { data: courseData } = await supabase
@@ -423,8 +480,6 @@ export async function addSubmissionToCourse(
                 .select('institution_id')
                 .eq('id', courseId)
                 .maybeSingle();
-
-            institutionId = courseData?.institution_id || null;
 
             const { error } = await supabase.from('submissions').insert({
                 id: submission.id,
@@ -453,14 +508,20 @@ export async function addSubmissionToCourse(
 
             if (error) throw error;
 
-            console.log('[Supabase] Submission saved with analytics:', {
-                id: submission.id,
-                hasArgumentGraph: !!submission.argumentGraph,
-                argumentGraphNodes: submission.argumentGraph?.nodes?.length || 0
-            });
+            if (import.meta.env.DEV) {
+                console.log('[Supabase] Submission saved with analytics:', {
+                    id: submission.id,
+                    hasArgumentGraph: !!submission.argumentGraph,
+                    argumentGraphNodes: submission.argumentGraph?.nodes?.length || 0
+                });
+            }
         } catch (error) {
             console.error('Error adding submission to Supabase:', error);
+            // Keep a local RECOVERY copy so a completed oral exam is never lost,
+            // but still propagate — the caller must not pretend the submission
+            // reached the server (the instructor would never see it otherwise).
             addSubmissionToLocalStorage(courseId, submission);
+            throw asError(error, 'Submission could not be saved to the server.');
         }
     }
 
@@ -479,25 +540,25 @@ export async function updateSubmissionReview(
     if (!isSupabaseConfigured()) {
         upsertSubmissionReviewInLocalStorage(submissionId, review);
     } else {
-        try {
-            const payload = {
-                submission_id: submissionId,
-                status: review.status,
-                reviewer_name: review.reviewerName,
-                reviewer_email: review.reviewerEmail || null,
-                reviewed_at: new Date(review.reviewedAt).toISOString(),
-                override_score: review.overrideScore ?? null,
-                notes: review.notes || null
-            };
+        const payload = {
+            submission_id: submissionId,
+            status: review.status,
+            reviewer_name: review.reviewerName,
+            reviewer_email: review.reviewerEmail || null,
+            reviewed_at: new Date(review.reviewedAt).toISOString(),
+            override_score: review.overrideScore ?? null,
+            notes: review.notes || null
+        };
 
-            const { error } = await supabase
-                .from('submission_reviews')
-                .upsert(payload, { onConflict: 'submission_id' });
+        const { error } = await supabase
+            .from('submission_reviews')
+            .upsert(payload, { onConflict: 'submission_id' });
 
-            if (error) throw error;
-        } catch (error) {
+        if (error) {
+            // A review that only lands in this browser silently diverges from
+            // what the student and co-instructors see. Propagate instead.
             console.error('Error updating submission review in Supabase:', error);
-            upsertSubmissionReviewInLocalStorage(submissionId, review);
+            throw asError(error, 'Instructor review could not be saved to the server.');
         }
     }
 
@@ -525,16 +586,14 @@ export async function deleteSubmission(
     if (!isSupabaseConfigured()) {
         deleteSubmissionFromLocalStorage(submissionId);
     } else {
-        try {
-            const { error } = await supabase
-                .from('submissions')
-                .delete()
-                .eq('id', submissionId);
+        const { error } = await supabase
+            .from('submissions')
+            .delete()
+            .eq('id', submissionId);
 
-            if (error) throw error;
-        } catch (error) {
+        if (error) {
             console.error('Error deleting submission from Supabase:', error);
-            deleteSubmissionFromLocalStorage(submissionId);
+            throw asError(error, 'Submission could not be deleted on the server.');
         }
     }
 
@@ -639,7 +698,7 @@ export async function getStudentHistory(): Promise<Submission[]> {
 
         return (data || []).map(s => mapSubmissionRecord(s, reviewMap));
     } catch (error) {
-        console.error('Error fetching student history from Supabase:', error);
+        noteDegradedRead('getStudentHistory', error);
         return getHistoryFromLocalStorage();
     }
 }
@@ -726,7 +785,7 @@ export async function getInstitutions(): Promise<Institution[]> {
             isActive: institution.is_active ?? true
         }));
     } catch (error) {
-        console.error('Error fetching institutions:', error);
+        noteDegradedRead('getInstitutions', error);
         return getInstitutionsFromLocalStorage();
     }
 }
@@ -818,7 +877,7 @@ export async function getUserProfiles(): Promise<UserProfile[]> {
             createdAt: profile.created_at as string
         }));
     } catch (error) {
-        console.error('Error fetching user profiles:', error);
+        noteDegradedRead('getUserProfiles', error);
         return getUserProfilesFromLocalStorage();
     }
 }
@@ -898,7 +957,7 @@ export async function getCourseTemplates(institutionId?: string | null): Promise
 
         return (data || []).map(normalizeCourseTemplate);
     } catch (error) {
-        console.warn('Falling back to local course templates:', error);
+        noteDegradedRead('getCourseTemplates', error);
         return localTemplates.filter((template) => !normalizedInstitutionId || !template.institutionId || template.institutionId === normalizedInstitutionId);
     }
 }
@@ -909,23 +968,23 @@ export async function saveCourseTemplate(template: CourseTemplate): Promise<void
         return;
     }
 
-    try {
-        const { error } = await supabase.from('course_templates').upsert({
-            id: template.id,
-            name: template.name,
-            prompt: template.prompt,
-            instructor_name: template.instructorName,
-            institution_id: template.institutionId || null,
-            institution_name: template.institutionName || null,
-            source_course_id: template.sourceCourseId || null,
-            created_by_email: template.createdByEmail || null,
-            interview_settings: template.interviewSettings || null
-        });
+    const { error } = await supabase.from('course_templates').upsert({
+        id: template.id,
+        name: template.name,
+        prompt: template.prompt,
+        instructor_name: template.instructorName,
+        institution_id: template.institutionId || null,
+        institution_name: template.institutionName || null,
+        source_course_id: template.sourceCourseId || null,
+        created_by_email: template.createdByEmail || null,
+        interview_settings: template.interviewSettings || null
+    });
 
-        if (error) throw error;
-    } catch (error) {
+    if (error) {
+        // Template prompts are shared assets — a local-only copy silently
+        // diverges from what colleagues see. Propagate instead.
         console.error('Error saving course template:', error);
-        upsertCourseTemplateInLocalStorage(template);
+        throw asError(error, 'Course template could not be saved to the server.');
     }
 
     await logAuditEvent({
@@ -946,16 +1005,14 @@ export async function deleteCourseTemplate(templateId: string): Promise<void> {
         return;
     }
 
-    try {
-        const { error } = await supabase
-            .from('course_templates')
-            .delete()
-            .eq('id', templateId);
+    const { error } = await supabase
+        .from('course_templates')
+        .delete()
+        .eq('id', templateId);
 
-        if (error) throw error;
-    } catch (error) {
+    if (error) {
         console.error('Error deleting course template:', error);
-        deleteCourseTemplateFromLocalStorage(templateId);
+        throw asError(error, 'Course template could not be deleted on the server.');
     }
 
     const actor = getPersistedAppUser();
@@ -988,7 +1045,7 @@ export async function getSubmissionAnnotations(submissionId: string): Promise<Su
 
         return (data || []).map(normalizeSubmissionAnnotation);
     } catch (error) {
-        console.warn('Falling back to local submission annotations:', error);
+        noteDegradedRead('getSubmissionAnnotations', error);
         return localAnnotations;
     }
 }
@@ -1026,23 +1083,23 @@ export async function createSubmissionAnnotation(annotation: SubmissionAnnotatio
         return;
     }
 
-    try {
-        const { error } = await supabase
-            .from('submission_annotations')
-            .insert({
-                id: annotation.id,
-                submission_id: annotation.submissionId,
-                transcript_index: annotation.transcriptIndex,
-                category: annotation.category,
-                note: annotation.note,
-                author_name: annotation.authorName,
-                author_email: annotation.authorEmail || null
-            });
+    const { error } = await supabase
+        .from('submission_annotations')
+        .insert({
+            id: annotation.id,
+            submission_id: annotation.submissionId,
+            transcript_index: annotation.transcriptIndex,
+            category: annotation.category,
+            note: annotation.note,
+            author_name: annotation.authorName,
+            author_email: annotation.authorEmail || null
+        });
 
-        if (error) throw error;
-    } catch (error) {
+    if (error) {
+        // An annotation only this browser can see breaks the grading trail
+        // for co-reviewers. Propagate so the modal can show the failure.
         console.error('Error saving submission annotation:', error);
-        addSubmissionAnnotationToLocalStorage(annotation);
+        throw asError(error, 'Annotation could not be saved to the server.');
     }
 
     await logAuditEvent({
@@ -1075,7 +1132,7 @@ export async function getAuditLogs(limit = 40): Promise<AuditLogEntry[]> {
 
         return (data || []).map(normalizeAuditLog);
     } catch (error) {
-        console.warn('Falling back to local audit logs:', error);
+        noteDegradedRead('getAuditLogs', error);
         return localLogs;
     }
 }
@@ -1223,7 +1280,7 @@ async function getSubmissionReviewMap(): Promise<Record<string, InstructorReview
 
         return { ...localReviewMap, ...reviewMap };
     } catch (error) {
-        console.warn('Falling back to local review storage:', error);
+        noteDegradedRead('getSubmissionReviewMap', error);
         return localReviewMap;
     }
 }

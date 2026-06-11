@@ -4,6 +4,14 @@ import { Button } from './Button';
 interface ErrorBoundaryProps {
     children: React.ReactNode;
     fallback?: React.ReactNode;
+    /**
+     * Compact panel mode: instead of the full-screen fallback, render a small
+     * in-place notice sized for a dashboard panel (charts, concept map, etc.)
+     * so one crashed visualization never takes the whole page down.
+     */
+    compact?: boolean;
+    /** Short name of the wrapped panel, shown in the compact fallback. */
+    panelName?: string;
 }
 
 interface ErrorBoundaryState {
@@ -60,6 +68,36 @@ class ErrorBoundaryClass extends React.Component<ErrorBoundaryProps, ErrorBounda
         if (this.state.hasError) {
             if (this.props.fallback) {
                 return this.props.fallback;
+            }
+
+            if (this.props.compact) {
+                return (
+                    <div
+                        role="alert"
+                        className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5 text-center space-y-3"
+                    >
+                        <p className="text-sm font-semibold text-slate-300">
+                            {this.props.panelName
+                                ? `The ${this.props.panelName} panel hit an error — the rest of the page is fine.`
+                                : 'This panel hit an error — the rest of the page is fine.'}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                            You can keep working. Retry the panel, or refresh the page if it keeps happening.
+                        </p>
+                        {import.meta.env.DEV && this.state.error && (
+                            <p className="text-[11px] font-mono text-red-400/80 break-all">
+                                {this.state.error.toString()}
+                            </p>
+                        )}
+                        <button
+                            type="button"
+                            onClick={this.handleReset}
+                            className="px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-900 text-xs font-semibold text-slate-300 hover:text-white hover:border-slate-500 transition-colors"
+                        >
+                            Retry panel
+                        </button>
+                    </div>
+                );
             }
 
             return (

@@ -79,18 +79,18 @@ export const StudentLoginView: React.FC<StudentLoginViewProps> = ({
         // Validate name
         const trimmedName = sanitizeStudentName(studentName);
         if (!trimmedName) {
-            setError('Please enter your name.');
+            setError('Enter your name first — it is how your instructor matches this interview to you.');
             return;
         }
 
         if (!passcode) {
-            setError('Please enter the entry code.');
+            setError('Enter the entry code your instructor shared for this course.');
             return;
         }
 
         // Full mode needs a well-formed course number before we try anything.
         if (!isSimplifiedMode && (!courseNumber || courseNumber.length !== 6)) {
-            setError('Course number must be 6 digits.');
+            setError('The course number is a 6-digit code — check that all six digits are entered.');
             return;
         }
 
@@ -108,10 +108,14 @@ export const StudentLoginView: React.FC<StudentLoginViewProps> = ({
 
             if (result.status === 'granted') {
                 onLogin(mergeGrantIntoCourse(knownCourse, result.grant), trimmedName);
+            } else if (result.status === 'rate_limited') {
+                // Server-side brute-force throttle. Calm copy; no local retry
+                // path (that would defeat the throttle).
+                setError(result.message);
             } else if (result.status === 'denied') {
                 setError(isSimplifiedMode
-                    ? 'Invalid entry code. Please try again.'
-                    : 'Invalid course number or passcode.');
+                    ? 'That entry code did not match this course. Codes are case-sensitive — check the exact code with your instructor and try again.'
+                    : 'That course number and entry code did not match. Confirm both with your instructor — codes are case-sensitive.');
             } else {
                 // 'unavailable' — Supabase off or verify RPC not deployed yet.
                 // Legacy local comparison (course rows still carry the secret
@@ -120,7 +124,7 @@ export const StudentLoginView: React.FC<StudentLoginViewProps> = ({
                     if (selectedCourse.password !== undefined && selectedCourse.password === passcode) {
                         onLogin(selectedCourse, trimmedName);
                     } else {
-                        setError('Invalid entry code. Please try again.');
+                        setError('That entry code did not match this course. Codes are case-sensitive — check the exact code with your instructor and try again.');
                     }
                 } else {
                     const course = courses.find(c =>
@@ -129,7 +133,7 @@ export const StudentLoginView: React.FC<StudentLoginViewProps> = ({
                     if (course) {
                         onLogin(course, trimmedName);
                     } else {
-                        setError('Invalid course number or passcode.');
+                        setError('That course number and entry code did not match. Confirm both with your instructor — codes are case-sensitive.');
                     }
                 }
             }

@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Button, Input } from '../ui';
-import { ADMIN_EMAIL, AuditLogEntry, Course, Institution, UserProfile, UserRole } from '../../types';
+import { AuditLogEntry, Course, Institution, UserProfile, UserRole } from '../../types';
 import { getAllCourses, getAuditLogs, getInstitutions, getUserProfiles, subscribeToAuditLogsRealtime, updateUserRole } from '../../lib/supabase';
+import { isAdminIdentity } from '../../lib/utils/adminAccess';
 
 interface AdminPanelViewProps {
     currentUserEmail?: string;
@@ -20,7 +21,10 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
     const [isLoading, setIsLoading] = useState(false);
     const [successMessage, setSuccessMessage] = useState('');
 
-    const isAdmin = currentUserEmail?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+    // DB-backed user_profiles.role gates the console when Supabase is
+    // configured; the bootstrap email only applies in local/demo mode.
+    // (Server-side, the admin_* RPCs re-check is_admin_role() regardless.)
+    const isAdmin = isAdminIdentity({ email: currentUserEmail });
 
     useEffect(() => {
         if (!isAdmin) return;
@@ -92,7 +96,8 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
 
     const handleRoleChange = async (userId: string, newRole: UserRole) => {
         const targetUser = users.find((user) => user.id === userId);
-        if (targetUser?.email === ADMIN_EMAIL) {
+        // Protect admin accounts by their DB role, not a hardcoded email.
+        if (targetUser?.role === UserRole.ADMIN) {
             return;
         }
 
@@ -200,6 +205,15 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                             <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider">Institution coverage</h3>
                         </div>
                         <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {institutionCards.length === 0 && (
+                                <div className="md:col-span-2 rounded-2xl border border-dashed border-slate-800 bg-slate-900/30 p-6 text-center">
+                                    <p className="text-sm text-slate-400">No institution workspaces yet.</p>
+                                    <p className="text-xs text-slate-600 mt-2">
+                                        Coverage cards appear here once institutions are provisioned in Supabase
+                                        (institutions table) and users start joining them.
+                                    </p>
+                                </div>
+                            )}
                             {institutionCards.map((institution) => (
                                 <div key={institution.id} className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
                                     <div className="flex items-start justify-between gap-3">
@@ -257,7 +271,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                                             <span className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded border ${getRoleBadgeClass(user.role)}`}>
                                                 {user.role}
                                             </span>
-                                            {user.email === ADMIN_EMAIL && (
+                                            {user.role === UserRole.ADMIN && (
                                                 <span className="text-[10px] uppercase tracking-[0.18em] text-amber-300">Super admin</span>
                                             )}
                                         </div>
@@ -265,7 +279,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                                         <p className="text-slate-600 text-xs mt-1">{user.schoolName || 'No institution selected yet'}</p>
                                     </div>
 
-                                    {user.email !== ADMIN_EMAIL && (
+                                    {user.role !== UserRole.ADMIN && (
                                         <select
                                             value={user.role}
                                             onChange={(event) => handleRoleChange(user.id, event.target.value as UserRole)}
@@ -281,8 +295,26 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                             ))}
 
                             {filteredUsers.length === 0 && (
-                                <div className="p-8 text-center text-slate-600">
-                                    No users found for "{searchTerm}".
+                                <div className="p-8 text-center">
+                                    {users.length === 0 ? (
+                                        <>
+                                            <p className="text-sm text-slate-400">
+                                                {isLoading ? 'Loading user profiles…' : 'No user accounts yet.'}
+                                            </p>
+                                            {!isLoading && (
+                                                <p className="text-xs text-slate-600 mt-2">
+                                                    Accounts appear here as soon as students and instructors sign up.
+                                                </p>
+                                            )}
+                                        </>
+                                    ) : (
+                                        <>
+                                            <p className="text-sm text-slate-400">No users match "{searchTerm}".</p>
+                                            <p className="text-xs text-slate-600 mt-2">
+                                                Try part of a name, an email address, or an institution name.
+                                            </p>
+                                        </>
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -317,7 +349,12 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                         </div>
                         <div className="p-4 space-y-3 max-h-[560px] overflow-y-auto custom-scrollbar">
                             {auditLogs.length === 0 ? (
-                                <p className="text-sm text-slate-500">No audit events have been recorded yet.</p>
+                                <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/30 p-5 text-center">
+                                    <p className="text-sm text-slate-400">No audit events recorded yet.</p>
+                                    <p className="text-xs text-slate-600 mt-2">
+                                        Role changes, review actions, and template operations will stream in here as they happen.
+                                    </p>
+                                </div>
                             ) : (
                                 auditLogs.map((log) => (
                                     <div key={log.id} className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">

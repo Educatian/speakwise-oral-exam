@@ -4,7 +4,8 @@ import { extractDocumentText } from '../../lib/utils/documentText';
 import { extractExamFromText } from '../../lib/services/questionExtraction';
 import { Course, CourseTemplate, Institution, Submission } from '../../types';
 import { GroupKnowledgeService } from '../../lib/services/GroupKnowledgeService';
-import { Button, Input, Textarea, Modal, PinVerifyModal } from '../ui';
+import { Button, Input, Textarea, Modal, PinVerifyModal, ErrorBoundary } from '../ui';
+import { useToastContext } from '../../contexts/ToastContext';
 import { createCoursePromptGenerator } from '../../lib/prompts/interviewerSystem';
 import { deleteCourseTemplate, getCourseTemplates, saveCourseTemplate } from '../../lib/supabase';
 import { ClassAnalyticsView } from './ClassAnalyticsView';
@@ -12,7 +13,7 @@ import { ClassAnalyticsView } from './ClassAnalyticsView';
 import { hashPin, isValidPin } from '../../lib/utils/pinHash';
 import { getMasteryLevel } from '../../lib/utils/scoreDisplay';
 
-import { ADMIN_EMAIL } from '../../types';
+import { isAdminIdentity } from '../../lib/utils/adminAccess';
 
 interface ManagerDashboardViewProps {
     courses: Course[];
@@ -45,12 +46,15 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
     availableInstitutions = [],
     onAdminPanel
 }) => {
+    const toast = useToastContext();
+
     // Get email from props or fallback to localStorage
     const storedUser = typeof localStorage !== 'undefined' ? localStorage.getItem('speakwise_user') : null;
     const effectiveEmail = currentUserEmail || (storedUser ? JSON.parse(storedUser)?.email : null);
 
-    // Check if current user is admin
-    const isAdmin = effectiveEmail?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+    // Check if current user is admin — DB-backed user_profiles.role when
+    // Supabase is configured; bootstrap email only in local/demo mode.
+    const isAdmin = isAdminIdentity({ email: effectiveEmail });
 
     // Form state
     const [courseName, setCourseName] = useState('');
@@ -315,10 +319,16 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
             }
         };
 
-        await saveCourseTemplate(template);
-        setCourseTemplates((current) => [template, ...current.filter((item) => item.id !== template.id)]);
-        setTemplateDraftName('');
-        setTemplateError(null);
+        try {
+            await saveCourseTemplate(template);
+            setCourseTemplates((current) => [template, ...current.filter((item) => item.id !== template.id)]);
+            setTemplateDraftName('');
+            setTemplateError(null);
+            toast.success(`Template "${template.name}" saved to your library.`);
+        } catch (error) {
+            console.error('Failed to save template:', error);
+            setTemplateError('The template could not be saved to the server. Check your connection and try again — your draft is still in the form.');
+        }
     };
 
     const handleSaveCourseAsTemplate = async (course: Course) => {
@@ -335,8 +345,15 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
             interviewSettings: course.interviewSettings
         };
 
-        await saveCourseTemplate(template);
-        setCourseTemplates((current) => [template, ...current.filter((item) => item.id !== template.id)]);
+        try {
+            await saveCourseTemplate(template);
+            setCourseTemplates((current) => [template, ...current.filter((item) => item.id !== template.id)]);
+            setTemplateError(null);
+            toast.success(`"${course.name}" saved as a reusable template.`);
+        } catch (error) {
+            console.error('Failed to save course as template:', error);
+            setTemplateError('The template could not be saved to the server. Check your connection and try again.');
+        }
     };
 
     const handleLoadTemplate = (template: CourseTemplate) => {
@@ -352,8 +369,15 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
     };
 
     const handleDeleteTemplate = async (templateId: string) => {
-        await deleteCourseTemplate(templateId);
-        setCourseTemplates((current) => current.filter((template) => template.id !== templateId));
+        try {
+            await deleteCourseTemplate(templateId);
+            setCourseTemplates((current) => current.filter((template) => template.id !== templateId));
+            setTemplateError(null);
+            toast.info('Template deleted.');
+        } catch (error) {
+            console.error('Failed to delete template:', error);
+            setTemplateError('The template could not be deleted on the server. Check your connection and try again.');
+        }
     };
 
     // Validate and add course
@@ -361,35 +385,35 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
         setFormError(null);
 
         if (!courseName.trim()) {
-            setFormError('Course name is required.');
+            setFormError('Add a course name so students can recognize it in their course list.');
             return;
         }
         if (!instructorName.trim()) {
-            setFormError('Instructor name is required.');
+            setFormError('Add the instructor name — it appears on the student-facing course card.');
             return;
         }
         if (!instructorPin.trim()) {
-            setFormError('Instructor PIN is required to protect submissions.');
+            setFormError('Set a 4-digit instructor PIN. It protects submission access for this course.');
             return;
         }
         if (!isValidPin(instructorPin)) {
-            setFormError('Instructor PIN must be exactly 4 digits.');
+            setFormError('The instructor PIN must be exactly 4 digits — adjust it and try again.');
             return;
         }
         if (!coursePassword.trim()) {
-            setFormError('Student passcode is required.');
+            setFormError('Set a student passcode. Students enter it to join this course.');
             return;
         }
         if (!selectedInstitutionId) {
-            setFormError('Institution is required so this course can be deployed in the right workspace.');
+            setFormError('Choose an institution workspace so this course deploys where your students will look for it.');
             return;
         }
         if (coursePassword.length < 4) {
-            setFormError('Passcode must be at least 4 characters.');
+            setFormError('The student passcode needs at least 4 characters — lengthen it and try again.');
             return;
         }
         if (!coursePrompt.trim()) {
-            setFormError('AI interviewer instruction is required.');
+            setFormError('Add the AI interviewer instruction, or use AI Generate / a saved template to draft one.');
             return;
         }
         if (silenceThresholdMs < 1000 || silenceThresholdMs > 8000) {
@@ -422,6 +446,8 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
             }
         });
 
+        toast.success(`Course "${courseName.trim()}" created. Share the course number and passcode with your students.`);
+
         // Reset form
         setCourseName('');
         setInstructorName('');
@@ -440,7 +466,7 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
     // Generate AI prompt
     const handleGeneratePrompt = async () => {
         if (!courseName.trim()) {
-            setFormError('Please enter a course name first.');
+            setFormError('Enter a course name first — the generator uses it to draft a relevant instruction.');
             return;
         }
 
@@ -458,16 +484,17 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
             }
         } catch (err) {
             console.error('Prompt generation failed:', err);
-            setFormError('Failed to generate prompt. Please try again.');
+            setFormError('The prompt generator did not respond. Check your connection and try again, or write the instruction manually.');
         } finally {
             setIsGeneratingPrompt(false);
         }
     };
 
     // Filter courses based on ownership (admin sees all, others see only their own)
-    // DEBUG: Log email matching
-    console.log('[DEBUG] effectiveEmail:', effectiveEmail);
-    console.log('[DEBUG] courses ownerEmails:', courses.map(c => ({ id: c.id, name: c.name, ownerEmail: c.ownerEmail })));
+    if (import.meta.env.DEV) {
+        console.log('[DEBUG] effectiveEmail:', effectiveEmail);
+        console.log('[DEBUG] courses ownerEmails:', courses.map(c => ({ id: c.id, name: c.name, ownerEmail: c.ownerEmail })));
+    }
 
     const visibleCourses = isAdmin
         ? courses
@@ -638,12 +665,14 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
                     </span>
                 </button>
                 {showAnalytics && (
-                    <ClassAnalyticsView
-                        courses={visibleCourses}
-                        selectedCourseId={analyticsCourseFilter}
-                        onSelectCourse={setAnalyticsCourseFilter}
-                        onSelectSubmission={onSelectSubmission}
-                    />
+                    <ErrorBoundary compact panelName="class analytics">
+                        <ClassAnalyticsView
+                            courses={visibleCourses}
+                            selectedCourseId={analyticsCourseFilter}
+                            onSelectCourse={setAnalyticsCourseFilter}
+                            onSelectSubmission={onSelectSubmission}
+                        />
+                    </ErrorBoundary>
                 )}
             </div>
 

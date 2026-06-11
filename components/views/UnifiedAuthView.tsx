@@ -77,13 +77,13 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
         try {
             if (mode === 'forgot') {
                 if (!email.trim()) {
-                    setError('Please enter your email address.');
+                    setError('Enter the email address on your account so we know which reset to request.');
                     return;
                 }
 
                 const result = await resetPassword(email.trim());
                 if (!result.success) {
-                    setError(result.error || 'Failed to send the reset email.');
+                    setError(result.error || 'The reset request did not go through. Check the email address, or contact your institution administrator directly.');
                     return;
                 }
 
@@ -92,28 +92,28 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
             }
 
             if (!email.trim() || !password) {
-                setError('Please enter both email and password.');
+                setError('Enter both your email and password to continue.');
                 return;
             }
 
             if (mode === 'signup') {
                 if (!firstName.trim() || !lastName.trim()) {
-                    setError('Please enter your first and last name.');
+                    setError('Add your first and last name — they become the display name your instructor sees.');
                     return;
                 }
 
                 if (!selectedInstitutionId) {
-                    setError('Please select your institution.');
+                    setError('Choose your institution from the list so your courses show up in the right workspace.');
                     return;
                 }
 
                 if (password.length < 6) {
-                    setError('Password must be at least 6 characters.');
+                    setError('Use a password of at least 6 characters, then submit again.');
                     return;
                 }
 
                 if (password !== confirmPassword) {
-                    setError('Passwords do not match.');
+                    setError('The two passwords do not match — re-enter the confirmation and try again.');
                     return;
                 }
 
@@ -128,7 +128,7 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
                 );
 
                 if (!result.success) {
-                    setError(result.error || 'Account creation failed.');
+                    setError(result.error || 'The account could not be created. Check your details and try again; if the email is already registered, sign in instead.');
                     return;
                 }
 
@@ -143,7 +143,7 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
 
             const result = await signIn(email.trim(), password);
             if (!result.success) {
-                setError(result.error || 'Authentication failed.');
+                setError(result.error || 'That email and password did not match an account. Check both and try again; new students can create an account below.');
                 return;
             }
 
@@ -154,7 +154,8 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
                 role
             });
         } catch (error) {
-            setError('Authentication failed. Please try again.');
+            console.error('[UnifiedAuth] request failed:', error);
+            setError('Something interrupted the request before it finished. Check your connection and try again.');
         } finally {
             setIsLoading(false);
         }

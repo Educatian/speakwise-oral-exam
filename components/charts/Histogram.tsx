@@ -67,9 +67,15 @@ export const Histogram: React.FC<HistogramProps> = ({
         );
     }
 
+    const peakBin = binned.reduce((best, b) => (b.count > best.count ? b : best), binned[0]);
+
     return (
-        <div className="w-full">
-            <div className={`flex items-end gap-1 ${heightClass}`}>
+        <div
+            className="w-full"
+            role="img"
+            aria-label={`Histogram of ${values.length} value${values.length === 1 ? '' : 's'} from ${domainMin.toFixed(0)}${unit} to ${domainMax.toFixed(0)}${unit}. Largest group: ${peakBin.count} between ${peakBin.start.toFixed(0)}${unit} and ${peakBin.end.toFixed(0)}${unit}.`}
+        >
+            <div className={`flex items-end gap-1 ${heightClass}`} aria-hidden="true">
                 {binned.map((b, i) => {
                     const h = (b.count / peak) * 100;
                     return (

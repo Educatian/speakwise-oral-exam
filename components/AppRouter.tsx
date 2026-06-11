@@ -1,6 +1,8 @@
 import React, { Suspense, lazy } from 'react';
-import { AppView, Course, Institution, Submission, ADMIN_EMAIL } from '../types';
+import { AppView, Course, Institution, Submission } from '../types';
+import { AuthUser } from '../lib/supabase/auth';
 import { findCourseForSubmission, getPeerSubmissions } from '../lib/utils/peerSubmissions';
+import { isAdminIdentity } from '../lib/utils/adminAccess';
 import { LogoLoader } from './ui/LogoLoader';
 
 const LandingView = lazy(() =>
@@ -37,11 +39,23 @@ const StudentResultsView = lazy(() =>
     import('./views/StudentResultsView').then((module) => ({ default: module.StudentResultsView }))
 );
 
+/** Shape handed to App.handleAuthSuccess after sign-in/sign-up. A subset of
+ *  AuthUser: the auth views only know these fields at success time. */
+export interface AuthSuccessUser {
+    id: string;
+    email: string;
+    displayName: string;
+    role: 'student' | 'instructor';
+    profileRole?: string;
+    schoolId?: string;
+    schoolName?: string;
+}
+
 interface AppRouterProps {
     view: AppView;
     isLoading: boolean;
     isSupabaseConfigured: () => boolean;
-    user: any;
+    user: AuthUser | null;
     userRole: 'student' | 'instructor';
     studentName: string;
     savedSchool: { schoolId: string; schoolName: string } | null;
@@ -51,7 +65,7 @@ interface AppRouterProps {
     activeCourse: Course | null;
     returnToLanding: () => void;
     navigateTo: (view: AppView, role?: 'student' | 'instructor') => void;
-    handleAuthSuccess: (user: any) => void;
+    handleAuthSuccess: (user: AuthSuccessUser) => void;
     handleSchoolSelect: (schoolId: string, name: string) => void;
     signIn: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
     signUp: (
@@ -115,13 +129,12 @@ export const AppRouter: React.FC<AppRouterProps> = ({
         );
     }
 
-    const checkIsAdmin = (currentEmail: string | undefined | null) =>
-        currentEmail?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
-
     const storedUser = localStorage.getItem('speakwise_user');
     const storedEmail = storedUser ? JSON.parse(storedUser)?.email : null;
     const resolvedEmail = user?.email || storedEmail;
-    const isAdmin = checkIsAdmin(resolvedEmail);
+    // DB-backed user_profiles.role decides when Supabase is configured;
+    // the hardcoded email only bootstraps local/demo mode.
+    const isAdmin = isAdminIdentity({ email: resolvedEmail, profileRole: user?.profileRole });
     const activeInstitutionId = savedSchool?.schoolId || user?.schoolId || null;
     const studentVisibleCourses =
         activeInstitutionId && activeInstitutionId !== 'guest'

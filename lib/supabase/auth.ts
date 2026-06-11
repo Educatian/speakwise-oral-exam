@@ -26,7 +26,13 @@ export interface AuthUser {
     id: string;
     email: string;
     displayName: string;
+    /** UI-facing role bucket (admin/moderator collapse into 'instructor'). */
     role: 'student' | 'instructor';
+    /** Raw, DB-backed user_profiles.role ('student' | 'instructor' |
+     *  'moderator' | 'admin'). This — not any hardcoded email list — is the
+     *  authority for admin gating when Supabase is configured. Undefined when
+     *  the profile row was not readable (treat as non-admin). */
+    profileRole?: string;
     schoolId?: string;
     schoolName?: string;
 }
@@ -90,6 +96,9 @@ async function buildAuthUser(authUserId: string, email: string, metadata: Record
         email: profile?.email || email,
         displayName: profile?.display_name || metadata.display_name || metadata.displayName || email,
         role: normalizeRole(profile?.role ?? metadata.role),
+        // Only the authoritative profile row may claim elevated roles —
+        // signup metadata is self-supplied and must not grant admin.
+        profileRole: profile?.role || undefined,
         schoolId: profile?.school_id || metadata.school_id || undefined,
         schoolName: profile?.school_name || metadata.school_name || undefined
     };

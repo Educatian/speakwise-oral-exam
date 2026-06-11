@@ -16,7 +16,10 @@ import { getAuthEventName } from '../lib/supabase/auth';
 interface UseCourseStorageReturn {
     courses: Course[];
     loading: boolean;
+    /** Last storage failure (write rejected by Supabase, etc.). Surfaced by the
+     *  app shell as a toast; cleared via clearError so repeats re-notify. */
     error: string | null;
+    clearError: () => void;
     addCourse: (courseData: Omit<Course, 'id' | 'submissions'>) => Promise<void>;
     updateCourse: (courseId: string, updates: Partial<Course>) => Promise<void>;
     deleteCourse: (id: string) => Promise<void>;
@@ -42,6 +45,8 @@ export function useCourseStorage(): UseCourseStorageReturn {
     const [courses, setCourses] = useState<Course[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+
+    const clearError = useCallback(() => setError(null), []);
 
     // Initialize and subscribe to real-time updates
     useEffect(() => {
@@ -197,13 +202,16 @@ export function useCourseStorage(): UseCourseStorageReturn {
             }
         } catch (e) {
             console.error('Failed to add submission:', e);
-            setError('Failed to save submission. Please try again.');
-            // Still add locally as fallback
+            setError('The submission could not be saved to the server. A recovery copy was kept on this device — please tell your instructor.');
+            // Keep the submission visible in-session (a recovery copy is also
+            // written to localStorage by the database layer), but the error
+            // above is surfaced so nobody mistakes this for a server save.
             setCourses(prev => prev.map(c =>
                 c.id === courseId
                     ? { ...c, submissions: [submission, ...c.submissions] }
                     : c
             ));
+            throw e;
         }
     }, []);
 
@@ -267,6 +275,7 @@ export function useCourseStorage(): UseCourseStorageReturn {
         courses,
         loading,
         error,
+        clearError,
         addCourse,
         updateCourse,
         deleteCourse,

@@ -82,6 +82,7 @@ export const ToastContainer: React.FC<{ toasts: ToastItem[]; onDismiss: (id: str
             className="toast-container"
             aria-label="Notifications"
             role="region"
+            aria-live="polite"
         >
             {toasts.map(toast => (
                 <Toast

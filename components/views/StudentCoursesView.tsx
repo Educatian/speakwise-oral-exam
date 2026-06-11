@@ -80,13 +80,24 @@ export const StudentCoursesView: React.FC<StudentCoursesViewProps> = ({
                 {filteredCourses.length === 0 ? (
                     <div className="text-center py-16">
                         <img src="/empty/courses.png" alt="" aria-hidden="true" className="w-32 h-32 mx-auto mb-4 object-contain opacity-90" />
-                        <p className="text-slate-500">
-                            {searchQuery ? 'No courses match your search' : 'No courses available yet'}
-                        </p>
-                        {savedSchool && !searchQuery && (
-                            <p className="text-sm text-slate-600 mt-2">
-                                No courses are currently visible for {savedSchool.schoolName}.
-                            </p>
+                        {searchQuery ? (
+                            <>
+                                <p className="text-slate-500">No courses match "{searchQuery}".</p>
+                                <p className="text-sm text-slate-600 mt-2">
+                                    Try a shorter search, or check the course name and ID with your instructor.
+                                </p>
+                            </>
+                        ) : (
+                            <>
+                                <p className="text-slate-500">
+                                    No courses are published in your workspace yet.
+                                </p>
+                                <p className="text-sm text-slate-600 mt-2 max-w-sm mx-auto">
+                                    Ask your instructor for your institution access code and course schedule —
+                                    courses appear here as soon as they go live
+                                    {savedSchool ? ` for ${savedSchool.schoolName}` : ''}.
+                                </p>
+                            </>
                         )}
                     </div>
                 ) : (

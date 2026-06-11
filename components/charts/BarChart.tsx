@@ -44,7 +44,11 @@ export const BarChart: React.FC<BarChartProps> = ({
     const effectiveMax = max ?? Math.max(1, ...data.map((d) => d.value));
     const gap = compact ? 'space-y-2' : 'space-y-3';
     return (
-        <div className={gap} role="list">
+        <div
+            className={gap}
+            role="list"
+            aria-label={`Bar chart: ${data.map((d) => `${d.label} ${d.value.toFixed(d.value % 1 === 0 ? 0 : 1)}${unit} of ${effectiveMax}`).join(', ')}`}
+        >
             {data.map((d) => {
                 const pct = Math.min(100, Math.max(0, (d.value / effectiveMax) * 100));
                 const tone = d.tone ?? 'indigo';

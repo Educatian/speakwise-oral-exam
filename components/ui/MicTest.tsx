@@ -109,7 +109,7 @@ export const MicTest: React.FC<MicTestProps> = ({ className = '', onDeviceSelect
 
             // Display latency
             const baseLatency = (audioContext.baseLatency || 0) * 1000;
-            const outputLatency = ((audioContext as any).outputLatency || 0) * 1000;
+            const outputLatency = ((audioContext as AudioContext & { outputLatency?: number }).outputLatency || 0) * 1000;
             setLatencyMs(Math.round(baseLatency + outputLatency));
 
             const analyser = audioContext.createAnalyser();
@@ -192,10 +192,11 @@ export const MicTest: React.FC<MicTestProps> = ({ className = '', onDeviceSelect
 
             updateLevel();
 
-        } catch (err: any) {
-            if (err.name === 'NotAllowedError') {
+        } catch (err: unknown) {
+            const errName = err instanceof DOMException ? err.name : '';
+            if (errName === 'NotAllowedError') {
                 setError('Microphone access was blocked. Please allow it in your browser settings, then try again.');
-            } else if (err.name === 'NotFoundError') {
+            } else if (errName === 'NotFoundError') {
                 setError('No microphone was found. Please check that one is connected.');
             } else {
                 setError('The microphone test could not start. Please try again.');

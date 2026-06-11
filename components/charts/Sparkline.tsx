@@ -70,7 +70,7 @@ export const Sparkline: React.FC<SparklineProps> = ({
             className="w-full"
             preserveAspectRatio="none"
             role="img"
-            aria-label="Trend sparkline"
+            aria-label={`Trend of ${values.length} point${values.length === 1 ? '' : 's'}: starts at ${values[0].toFixed(1)}, ends at ${values[values.length - 1].toFixed(1)}, low ${Math.min(...values).toFixed(1)}, high ${Math.max(...values).toFixed(1)}`}
         >
             {areaPath && <path d={areaPath} fill={toneArea[tone]} />}
             <polyline

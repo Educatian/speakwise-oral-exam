@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArgumentGraph, InstructorReview, InstructorReviewStatus, Submission, SubmissionAnnotation, SubmissionAnnotationCategory } from '../../types';
-import { Modal, Button, ArgumentMapView } from '../ui';
+import { Modal, Button, ArgumentMapView, ErrorBoundary } from '../ui';
 import { ArgumentGraphBuilder } from '../../lib/reasoning';
 import { generateConceptNetwork } from '../../lib/reasoning/conceptNetwork';
 import { GroupKnowledgeService } from '../../lib/services/GroupKnowledgeService';
@@ -51,6 +51,7 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
     const [annotationCategory, setAnnotationCategory] = useState<SubmissionAnnotationCategory>('evidence');
     const [annotationTurnIndex, setAnnotationTurnIndex] = useState<number | null>(null);
     const [isSavingAnnotation, setIsSavingAnnotation] = useState(false);
+    const [annotationError, setAnnotationError] = useState<string | null>(null);
     const transcriptRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
     // Flatten all rubric-evidence quotes so the concept map can highlight the
@@ -226,6 +227,13 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
         try {
             await createSubmissionAnnotation(annotation);
             setAnnotationDraft('');
+            setAnnotationError(null);
+        } catch (error) {
+            // createSubmissionAnnotation propagates server failures instead of
+            // silently writing a local-only copy — keep the draft so nothing is
+            // lost and tell the reviewer.
+            console.error('Failed to save annotation:', error);
+            setAnnotationError('The annotation could not be saved to the server. Your draft is kept — please try again.');
         } finally {
             setIsSavingAnnotation(false);
         }
@@ -410,7 +418,9 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                 {/* Analytics panels — rubric radar, reasoning bars, timing,
                      barge-in list. Complements the integrated workspace below
                      by rendering the dimensions those panels don't visualize. */}
-                <SubmissionAnalyticsSection submission={submission} />
+                <ErrorBoundary compact panelName="submission analytics">
+                    <SubmissionAnalyticsSection submission={submission} />
+                </ErrorBoundary>
 
                 <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl space-y-4">
                     <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
@@ -497,15 +507,17 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                                     <p className="text-slate-400 text-sm font-medium">Analyzing concept network...</p>
                                 </div>
                             ) : argumentGraph && argumentGraph.nodes.length > 0 ? (
-                                <ArgumentMapView
-                                    graph={argumentGraph}
-                                    transcript={submission.transcript}
-                                    activeTurnIndex={activeTranscriptIndex}
-                                    onActiveTurnIndexChange={setActiveTranscriptIndex}
-                                    onHighlightTurnsChange={setHighlightedTranscriptIndices}
-                                    storageKey={submission.id}
-                                    evidenceQuotes={evidenceQuotes}
-                                />
+                                <ErrorBoundary compact panelName="concept map">
+                                    <ArgumentMapView
+                                        graph={argumentGraph}
+                                        transcript={submission.transcript}
+                                        activeTurnIndex={activeTranscriptIndex}
+                                        onActiveTurnIndexChange={setActiveTranscriptIndex}
+                                        onHighlightTurnsChange={setHighlightedTranscriptIndices}
+                                        storageKey={submission.id}
+                                        evidenceQuotes={evidenceQuotes}
+                                    />
+                                </ErrorBoundary>
                             ) : (
                                 <div className="text-center py-8 text-slate-500">
                                     <p className="text-sm">No concept network is available for this session.</p>
@@ -650,15 +662,17 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                             <p className="text-xs text-slate-600 mt-1">The model is reconstructing semantic relationships from the conversation.</p>
                         </div>
                     ) : argumentGraph && argumentGraph.nodes.length > 0 ? (
-                        <ArgumentMapView
-                            graph={argumentGraph}
-                            transcript={submission.transcript}
-                            activeTurnIndex={activeTranscriptIndex}
-                            onActiveTurnIndexChange={setActiveTranscriptIndex}
-                            onHighlightTurnsChange={setHighlightedTranscriptIndices}
-                            storageKey={submission.id}
-                            evidenceQuotes={evidenceQuotes}
-                        />
+                        <ErrorBoundary compact panelName="concept map">
+                            <ArgumentMapView
+                                graph={argumentGraph}
+                                transcript={submission.transcript}
+                                activeTurnIndex={activeTranscriptIndex}
+                                onActiveTurnIndexChange={setActiveTranscriptIndex}
+                                onHighlightTurnsChange={setHighlightedTranscriptIndices}
+                                storageKey={submission.id}
+                                evidenceQuotes={evidenceQuotes}
+                            />
+                        </ErrorBoundary>
                     ) : (
                         <div className="text-center py-6 text-slate-500">
                             <h4 className="text-slate-400 font-bold text-sm mb-1">Concept network</h4>
@@ -743,6 +757,11 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                                     placeholder="Add evidence, a scoring rationale, or a follow-up teaching note."
                                     className="w-full rounded-xl border border-slate-700 bg-slate-950/60 px-4 py-3 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 disabled:opacity-60"
                                 />
+                                {annotationError && (
+                                    <p className="text-xs text-rose-300 bg-rose-500/10 border border-rose-500/20 rounded-xl px-3 py-2" role="alert">
+                                        {annotationError}
+                                    </p>
+                                )}
                                 {canEditReview && (
                                     <div className="flex justify-end">
                                         <Button onClick={handleSaveAnnotation} disabled={annotationTurnIndex == null || !annotationDraft.trim() || isSavingAnnotation}>

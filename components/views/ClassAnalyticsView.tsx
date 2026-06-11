@@ -7,6 +7,7 @@ import {
     RadarChart,
     Sparkline,
 } from '../charts';
+import { ErrorBoundary } from '../ui/ErrorBoundary';
 
 interface ClassAnalyticsViewProps {
     courses: Course[];
@@ -237,7 +238,10 @@ export const ClassAnalyticsView: React.FC<ClassAnalyticsViewProps> = ({
             <div className="glass-panel p-8 rounded-3xl text-center">
                 <h3 className="text-lg font-semibold text-slate-300">No submissions yet</h3>
                 <p className="text-sm text-slate-500 mt-2">
-                    Once students complete an interview, class analytics will appear here.
+                    Analytics will appear after the first student completes an interview.
+                </p>
+                <p className="text-xs text-slate-600 mt-2">
+                    Share the course number and entry code with your students to get the first attempts in.
                 </p>
             </div>
         );
@@ -326,6 +330,7 @@ export const ClassAnalyticsView: React.FC<ClassAnalyticsViewProps> = ({
             </div>
 
             {/* Score distribution + trend */}
+            <ErrorBoundary compact panelName="score distribution">
             <div className="grid md:grid-cols-2 gap-6">
                 <div className="bg-slate-900/50 border border-slate-800 p-5 rounded-2xl">
                     <div className="flex items-center justify-between mb-3">
@@ -363,9 +368,11 @@ export const ClassAnalyticsView: React.FC<ClassAnalyticsViewProps> = ({
                     </div>
                 </div>
             </div>
+            </ErrorBoundary>
 
             {/* Class radar + reasoning bars */}
             {(classRadar || reasoningBars) && (
+                <ErrorBoundary compact panelName="rubric profile">
                 <div className="grid md:grid-cols-2 gap-6">
                     {classRadar && (
                         <div className="bg-slate-900/50 border border-slate-800 p-5 rounded-2xl">
@@ -401,6 +408,7 @@ export const ClassAnalyticsView: React.FC<ClassAnalyticsViewProps> = ({
                         </div>
                     )}
                 </div>
+                </ErrorBoundary>
             )}
 
             {/* Flagged for review */}
