@@ -1,22 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import { Button, Input } from '../ui';
-import { Institution } from '../../types';
+import { useAuthContext } from '../../contexts/AuthContext';
+import { useInstitutionContext } from '../../contexts/InstitutionContext';
 
 interface UnifiedAuthViewProps {
     onAuthSuccess: (user: { id: string; email: string; displayName: string; role: 'student' | 'instructor' }) => void;
     onBack: () => void;
     defaultRole?: 'student' | 'instructor';
-    institutions: Institution[];
-    signIn: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-    signUp: (
-        email: string,
-        password: string,
-        displayName: string,
-        role: 'student' | 'instructor',
-        schoolId?: string,
-        schoolName?: string
-    ) => Promise<{ success: boolean; error?: string }>;
-    resetPassword: (email: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 type AuthMode = 'signin' | 'signup' | 'forgot';
@@ -24,12 +14,12 @@ type AuthMode = 'signin' | 'signup' | 'forgot';
 export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
     onAuthSuccess,
     onBack,
-    defaultRole = 'student',
-    institutions,
-    signIn,
-    signUp,
-    resetPassword
+    defaultRole = 'student'
 }) => {
+    // Auth actions + institution directory come from the app-root contexts
+    // (previously drilled App → AppRouter → here as props).
+    const { signIn, signUp, resetPassword } = useAuthContext();
+    const { institutions } = useInstitutionContext();
     const [mode, setMode] = useState<AuthMode>('signin');
     const [role, setRole] = useState<'student' | 'instructor'>(defaultRole);
     const [email, setEmail] = useState('');

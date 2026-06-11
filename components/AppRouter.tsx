@@ -1,6 +1,7 @@
 import React, { Suspense, lazy } from 'react';
-import { AppView, Course, Institution, Submission } from '../types';
-import { AuthUser } from '../lib/supabase/auth';
+import { AppView, Course, Submission } from '../types';
+import { useAuthContext, AuthSuccessUser } from '../contexts/AuthContext';
+import { useCourseContext } from '../contexts/CourseContext';
 import { findCourseForSubmission, getPeerSubmissions } from '../lib/utils/peerSubmissions';
 import { isAdminIdentity } from '../lib/utils/adminAccess';
 import { LogoLoader } from './ui/LogoLoader';
@@ -39,54 +40,26 @@ const StudentResultsView = lazy(() =>
     import('./views/StudentResultsView').then((module) => ({ default: module.StudentResultsView }))
 );
 
-/** Shape handed to App.handleAuthSuccess after sign-in/sign-up. A subset of
- *  AuthUser: the auth views only know these fields at success time. */
-export interface AuthSuccessUser {
-    id: string;
-    email: string;
-    displayName: string;
-    role: 'student' | 'instructor';
-    profileRole?: string;
-    schoolId?: string;
-    schoolName?: string;
-}
+// Re-exported for backward compatibility: the type moved next to the auth
+// state it belongs to (contexts/AuthContext.tsx).
+export type { AuthSuccessUser } from '../contexts/AuthContext';
 
+/**
+ * Props that the app shell genuinely computes (routing, session naming, and
+ * navigation-coupled handlers). Everything that was pure plumbing — auth
+ * state, courses, institutions, selection state — now comes from the
+ * Auth/Course/Institution contexts instead of being drilled through here.
+ */
 interface AppRouterProps {
     view: AppView;
     isLoading: boolean;
-    isSupabaseConfigured: () => boolean;
-    user: AuthUser | null;
-    userRole: 'student' | 'instructor';
     studentName: string;
-    savedSchool: { schoolId: string; schoolName: string } | null;
-    institutions: Institution[];
-    courses: Course[];
     history: Submission[];
-    activeCourse: Course | null;
     returnToLanding: () => void;
     navigateTo: (view: AppView, role?: 'student' | 'instructor') => void;
     handleAuthSuccess: (user: AuthSuccessUser) => void;
-    handleSchoolSelect: (schoolId: string, name: string) => void;
-    signIn: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-    signUp: (
-        email: string,
-        password: string,
-        displayName: string,
-        role: 'student' | 'instructor',
-        schoolId?: string,
-        schoolName?: string
-    ) => Promise<{ success: boolean; error?: string }>;
-    resetPassword: (email: string) => Promise<{ success: boolean; error?: string }>;
-    validateInstitutionAccessCode: (institutionId: string, accessCode: string) => Promise<Institution | null>;
     handleStudentLogin: (course: Course, name: string) => void;
     handleInterviewComplete: (submission: Submission) => void;
-    handleAddCourse: (courseData: Omit<Course, 'id' | 'submissions'>) => void;
-    updateCourse: (courseId: string, updates: Partial<Course>) => void;
-    deleteCourse: (id: string) => void;
-    deleteSubmission: (courseId: string, submissionId: string) => void;
-    setSelectedSubmission: (submission: Submission | null) => void;
-    setActiveCourse: (course: Course | null) => void;
-    lastSubmission: Submission | null;
 }
 
 const RouteFallback: React.FC = () => (
@@ -96,33 +69,23 @@ const RouteFallback: React.FC = () => (
 export const AppRouter: React.FC<AppRouterProps> = ({
     view,
     isLoading,
-    isSupabaseConfigured,
-    user,
-    userRole,
     studentName,
-    savedSchool,
-    institutions,
-    courses,
     history,
-    activeCourse,
     returnToLanding,
     navigateTo,
     handleAuthSuccess,
-    handleSchoolSelect,
-    signIn,
-    signUp,
-    resetPassword,
-    validateInstitutionAccessCode,
     handleStudentLogin,
-    handleInterviewComplete,
-    handleAddCourse,
-    updateCourse,
-    deleteCourse,
-    deleteSubmission,
-    setSelectedSubmission,
-    setActiveCourse,
-    lastSubmission
+    handleInterviewComplete
 }) => {
+    const { user, role, savedSchool, setSchool } = useAuthContext();
+    const {
+        courses,
+        activeCourse,
+        setActiveCourse,
+        setSelectedSubmission,
+        lastSubmission
+    } = useCourseContext();
+
     if (isLoading) {
         return (
             <LogoLoader className="min-h-[50vh]" label="Loading your workspace…" />
@@ -153,11 +116,7 @@ export const AppRouter: React.FC<AppRouterProps> = ({
                 <UnifiedAuthView
                     onAuthSuccess={handleAuthSuccess}
                     onBack={returnToLanding}
-                    defaultRole={userRole}
-                    institutions={institutions}
-                    signIn={signIn}
-                    signUp={signUp}
-                    resetPassword={resetPassword}
+                    defaultRole={role}
                 />
             );
             break;
@@ -165,12 +124,12 @@ export const AppRouter: React.FC<AppRouterProps> = ({
         case AppView.SCHOOL_SELECT:
             viewNode = (
                 <SchoolSelectView
-                    onSchoolSelect={handleSchoolSelect}
+                    onSchoolSelect={(schoolId, schoolName) => {
+                        setSchool(schoolId, schoolName);
+                        navigateTo(AppView.STUDENT_COURSES);
+                    }}
                     onBack={() => navigateTo(AppView.UNIFIED_AUTH)}
-                    savedSchool={savedSchool}
                     userName={studentName || user?.displayName}
-                    institutions={institutions}
-                    validateAccessCode={validateInstitutionAccessCode}
                 />
             );
             break;
@@ -197,18 +156,11 @@ export const AppRouter: React.FC<AppRouterProps> = ({
         case AppView.MANAGER_DASHBOARD:
             viewNode = (
                 <ManagerDashboardView
-                    courses={courses}
-                    onAddCourse={handleAddCourse}
-                    onUpdateCourse={updateCourse}
-                    onDeleteCourse={deleteCourse}
-                    onDeleteSubmission={deleteSubmission}
-                    onSelectSubmission={setSelectedSubmission}
                     onBack={returnToLanding}
                     currentUserEmail={resolvedEmail}
                     currentInstitution={
                         savedSchool || (user?.schoolId ? { schoolId: user.schoolId, schoolName: user.schoolName } : null)
                     }
-                    availableInstitutions={institutions}
                     onAdminPanel={isAdmin ? () => navigateTo(AppView.ADMIN_PANEL) : undefined}
                 />
             );
@@ -224,7 +176,6 @@ export const AppRouter: React.FC<AppRouterProps> = ({
                     }}
                     onViewHistory={() => navigateTo(AppView.STUDENT_HISTORY)}
                     onBack={returnToLanding}
-                    savedSchool={savedSchool}
                 />
             );
             break;
@@ -232,8 +183,6 @@ export const AppRouter: React.FC<AppRouterProps> = ({
         case AppView.STUDENT_LOGIN:
             viewNode = (
                 <StudentLoginView
-                    courses={courses}
-                    selectedCourse={activeCourse}
                     defaultName={studentName || user?.displayName}
                     onLogin={handleStudentLogin}
                     onViewHistory={() => navigateTo(AppView.STUDENT_HISTORY)}

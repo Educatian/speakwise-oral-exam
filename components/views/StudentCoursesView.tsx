@@ -2,22 +2,25 @@ import React, { useState } from 'react';
 import { Course, AppView } from '../../types';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
+import { useAuthContext } from '../../contexts/AuthContext';
 
 interface StudentCoursesViewProps {
+    /** Already filtered to the student's institution by AppRouter. */
     courses: Course[];
     onSelectCourse: (course: Course) => void;
     onViewHistory: () => void;
     onBack: () => void;
-    savedSchool?: { schoolId: string; schoolName: string } | null;
 }
 
 export const StudentCoursesView: React.FC<StudentCoursesViewProps> = ({
     courses,
     onSelectCourse,
     onViewHistory,
-    onBack,
-    savedSchool
+    onBack
 }) => {
+    // Saved school comes from the app-root auth context (previously drilled
+    // App → AppRouter → here as a prop).
+    const { savedSchool } = useAuthContext();
     const [searchQuery, setSearchQuery] = useState('');
 
     // Filter courses based on search

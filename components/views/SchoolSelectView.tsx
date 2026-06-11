@@ -1,24 +1,23 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Button, Input } from '../ui';
-import { Institution } from '../../types';
+import { useAuthContext } from '../../contexts/AuthContext';
+import { useInstitutionContext } from '../../contexts/InstitutionContext';
 
 interface SchoolSelectViewProps {
     onSchoolSelect: (schoolId: string, schoolName: string) => void;
     onBack: () => void;
-    savedSchool?: { schoolId: string; schoolName: string } | null;
     userName?: string;
-    institutions: Institution[];
-    validateAccessCode: (institutionId: string, accessCode: string) => Promise<Institution | null>;
 }
 
 export const SchoolSelectView: React.FC<SchoolSelectViewProps> = ({
     onSchoolSelect,
     onBack,
-    savedSchool,
-    userName,
-    institutions,
-    validateAccessCode
+    userName
 }) => {
+    // Saved school + institution directory come from the app-root contexts
+    // (previously drilled App → AppRouter → here as props).
+    const { savedSchool } = useAuthContext();
+    const { institutions, validateAccessCode } = useInstitutionContext();
     const [selectedSchool, setSelectedSchool] = useState<string>(savedSchool?.schoolId || '');
     const [searchQuery, setSearchQuery] = useState('');
     const [passcode, setPasscode] = useState('');

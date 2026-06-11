@@ -4,25 +4,44 @@ All notable changes to the SpeakWise oral-exam platform are documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.2.0] - 2026-06-11
 
 ### Added
 
 - Engineering toolchain: ESLint 9 flat config (`eslint.config.js`), Prettier scripts, and Vitest
   with V8 coverage (`vitest.config.ts`).
-- Unit test suite (`tests/`) covering the pure-logic core: reasoning pattern detection,
+- Unit test suite (`tests/`, 117 tests) covering the pure-logic core: reasoning pattern detection,
   Toulmin component analysis, speech normalization (fillers, self-repairs, stutters),
   argument graph building, score display, latency/barge-in analytics, peer-submission
-  matching, input sanitization, and PIN hashing/rate limiting.
+  matching, input sanitization, PIN hashing/rate limiting, dashboard derivations,
+  evidence-trail building, and transcript fallback graphs.
 - GitHub Actions CI (`.github/workflows/ci.yml`): type-check, lint, test, and build on every
   push and pull request to `master`.
 - `npm run smoke` script wired to the Playwright runtime smoke test.
+- Narrated tutorial videos (Playwright cursor-following screencast + ElevenLabs narration)
+  with a reproducible pipeline (`playwright/tutorial-scenes.mjs` → `narrate.mjs` →
+  `tutorial.mjs` → `mux.mjs`), embedded in the walkthrough guide.
+- Passcode brute-force rate limiting migration
+  (`supabase/migrations/20260611_passcode_rate_limit.sql`, apply per `APPLY_RATE_LIMIT.md`).
+- `PRO_UPGRADE_PLAN.md`: full audit checklist and enterprise roadmap.
 
 ### Changed
 
-- P0 reliability fixes across services, Supabase integration, and hooks (session hardening
-  pass).
-- Guidebook upgrade: refreshed instructor and student walkthroughs with new tutorial videos.
+- **P0 reliability**: transcription timeout + retries with a calm student-facing notice;
+  production fail-closed env validation; honest localStorage fallback (writes propagate
+  errors, submissions keep a local recovery copy, reads flag degraded mode); DB-backed
+  roles as the single authority (hardcoded allowlist removed).
+- **P1 professionalization**: granular error boundaries around the concept map and
+  analytics panels; empty states with next steps; actionable error copy; chart ARIA with
+  real values and a screen-reader summary for the concept map.
+- **Architecture**: `ManagerDashboardView` decomposed 1,387 → 205 lines
+  (`components/views/manager/*` + `useManagerDashboard`); `SubmissionDetailModal`
+  decomposed 916 → 246 lines (`components/modals/submission/*`); Auth / Course /
+  Institution contexts replace prop drilling (AppRouter props 28 → 9), context values
+  memoized.
+- Guidebook upgrade: refreshed instructor and student walkthroughs with the new narrated
+  tutorial videos; README gained badges, a screenshot gallery, an architecture diagram,
+  and quality gates.
 
 ## [2.1.9] - 2026-06-10
 

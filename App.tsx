@@ -1,25 +1,28 @@
 import React, { Suspense, lazy, useState, useEffect, useCallback } from 'react';
-import { AppView, Course, InstructorReview, Submission } from './types';
-import { useCourseStorage, useStudentHistory, useAuth, useInstitutions } from './hooks';
-import { isSupabaseConfigured } from './lib/supabase';
+import { AppView, Course, Submission } from './types';
+import { useStudentHistory } from './hooks';
 import { AppRouter } from './components/AppRouter';
+import { AuthProvider, useAuthContext, AuthSuccessUser } from './contexts/AuthContext';
+import { CourseProvider, useCourseContext } from './contexts/CourseContext';
+import { InstitutionProvider, useInstitutionContext } from './contexts/InstitutionContext';
 import { ToastProvider, useToastContext } from './contexts/ToastContext';
 import { findCourseForSubmission, getPeerSubmissions } from './lib/utils/peerSubmissions';
 
 /**
  * Surfaces course-storage failures (e.g. a Supabase write rejected) as a calm
  * toast instead of letting them die in the console. Lives INSIDE ToastProvider
- * so it can use the context; clears the error after notifying so an identical
- * follow-up failure re-notifies.
+ * and CourseProvider so it can use both contexts; clears the error after
+ * notifying so an identical follow-up failure re-notifies.
  */
-const StorageErrorNotifier: React.FC<{ error: string | null; onClear: () => void }> = ({ error, onClear }) => {
+const StorageErrorNotifier: React.FC = () => {
+  const { error, clearError } = useCourseContext();
   const toast = useToastContext();
   useEffect(() => {
     if (error) {
       toast.error(error);
-      onClear();
+      clearError();
     }
-  }, [error, onClear, toast]);
+  }, [error, clearError, toast]);
   return null;
 };
 
@@ -28,42 +31,31 @@ const SubmissionDetailModal = lazy(() =>
 );
 
 /**
- * SpeakWise - AI-Powered Oral Examination Platform
- * 
- * A professional platform for conducting AI-driven oral exams with:
- * - Real-time voice interaction using Gemini 2.5 Native Audio
- * - Automatic transcription and feedback generation
- * - Course management for instructors (Supabase PostgreSQL)
- * - Student history and performance tracking
+ * App shell: navigation state, header chrome, and the submission-detail modal.
+ * Auth/course/institution data live in the contexts above; only state that the
+ * shell itself computes (current view, session student name) stays local.
  */
-const App: React.FC = () => {
+const AppShell: React.FC = () => {
   // Navigation state - Start from Landing page
   const [view, setView] = useState<AppView>(AppView.LANDING);
 
   // Session state
-  const [activeCourse, setActiveCourse] = useState<Course | null>(null);
   const [studentName, setStudentName] = useState('');
-  const [selectedSubmission, setSelectedSubmission] = useState<Submission | null>(null);
-  const [lastSubmission, setLastSubmission] = useState<Submission | null>(null);
-  const [userRole, setUserRole] = useState<'student' | 'instructor'>('student');
 
-  // Auth hook
-  const { user, isAuthenticated, savedSchool, setSchool, signOut, signIn, signUp, resetPassword } = useAuth();
-  const { institutions, loading: institutionsLoading, validateAccessCode } = useInstitutions();
-
-  // Custom hooks for data management (with Supabase)
+  // Shared contexts (each wraps its data hook exactly once at the root)
+  const { user, isAuthenticated, role, setRole, savedSchool, signOut, completeAuthSuccess } = useAuthContext();
+  const { institutions, loading: institutionsLoading } = useInstitutionContext();
   const {
     courses,
     loading: coursesLoading,
-    error: storageError,
-    clearError: clearStorageError,
-    addCourse,
-    updateCourse,
-    deleteCourse,
     addSubmission,
-    deleteSubmission,
-    updateSubmissionReview
-  } = useCourseStorage();
+    updateSubmissionReview,
+    activeCourse,
+    setActiveCourse,
+    selectedSubmission,
+    setSelectedSubmission,
+    setLastSubmission
+  } = useCourseContext();
   const { history, loading: historyLoading, addToHistory } = useStudentHistory();
 
   const isLoading = coursesLoading || historyLoading || institutionsLoading;
@@ -127,35 +119,11 @@ const App: React.FC = () => {
     navigateTo(AppView.STUDENT_RESULTS);
   };
 
-  const handleAddCourse = (courseData: Omit<Course, 'id' | 'submissions'>) => {
-    addCourse(courseData);
-  };
-
-  const handleUpdateSubmissionReview = useCallback(async (
-    courseId: string,
-    submissionId: string,
-    review: InstructorReview
-  ) => {
-    await updateSubmissionReview(courseId, submissionId, review);
-
-    setSelectedSubmission((current) =>
-      current?.id === submissionId
-        ? { ...current, instructorReview: review }
-        : current
-    );
-
-    setLastSubmission((current) =>
-      current?.id === submissionId
-        ? { ...current, instructorReview: review }
-        : current
-    );
-  }, [updateSubmissionReview]);
-
   const returnToLanding = useCallback(() => {
     setView(AppView.LANDING);
     setActiveCourse(null);
     setStudentName('');
-  }, []);
+  }, [setActiveCourse]);
 
   // Navigate with history (supports optional role for auth flow)
   const navigateTo = useCallback((newView: AppView, role?: 'student' | 'instructor') => {
@@ -163,35 +131,17 @@ const App: React.FC = () => {
     setView(newView);
     // Set user role if provided (for auth flow)
     if (role) {
-      setUserRole(role);
+      setRole(role);
     }
-  }, []);
+  }, [setRole]);
 
-  // Handle auth success
-  const handleAuthSuccess = useCallback((authUser: { id: string; email: string; displayName: string; role: 'student' | 'instructor' }) => {
-    const storedUserRaw = localStorage.getItem('speakwise_user');
-    const persistedUser = storedUserRaw ? JSON.parse(storedUserRaw) : null;
-    const resolvedUser = persistedUser?.email ? persistedUser : authUser;
+  // Handle auth success: AuthContext persists the session; the shell routes.
+  const handleAuthSuccess = useCallback((authUser: AuthSuccessUser) => {
+    const resolvedUser = completeAuthSuccess(authUser);
 
     setStudentName(resolvedUser.displayName);
-    setUserRole(resolvedUser.role);
 
-    // Save user to localStorage for session persistence (critical for course ownership!)
-    localStorage.setItem('speakwise_user', JSON.stringify({
-      id: resolvedUser.id,
-      email: resolvedUser.email.toLowerCase(),
-      displayName: resolvedUser.displayName,
-      role: resolvedUser.role,
-      // Raw user_profiles.role (e.g. 'admin'/'moderator') — the DB-backed
-      // authority that admin gating reads (see lib/utils/adminAccess.ts).
-      profileRole: resolvedUser.profileRole,
-      schoolId: resolvedUser.schoolId,
-      schoolName: resolvedUser.schoolName
-    }));
-
-    // Instructor also gets session marker
     if (resolvedUser.role === 'instructor') {
-      sessionStorage.setItem('speakwise_instructor', 'true');
       navigateTo(AppView.INSTRUCTOR_DASHBOARD);
     } else {
       // Student goes to school selection (or courses if school saved)
@@ -201,13 +151,7 @@ const App: React.FC = () => {
         navigateTo(AppView.SCHOOL_SELECT);
       }
     }
-  }, [navigateTo, savedSchool]);
-
-  // Handle school selection
-  const handleSchoolSelect = useCallback((schoolId: string, schoolName: string) => {
-    setSchool(schoolId, schoolName);
-    navigateTo(AppView.STUDENT_COURSES);
-  }, [setSchool, navigateTo]);
+  }, [completeAuthSuccess, navigateTo, savedSchool]);
 
   // Auto-redirect if already logged in
   useEffect(() => {
@@ -221,7 +165,7 @@ const App: React.FC = () => {
         const userData = JSON.parse(storedUser);
         if (userData.email) {
           setStudentName(userData.displayName || userData.email.split('@')[0]);
-          setUserRole(userData.role || 'student');
+          setRole(userData.role || 'student');
 
           // Auto-navigate based on role
           if (userData.role === 'instructor') {
@@ -256,54 +200,13 @@ const App: React.FC = () => {
     }
 
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [view]);
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // View Rendering
-  // ─────────────────────────────────────────────────────────────────────────
-
-  const renderCurrentView = () => {
-    return (
-      <AppRouter
-        view={view}
-        isLoading={isLoading}
-        isSupabaseConfigured={isSupabaseConfigured}
-        user={user}
-        userRole={userRole}
-        studentName={studentName}
-        savedSchool={savedSchool}
-        institutions={institutions}
-        courses={courses}
-        history={history}
-        activeCourse={activeCourse}
-        returnToLanding={returnToLanding}
-        navigateTo={navigateTo}
-        handleAuthSuccess={handleAuthSuccess}
-        handleSchoolSelect={handleSchoolSelect}
-        signIn={signIn}
-        signUp={signUp}
-        resetPassword={resetPassword}
-        validateInstitutionAccessCode={validateAccessCode}
-        handleStudentLogin={handleStudentLogin}
-        handleInterviewComplete={handleInterviewComplete}
-        handleAddCourse={handleAddCourse}
-        updateCourse={updateCourse}
-        deleteCourse={deleteCourse}
-        deleteSubmission={deleteSubmission}
-        setSelectedSubmission={setSelectedSubmission}
-        setActiveCourse={setActiveCourse}
-        lastSubmission={lastSubmission}
-      />
-    );
-  };
+  }, [view, setActiveCourse]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // Main Render
   // ─────────────────────────────────────────────────────────────────────────
 
   return (
-    <ToastProvider>
-    <StorageErrorNotifier error={storageError} onClear={clearStorageError} />
     <div className="min-h-screen bg-slate-950 p-4 md:p-6 lg:p-12 flex flex-col items-center">
       {/* Skip Link for Accessibility */}
       <a href="#main-content" className="skip-link">
@@ -392,7 +295,17 @@ const App: React.FC = () => {
 
       {/* Main Content */}
       <main id="main-content" className="w-full flex-1 flex flex-col items-center">
-        {renderCurrentView()}
+        <AppRouter
+          view={view}
+          isLoading={isLoading}
+          studentName={studentName}
+          history={history}
+          returnToLanding={returnToLanding}
+          navigateTo={navigateTo}
+          handleAuthSuccess={handleAuthSuccess}
+          handleStudentLogin={handleStudentLogin}
+          handleInterviewComplete={handleInterviewComplete}
+        />
       </main>
 
       {/* Submission Detail Modal */}
@@ -400,7 +313,7 @@ const App: React.FC = () => {
         const peerCourse = findCourseForSubmission(courses, selectedSubmission);
         const peers = getPeerSubmissions(peerCourse, selectedSubmission.id);
         const matchedSubmission = peerCourse?.submissions.find((submission) => submission.id === selectedSubmission.id) || selectedSubmission;
-        const canEditReview = view === AppView.INSTRUCTOR_DASHBOARD || view === AppView.MANAGER_DASHBOARD || userRole === 'instructor';
+        const canEditReview = view === AppView.INSTRUCTOR_DASHBOARD || view === AppView.MANAGER_DASHBOARD || role === 'instructor';
         const reviewerName = user?.displayName || studentName || 'Instructor';
         const reviewerEmail = user?.email || undefined;
         return (
@@ -413,7 +326,7 @@ const App: React.FC = () => {
               currentReviewerEmail={reviewerEmail}
               onUpdateReview={
                 peerCourse
-                  ? (submissionId, review) => handleUpdateSubmissionReview(peerCourse.id, submissionId, review)
+                  ? (submissionId, review) => updateSubmissionReview(peerCourse.id, submissionId, review)
                   : undefined
               }
               onClose={() => setSelectedSubmission(null)}
@@ -429,8 +342,32 @@ const App: React.FC = () => {
         </p>
       </footer>
     </div>
-    </ToastProvider>
   );
 };
+
+/**
+ * SpeakWise - AI-Powered Oral Examination Platform
+ *
+ * A professional platform for conducting AI-driven oral exams with:
+ * - Real-time voice interaction using Gemini 2.5 Native Audio
+ * - Automatic transcription and feedback generation
+ * - Course management for instructors (Supabase PostgreSQL)
+ * - Student history and performance tracking
+ *
+ * Each provider below instantiates its data hook exactly once; views consume
+ * the contexts directly instead of receiving drilled props.
+ */
+const App: React.FC = () => (
+  <AuthProvider>
+    <CourseProvider>
+      <InstitutionProvider>
+        <ToastProvider>
+          <StorageErrorNotifier />
+          <AppShell />
+        </ToastProvider>
+      </InstitutionProvider>
+    </CourseProvider>
+  </AuthProvider>
+);
 
 export default App;

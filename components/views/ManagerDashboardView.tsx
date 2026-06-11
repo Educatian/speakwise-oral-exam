@@ -1,544 +1,74 @@
-import React, { useEffect, useState } from 'react';
-import { chatComplete } from '../../lib/services/aiClient';
-import { extractDocumentText } from '../../lib/utils/documentText';
-import { extractExamFromText } from '../../lib/services/questionExtraction';
-import { Course, CourseTemplate, Institution, Submission } from '../../types';
-import { GroupKnowledgeService } from '../../lib/services/GroupKnowledgeService';
-import { Button, Input, Textarea, Modal, PinVerifyModal, ErrorBoundary } from '../ui';
-import { useToastContext } from '../../contexts/ToastContext';
-import { createCoursePromptGenerator } from '../../lib/prompts/interviewerSystem';
-import { deleteCourseTemplate, getCourseTemplates, saveCourseTemplate } from '../../lib/supabase';
-import { ClassAnalyticsView } from './ClassAnalyticsView';
-
-import { hashPin, isValidPin } from '../../lib/utils/pinHash';
-import { getMasteryLevel } from '../../lib/utils/scoreDisplay';
-
-import { isAdminIdentity } from '../../lib/utils/adminAccess';
+import React from 'react';
+import { Button, PinVerifyModal } from '../ui';
+import { useManagerDashboard } from '../../hooks/useManagerDashboard';
+import { useCourseContext } from '../../contexts/CourseContext';
+import { useInstitutionContext } from '../../contexts/InstitutionContext';
+import {
+    AnalyticsSection,
+    CourseCreateForm,
+    CourseList,
+    CoursePromptModal,
+    DashboardStats,
+    GuidancePanel,
+    SubmissionsPanel
+} from './manager';
 
 interface ManagerDashboardViewProps {
-    courses: Course[];
-    onAddCourse: (course: Omit<Course, 'id' | 'submissions'>) => void;
-    onUpdateCourse?: (courseId: string, updates: Partial<Course>) => void;
-    onDeleteCourse: (id: string) => void;
-    onDeleteSubmission: (courseId: string, submissionId: string) => void;
-    onSelectSubmission: (submission: Submission) => void;
     onBack: () => void;
     currentUserEmail?: string; // For access control
     currentInstitution?: { schoolId: string; schoolName: string } | null;
-    availableInstitutions?: Institution[];
     onAdminPanel?: () => void; // Admin-only panel access
 }
 
 /**
  * Manager Dashboard View
  * Course management, creation, and submission review interface
+ *
+ * Thin composition shell — state/orchestration live in useManagerDashboard,
+ * and each dashboard region is a focused sub-component under ./manager/.
+ * Course data/CRUD and the institution directory come from the app-root
+ * contexts (previously drilled App → AppRouter → here as props).
  */
 export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
-    courses,
-    onAddCourse,
-    onUpdateCourse,
-    onDeleteCourse,
-    onDeleteSubmission,
-    onSelectSubmission,
     onBack,
     currentUserEmail,
     currentInstitution,
-    availableInstitutions = [],
     onAdminPanel
 }) => {
-    const toast = useToastContext();
-
-    // Get email from props or fallback to localStorage
-    const storedUser = typeof localStorage !== 'undefined' ? localStorage.getItem('speakwise_user') : null;
-    const effectiveEmail = currentUserEmail || (storedUser ? JSON.parse(storedUser)?.email : null);
-
-    // Check if current user is admin — DB-backed user_profiles.role when
-    // Supabase is configured; bootstrap email only in local/demo mode.
-    const isAdmin = isAdminIdentity({ email: effectiveEmail });
-
-    // Form state
-    const [courseName, setCourseName] = useState('');
-    const [instructorName, setInstructorName] = useState('');
-    const [instructorPin, setInstructorPin] = useState('');
-    const [coursePassword, setCoursePassword] = useState('');
-    const [coursePrompt, setCoursePrompt] = useState('');
-    const [silenceThresholdMs, setSilenceThresholdMs] = useState(3000);
-    const [minTurnDurationMs, setMinTurnDurationMs] = useState(700);
-    const [selectedInstitutionId, setSelectedInstitutionId] = useState(currentInstitution?.schoolId || '');
-    const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false);
-    const [formError, setFormError] = useState<string | null>(null);
-    const [leftPanelMode, setLeftPanelMode] = useState<'create' | 'library'>('create');
-    const [courseTemplates, setCourseTemplates] = useState<CourseTemplate[]>([]);
-    const [templatesLoading, setTemplatesLoading] = useState(false);
-    const [templateError, setTemplateError] = useState<string | null>(null);
-    const [templateDraftName, setTemplateDraftName] = useState('');
-
-    // Modal state
-    const [viewingCourse, setViewingCourse] = useState<Course | null>(null);
-
-    // Editing state for course prompt
-    const [isEditingPrompt, setIsEditingPrompt] = useState(false);
-    const [editedPrompt, setEditedPrompt] = useState('');
-
-    // PIN verification state
-    const [pinModalCourse, setPinModalCourse] = useState<Course | null>(null);
-    const [pinModalAction, setPinModalAction] = useState<'view' | 'delete' | null>(null);
-    const [verifiedCourses, setVerifiedCourses] = useState<Set<string>>(new Set());
-
-    // Handle PIN verification action
-    const handlePinAction = (course: Course, action: 'view' | 'delete') => {
-        // Admin OR course owner bypasses PIN verification
-        const isOwner = effectiveEmail && course.ownerEmail &&
-            effectiveEmail.toLowerCase() === course.ownerEmail.toLowerCase();
-
-        if (isAdmin || isOwner) {
-            if (action === 'view') {
-                setViewingCourse(course);
-            } else {
-                onDeleteCourse(course.id);
-            }
-            return;
-        }
-
-        // If already verified for this course, proceed directly
-        if (verifiedCourses.has(course.id)) {
-            if (action === 'view') {
-                setViewingCourse(course);
-            } else {
-                onDeleteCourse(course.id);
-            }
-            return;
-        }
-        // Otherwise, show PIN modal
-        setPinModalCourse(course);
-        setPinModalAction(action);
-    };
-
-    const handlePinVerified = () => {
-        if (!pinModalCourse || !pinModalAction) return;
-
-        // Mark this course as verified for this session
-        setVerifiedCourses(prev => new Set([...prev, pinModalCourse.id]));
-
-        if (pinModalAction === 'view') {
-            setViewingCourse(pinModalCourse);
-        } else {
-            onDeleteCourse(pinModalCourse.id);
-        }
-
-        setPinModalCourse(null);
-        setPinModalAction(null);
-    };
-
-    useEffect(() => {
-        let isMounted = true;
-
-        async function loadTemplates() {
-            setTemplatesLoading(true);
-            setTemplateError(null);
-            try {
-                const templates = await getCourseTemplates(currentInstitution?.schoolId || selectedInstitutionId || null);
-                if (isMounted) {
-                    setCourseTemplates(templates);
-                }
-            } catch (error) {
-                console.error('Failed to load course templates:', error);
-                if (isMounted) {
-                    setTemplateError('Unable to load course templates right now.');
-                }
-            } finally {
-                if (isMounted) {
-                    setTemplatesLoading(false);
-                }
-            }
-        }
-
-        loadTemplates();
-        return () => {
-            isMounted = false;
-        };
-    }, [currentInstitution?.schoolId, selectedInstitutionId]);
-
-    // File upload state for Document-Driven Course Creation
-    const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
-    const [isDragging, setIsDragging] = useState(false);
-    const [isExtracting, setIsExtracting] = useState(false);
-    const [extractStatus, setExtractStatus] = useState('');
-
-    // Class analytics collapsible + per-course filter.
-    const [showAnalytics, setShowAnalytics] = useState(true);
-    const [analyticsCourseFilter, setAnalyticsCourseFilter] = useState<string | null>(null);
-    const [extractedQuestions, setExtractedQuestions] = useState<string[]>([]);
-    const [extractedContext, setExtractedContext] = useState('');
-    const [showQuestionReview, setShowQuestionReview] = useState(false);
-    const fileInputRef = React.useRef<HTMLInputElement>(null);
-
-    // Handle file drop
-    const handleDrop = (e: React.DragEvent) => {
-        e.preventDefault();
-        setIsDragging(false);
-        const files = Array.from(e.dataTransfer.files).slice(0, 2) as File[];
-        const validFiles = files.filter(f =>
-            f.type === 'application/pdf' ||
-            f.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-            f.type === 'text/plain' ||
-            f.name.endsWith('.txt') || f.name.endsWith('.pdf') || f.name.endsWith('.docx')
-        );
-        if (validFiles.length > 0) {
-            setUploadedFiles(prev => [...prev, ...validFiles].slice(0, 2));
-        }
-    };
-
-    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files) {
-            const files = Array.from(e.target.files).slice(0, 2);
-            setUploadedFiles(prev => [...prev, ...files].slice(0, 2));
-        }
-    };
-
-    const removeFile = (index: number) => {
-        setUploadedFiles(prev => prev.filter((_, i) => i !== index));
-        setExtractedQuestions([]);
-        setExtractedContext('');
-        setShowQuestionReview(false);
-    };
-
-    // Read uploaded documents (TXT / DOCX / PDF) and extract a knowledge base +
-    // oral-exam questions. Long documents are chunked and consolidated (RAG-style)
-    // by the extraction service so nothing is silently truncated.
-    const handleExtractFromFiles = async () => {
-        if (uploadedFiles.length === 0) return;
-        setIsExtracting(true);
-        setFormError(null);
-
-        try {
-            setExtractStatus('Reading documents…');
-            const fileContents = await Promise.all(
-                uploadedFiles.map(async (file) => {
-                    try {
-                        return { name: file.name, text: await extractDocumentText(file) };
-                    } catch (readErr) {
-                        console.error(`Could not read ${file.name}:`, readErr);
-                        return { name: file.name, text: '' };
-                    }
-                })
-            );
-
-            const readable = fileContents.filter((fc) => fc.text.trim().length > 0);
-            if (readable.length === 0) {
-                setFormError(
-                    'Could not read any text from the uploaded file(s). If a PDF is scanned (an image), it has no selectable text — please upload a text-based PDF, DOCX, or TXT.'
-                );
-                return;
-            }
-
-            const skipped = fileContents.filter((fc) => fc.text.trim().length === 0);
-            setExtractStatus('Analyzing material and drafting questions…');
-            const { knowledgeBase, questions } = await extractExamFromText(
-                readable,
-                courseName || 'Unknown Course'
-            );
-
-            setExtractedQuestions(questions);
-            setExtractedContext(knowledgeBase);
-            setShowQuestionReview(true);
-            if (skipped.length > 0) {
-                setFormError(
-                    `Note: no text could be read from ${skipped.map((s) => s.name).join(', ')} (likely a scanned/image PDF). Questions were generated from the remaining file(s).`
-                );
-            }
-        } catch (err) {
-            console.error('Extraction failed:', err);
-            setFormError(
-                err instanceof Error
-                    ? `Extraction failed: ${err.message}`
-                    : 'Failed to extract questions. Please check your files and try again.'
-            );
-        } finally {
-            setIsExtracting(false);
-            setExtractStatus('');
-        }
-    };
-
-    // Apply extracted questions to the system prompt
-    const handleApproveQuestions = () => {
-        const questionsBlock = extractedQuestions
-            .map((q, i) => `${i + 1}. ${q}`)
-            .join('\n');
-
-        // Only reference a Knowledge Base if one was actually extracted —
-        // otherwise the examiner is told to grade against a blank section.
-        const kb = extractedContext.trim();
-        const kbSection = kb
-            ? `## Knowledge Base (from uploaded documents)\n${kb}\n\n`
-            : '';
-        const evalLine = kb
-            ? "Evaluate the student's answers against the Knowledge Base above. Be thorough but encouraging."
-            : "Evaluate the student's answers for conceptual understanding and accuracy. Be thorough but encouraging.";
-
-        const prompt = `${kbSection}## Required Interview Questions\nYou MUST ask these questions in order:\n${questionsBlock}\n\n${evalLine}`;
-
-        setCoursePrompt(prompt);
-        setShowQuestionReview(false);
-    };
-
-    // Edit a question
-    const updateQuestion = (index: number, value: string) => {
-        setExtractedQuestions(prev => prev.map((q, i) => i === index ? value : q));
-    };
-
-    // Remove a question
-    const removeQuestion = (index: number) => {
-        setExtractedQuestions(prev => prev.filter((_, i) => i !== index));
-    };
-
-    // Add a question
-    const addQuestion = () => {
-        setExtractedQuestions(prev => [...prev, '']);
-    };
-
-    const handleSaveTemplateFromForm = async () => {
-        if (!coursePrompt.trim()) {
-            setTemplateError('Add a prompt before saving a reusable template.');
-            return;
-        }
-
-        const institution = availableInstitutions.find((item) => item.id === selectedInstitutionId);
-        const template: CourseTemplate = {
-            id: `template_${Math.random().toString(36).slice(2, 9)}`,
-            name: (templateDraftName || courseName || 'Untitled Template').trim(),
-            prompt: coursePrompt.trim(),
-            instructorName: instructorName.trim() || 'Instructor',
-            institutionId: selectedInstitutionId || currentInstitution?.schoolId || '',
-            institutionName: institution?.name || currentInstitution?.schoolName || '',
-            createdByEmail: effectiveEmail || '',
-            createdAt: Date.now(),
-            interviewSettings: {
-                silenceThresholdMs,
-                minTurnDurationMs
-            }
-        };
-
-        try {
-            await saveCourseTemplate(template);
-            setCourseTemplates((current) => [template, ...current.filter((item) => item.id !== template.id)]);
-            setTemplateDraftName('');
-            setTemplateError(null);
-            toast.success(`Template "${template.name}" saved to your library.`);
-        } catch (error) {
-            console.error('Failed to save template:', error);
-            setTemplateError('The template could not be saved to the server. Check your connection and try again — your draft is still in the form.');
-        }
-    };
-
-    const handleSaveCourseAsTemplate = async (course: Course) => {
-        const template: CourseTemplate = {
-            id: `template_${course.id}_${Date.now().toString(36)}`,
-            name: `${course.name} Template`,
-            prompt: course.prompt,
-            instructorName: course.instructorName,
-            institutionId: course.institutionId,
-            institutionName: course.institutionName,
-            sourceCourseId: course.id,
-            createdByEmail: effectiveEmail || course.ownerEmail || '',
-            createdAt: Date.now(),
-            interviewSettings: course.interviewSettings
-        };
-
-        try {
-            await saveCourseTemplate(template);
-            setCourseTemplates((current) => [template, ...current.filter((item) => item.id !== template.id)]);
-            setTemplateError(null);
-            toast.success(`"${course.name}" saved as a reusable template.`);
-        } catch (error) {
-            console.error('Failed to save course as template:', error);
-            setTemplateError('The template could not be saved to the server. Check your connection and try again.');
-        }
-    };
-
-    const handleLoadTemplate = (template: CourseTemplate) => {
-        setCourseName(`${template.name.replace(/ Template$/i, '')} Copy`);
-        setInstructorName(template.instructorName);
-        setCoursePrompt(template.prompt);
-        setSelectedInstitutionId(template.institutionId || currentInstitution?.schoolId || '');
-        setTemplateDraftName(template.name);
-        setSilenceThresholdMs(template.interviewSettings?.silenceThresholdMs || 3000);
-        setMinTurnDurationMs(template.interviewSettings?.minTurnDurationMs || 700);
-        setLeftPanelMode('create');
-        setFormError(null);
-    };
-
-    const handleDeleteTemplate = async (templateId: string) => {
-        try {
-            await deleteCourseTemplate(templateId);
-            setCourseTemplates((current) => current.filter((template) => template.id !== templateId));
-            setTemplateError(null);
-            toast.info('Template deleted.');
-        } catch (error) {
-            console.error('Failed to delete template:', error);
-            setTemplateError('The template could not be deleted on the server. Check your connection and try again.');
-        }
-    };
-
-    // Validate and add course
-    const handleAddCourse = async () => {
-        setFormError(null);
-
-        if (!courseName.trim()) {
-            setFormError('Add a course name so students can recognize it in their course list.');
-            return;
-        }
-        if (!instructorName.trim()) {
-            setFormError('Add the instructor name — it appears on the student-facing course card.');
-            return;
-        }
-        if (!instructorPin.trim()) {
-            setFormError('Set a 4-digit instructor PIN. It protects submission access for this course.');
-            return;
-        }
-        if (!isValidPin(instructorPin)) {
-            setFormError('The instructor PIN must be exactly 4 digits — adjust it and try again.');
-            return;
-        }
-        if (!coursePassword.trim()) {
-            setFormError('Set a student passcode. Students enter it to join this course.');
-            return;
-        }
-        if (!selectedInstitutionId) {
-            setFormError('Choose an institution workspace so this course deploys where your students will look for it.');
-            return;
-        }
-        if (coursePassword.length < 4) {
-            setFormError('The student passcode needs at least 4 characters — lengthen it and try again.');
-            return;
-        }
-        if (!coursePrompt.trim()) {
-            setFormError('Add the AI interviewer instruction, or use AI Generate / a saved template to draft one.');
-            return;
-        }
-        if (silenceThresholdMs < 1000 || silenceThresholdMs > 8000) {
-            setFormError('Silence threshold should stay between 1000ms and 8000ms.');
-            return;
-        }
-        if (minTurnDurationMs < 300 || minTurnDurationMs > 4000) {
-            setFormError('Minimum turn length should stay between 300ms and 4000ms.');
-            return;
-        }
-
-        // Generate a temporary course ID for hashing
-        const tempId = Math.random().toString(36).substring(2, 8).toUpperCase();
-        const pinHash = await hashPin(instructorPin, tempId);
-
-        const selectedInstitution = availableInstitutions.find((institution) => institution.id === selectedInstitutionId);
-
-        onAddCourse({
-            name: courseName.trim(),
-            instructorName: instructorName.trim(),
-            instructorPinHash: pinHash,
-            password: coursePassword,
-            prompt: coursePrompt.trim(),
-            ownerEmail: currentUserEmail, // Set owner for visibility control
-            institutionId: selectedInstitutionId,
-            institutionName: selectedInstitution?.name || currentInstitution?.schoolName || '',
-            interviewSettings: {
-                silenceThresholdMs,
-                minTurnDurationMs
-            }
-        });
-
-        toast.success(`Course "${courseName.trim()}" created. Share the course number and passcode with your students.`);
-
-        // Reset form
-        setCourseName('');
-        setInstructorName('');
-        setInstructorPin('');
-        setCoursePassword('');
-        setCoursePrompt('');
-        setSilenceThresholdMs(3000);
-        setMinTurnDurationMs(700);
-        setSelectedInstitutionId(currentInstitution?.schoolId || '');
-        setUploadedFiles([]);
-        setExtractedQuestions([]);
-        setExtractedContext('');
-        setShowQuestionReview(false);
-    };
-
-    // Generate AI prompt
-    const handleGeneratePrompt = async () => {
-        if (!courseName.trim()) {
-            setFormError('Enter a course name first — the generator uses it to draft a relevant instruction.');
-            return;
-        }
-
-        setIsGeneratingPrompt(true);
-        setFormError(null);
-
-        try {
-            const generated = await chatComplete({
-                messages: [
-                    { role: 'user', content: createCoursePromptGenerator(courseName) }
-                ]
-            });
-            if (generated.trim()) {
-                setCoursePrompt(generated.trim());
-            }
-        } catch (err) {
-            console.error('Prompt generation failed:', err);
-            setFormError('The prompt generator did not respond. Check your connection and try again, or write the instruction manually.');
-        } finally {
-            setIsGeneratingPrompt(false);
-        }
-    };
-
-    // Filter courses based on ownership (admin sees all, others see only their own)
-    if (import.meta.env.DEV) {
-        console.log('[DEBUG] effectiveEmail:', effectiveEmail);
-        console.log('[DEBUG] courses ownerEmails:', courses.map(c => ({ id: c.id, name: c.name, ownerEmail: c.ownerEmail })));
-    }
-
-    const visibleCourses = isAdmin
-        ? courses
-        : courses.filter(c => {
-            const matchesOwner = c.ownerEmail?.toLowerCase() === effectiveEmail?.toLowerCase();
-            const matchesInstitution = currentInstitution?.schoolId
-                ? c.institutionId === currentInstitution.schoolId || !c.institutionId
-                : true;
-            return matchesOwner || matchesInstitution;
-        });
-
-    // Get all submissions sorted by timestamp (only from visible courses)
-    const allSubmissions = visibleCourses
-        .flatMap(c => c.submissions.map(s => ({ ...s, courseName: c.name, _courseId: c.id })))
-        .sort((a, b) => b.timestamp - a.timestamp);
-
-    const totalSubmissions = allSubmissions.length;
-    const currentInstitutionName = currentInstitution?.schoolName || 'All Institutions';
-    const averageScore = totalSubmissions > 0
-        ? Math.round(allSubmissions.reduce((sum, submission) => sum + submission.score, 0) / totalSubmissions)
-        : null;
-    const coursesWithoutSubmissions = visibleCourses.filter((course) => course.submissions.length === 0).length;
-    // Submissions the evaluation pipeline flagged for a human look and that no
-    // instructor has reviewed yet — the actionable front of the review queue.
-    const flaggedForReview = allSubmissions.filter((s) => s.needsReview && !s.instructorReview).length;
-    const instructorPriorities = visibleCourses
-        .map((course) => {
-            const courseAverage = course.submissions.length > 0
-                ? Math.round(course.submissions.reduce((sum, submission) => sum + submission.score, 0) / course.submissions.length)
-                : null;
-
-            return {
-                id: course.id,
-                name: course.name,
-                submissions: course.submissions.length,
-                averageScore: courseAverage
-            };
-        })
-        .sort((left, right) => {
-            if (left.submissions === 0 && right.submissions > 0) return -1;
-            if (right.submissions === 0 && left.submissions > 0) return 1;
-            return (left.averageScore ?? 101) - (right.averageScore ?? 101);
-        })
-        .slice(0, 3);
+    const {
+        courses,
+        addCourse: onAddCourse,
+        updateCourse: onUpdateCourse,
+        deleteCourse: onDeleteCourse,
+        deleteSubmission: onDeleteSubmission,
+        setSelectedSubmission: onSelectSubmission
+    } = useCourseContext();
+    const { institutions: availableInstitutions } = useInstitutionContext();
+    const {
+        isAdmin,
+        visibleCourses,
+        allSubmissions,
+        totalSubmissions,
+        currentInstitutionName,
+        averageScore,
+        coursesWithoutSubmissions,
+        flaggedForReview,
+        instructorPriorities,
+        leftPanelMode,
+        setLeftPanelMode,
+        form,
+        docImport,
+        templates,
+        viewing,
+        pin
+    } = useManagerDashboard({
+        courses,
+        onAddCourse,
+        onDeleteCourse,
+        currentUserEmail,
+        currentInstitution,
+        availableInstitutions
+    });
 
     return (
         <div className="w-full max-w-6xl mx-auto space-y-8 animate-slide-in-up pb-20">
@@ -570,111 +100,25 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
                 </Button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-                <div className="glass-panel-light rounded-2xl p-4">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600 font-bold mb-2">Institution scope</p>
-                    <p className="text-lg font-semibold text-white">{currentInstitutionName}</p>
-                    <p className="text-xs text-slate-500 mt-2">Courses and access stay aligned with the selected deployment workspace.</p>
-                </div>
-                <div className="glass-panel-light rounded-2xl p-4">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600 font-bold mb-2">Visible courses</p>
-                    <p className="text-lg font-semibold text-white">{visibleCourses.length}</p>
-                    <p className="text-xs text-slate-500 mt-2">Live workspaces you can manage right now.</p>
-                </div>
-                <div className="glass-panel-light rounded-2xl p-4">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600 font-bold mb-2">Total submissions</p>
-                    <p className="text-lg font-semibold text-white">{totalSubmissions}</p>
-                    <p className="text-xs text-slate-500 mt-2">Interview attempts collected across your visible courses.</p>
-                </div>
-                <div className="glass-panel-light rounded-2xl p-4">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600 font-bold mb-2">Average score</p>
-                    <p className="text-lg font-semibold text-white">{averageScore != null ? `${averageScore}%` : 'N/A'}</p>
-                    <p className="text-xs text-slate-500 mt-2">A quick cohort-level signal across submitted interviews.</p>
-                </div>
-            </div>
+            <DashboardStats
+                currentInstitutionName={currentInstitutionName}
+                visibleCourseCount={visibleCourses.length}
+                totalSubmissions={totalSubmissions}
+                averageScore={averageScore}
+            />
 
-            <div className="glass-panel rounded-3xl p-6">
-                <div className="flex flex-col lg:flex-row gap-6">
-                    <div className="flex-1">
-                        <h3 className="text-lg font-semibold text-white">Instructor guidance</h3>
-                        <p className="text-sm text-slate-500 mt-1">
-                            A lightweight operating layer so the dashboard supports review decisions, not just management tasks.
-                        </p>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
-                            <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
-                                <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600 font-bold mb-2">Deployment readiness</p>
-                                <p className="text-sm text-white">{coursesWithoutSubmissions} course{coursesWithoutSubmissions !== 1 ? 's' : ''} need first submissions</p>
-                                <p className="text-xs text-slate-500 mt-2">Prioritize prompt checks and student onboarding in these workspaces.</p>
-                            </div>
-                            <div className={`rounded-2xl border p-4 ${flaggedForReview > 0 ? 'border-amber-500/30 bg-amber-500/[0.06]' : 'border-slate-800 bg-slate-900/40'}`}>
-                                <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600 font-bold mb-2">Needs review</p>
-                                <p className={`text-sm ${flaggedForReview > 0 ? 'text-amber-200 font-semibold' : 'text-white'}`}>
-                                    {totalSubmissions === 0
-                                        ? 'No review data yet'
-                                        : flaggedForReview > 0
-                                          ? `${flaggedForReview} submission${flaggedForReview === 1 ? '' : 's'} flagged for review`
-                                          : 'No submissions need review'}
-                                </p>
-                                <p className="text-xs text-slate-500 mt-2">
-                                    {flaggedForReview > 0
-                                        ? 'Low confidence, score disagreement, or thin evidence — open these first. See the flagged list in Class Analytics.'
-                                        : 'Flagged attempts (low confidence or score disagreement) will surface here for a quick human check.'}
-                                </p>
-                            </div>
-                        </div>
-                    </div>
+            <GuidancePanel
+                coursesWithoutSubmissions={coursesWithoutSubmissions}
+                flaggedForReview={flaggedForReview}
+                totalSubmissions={totalSubmissions}
+                instructorPriorities={instructorPriorities}
+            />
 
-                    <div className="flex-1">
-                        <h4 className="text-sm font-semibold text-white">Courses needing attention</h4>
-                        <div className="space-y-3 mt-4">
-                            {instructorPriorities.length > 0 ? instructorPriorities.map((course) => (
-                                <div key={course.id} className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
-                                    <div className="flex items-center justify-between gap-3">
-                                        <p className="text-sm font-medium text-white">{course.name}</p>
-                                        <span className="text-xs text-slate-500">{course.submissions} submission{course.submissions !== 1 ? 's' : ''}</span>
-                                    </div>
-                                    <p className="text-xs text-slate-500 mt-2">
-                                        {course.submissions === 0
-                                            ? 'No student evidence yet. Check onboarding, passcodes, or course visibility.'
-                                            : `Average score ${course.averageScore}% across current submissions.`}
-                                    </p>
-                                </div>
-                            )) : (
-                                <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
-                                    <p className="text-sm text-slate-500">Guidance cards will populate once courses are available in this workspace.</p>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Class Analytics — collapsible so the existing course roster
-                 stays the default focus on first load once the section grows. */}
-            <div className="space-y-3">
-                <button
-                    type="button"
-                    className="text-xs font-bold uppercase tracking-widest text-slate-400 hover:text-slate-200 flex items-center gap-2"
-                    onClick={() => setShowAnalytics((v) => !v)}
-                    aria-expanded={showAnalytics}
-                >
-                    <span>{showAnalytics ? '▾' : '▸'}</span>
-                    Class Analytics
-                    <span className="text-slate-600 font-normal normal-case tracking-normal">
-                        {totalSubmissions} submission{totalSubmissions === 1 ? '' : 's'}
-                    </span>
-                </button>
-                {showAnalytics && (
-                    <ErrorBoundary compact panelName="class analytics">
-                        <ClassAnalyticsView
-                            courses={visibleCourses}
-                            selectedCourseId={analyticsCourseFilter}
-                            onSelectCourse={setAnalyticsCourseFilter}
-                            onSelectSubmission={onSelectSubmission}
-                        />
-                    </ErrorBoundary>
-                )}
-            </div>
+            <AnalyticsSection
+                courses={visibleCourses}
+                totalSubmissions={totalSubmissions}
+                onSelectSubmission={onSelectSubmission}
+            />
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                 {/* Left Column - Create Course & List */}
@@ -697,685 +141,57 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
                     </div>
 
                     {leftPanelMode === 'create' && (
-                    <div className="glass-panel p-6 rounded-3xl space-y-4">
-                        <h3 className="text-lg font-semibold text-emerald-400">Add New Course</h3>
-
-                        <Input
-                            placeholder="Course Name (e.g. Junior Dev Technical Interview)"
-                            value={courseName}
-                            onChange={(e) => setCourseName(e.target.value)}
-                            aria-label="Course name"
+                        <CourseCreateForm
+                            form={form}
+                            docImport={docImport}
+                            templates={templates}
+                            availableInstitutions={availableInstitutions}
                         />
-
-                        <Input
-                            placeholder="Your Name (Instructor)"
-                            value={instructorName}
-                            onChange={(e) => setInstructorName(e.target.value)}
-                            aria-label="Instructor name"
-                        />
-
-                        <div className="space-y-2">
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">
-                                Institution Workspace
-                            </label>
-                            <select
-                                value={selectedInstitutionId}
-                                onChange={(e) => setSelectedInstitutionId(e.target.value)}
-                                className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all"
-                            >
-                                <option value="">Select institution</option>
-                                {availableInstitutions
-                                    .filter((institution) => institution.id !== 'guest')
-                                    .map((institution) => (
-                                        <option key={institution.id} value={institution.id}>
-                                            {institution.name}
-                                        </option>
-                                    ))}
-                            </select>
-                            <p className="text-xs text-slate-500">
-                                Courses are scoped to an institution so they can be rolled out cleanly by campus or program.
-                            </p>
-                        </div>
-
-                        <Input
-                            type="password"
-                            placeholder="Instructor PIN (4 digits) - to view submissions"
-                            value={instructorPin}
-                            onChange={(e) => setInstructorPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                            maxLength={4}
-                            aria-label="Instructor PIN"
-                        />
-
-                        <Input
-                            placeholder="Student Passcode (for students to join)"
-                            value={coursePassword}
-                            onChange={(e) => setCoursePassword(e.target.value)}
-                            aria-label="Student passcode"
-                        />
-
-                        <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4 space-y-4">
-                            <div>
-                                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Interview tuning</p>
-                                <p className="text-xs text-slate-500 mt-1">Adjust how long the system waits before closing a turn and how short a captured response can be.</p>
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <label className="block">
-                                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Silence threshold</span>
-                                    <div className="mt-2 flex items-center gap-3">
-                                        <input
-                                            type="range"
-                                            min={1000}
-                                            max={8000}
-                                            step={250}
-                                            value={silenceThresholdMs}
-                                            onChange={(event) => setSilenceThresholdMs(Number(event.target.value))}
-                                            className="flex-1"
-                                        />
-                                        <span className="w-16 text-right text-sm font-mono text-slate-200">{(silenceThresholdMs / 1000).toFixed(1)}s</span>
-                                    </div>
-                                </label>
-                                <label className="block">
-                                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Minimum turn length</span>
-                                    <div className="mt-2 flex items-center gap-3">
-                                        <input
-                                            type="range"
-                                            min={300}
-                                            max={4000}
-                                            step={100}
-                                            value={minTurnDurationMs}
-                                            onChange={(event) => setMinTurnDurationMs(Number(event.target.value))}
-                                            className="flex-1"
-                                        />
-                                        <span className="w-16 text-right text-sm font-mono text-slate-200">{minTurnDurationMs}ms</span>
-                                    </div>
-                                </label>
-                            </div>
-                        </div>
-
-                        {/* ── Document Upload Section ────────────────────────────── */}
-                        <div className="border border-dashed border-indigo-500/30 rounded-2xl p-4 space-y-3">
-                            <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-widest flex items-center gap-2">
-                                📄 Knowledge Source (Optional)
-                                <span className="text-slate-600 font-normal normal-case tracking-normal">Max 2 files</span>
-                            </h4>
-
-                            {/* Dropzone */}
-                            <div
-                                className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all ${isDragging
-                                    ? 'border-indigo-400 bg-indigo-500/10'
-                                    : 'border-slate-700 hover:border-indigo-500/50 hover:bg-slate-800/30'
-                                    }`}
-                                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-                                onDragLeave={() => setIsDragging(false)}
-                                onDrop={handleDrop}
-                                onClick={() => fileInputRef.current?.click()}
-                            >
-                                <input
-                                    ref={fileInputRef}
-                                    type="file"
-                                    accept=".pdf,.docx,.txt"
-                                    multiple
-                                    className="hidden"
-                                    onChange={handleFileSelect}
-                                />
-                                <svg className="w-8 h-8 mx-auto text-slate-600 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                                </svg>
-                                <p className="text-xs text-slate-500">
-                                    {isDragging ? 'Drop files here' : 'Drop PDF, DOCX, or TXT — or click to browse'}
-                                </p>
-                            </div>
-
-                            {/* Uploaded Files */}
-                            {uploadedFiles.length > 0 && (
-                                <div className="space-y-2">
-                                    {uploadedFiles.map((file, i) => (
-                                        <div key={i} className="flex items-center justify-between bg-slate-800/50 rounded-lg px-3 py-2">
-                                            <div className="flex items-center gap-2 min-w-0">
-                                                <span className="text-indigo-400 text-sm">📎</span>
-                                                <span className="text-xs text-slate-300 truncate">{file.name}</span>
-                                                <span className="text-[10px] text-slate-600">({(file.size / 1024).toFixed(0)} KB)</span>
-                                            </div>
-                                            <button
-                                                onClick={() => removeFile(i)}
-                                                className="text-slate-600 hover:text-red-400 transition-colors flex-shrink-0"
-                                            >
-                                                ✕
-                                            </button>
-                                        </div>
-                                    ))}
-
-                                    {!showQuestionReview && (
-                                        <button
-                                            onClick={handleExtractFromFiles}
-                                            disabled={isExtracting}
-                                            className="w-full py-2 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/30 text-indigo-300 text-xs font-bold rounded-xl flex items-center justify-center gap-2 transition-all disabled:opacity-50"
-                                        >
-                                            {isExtracting ? (
-                                                <>
-                                                    <span className="spinner w-3 h-3" />
-                                                    {extractStatus || 'Analyzing documents…'}
-                                                </>
-                                            ) : (
-                                                <>
-                                                    🔍 Extract Questions from Documents
-                                                </>
-                                            )}
-                                        </button>
-                                    )}
-                                </div>
-                            )}
-
-                            {/* Question Review Panel */}
-                            {showQuestionReview && extractedQuestions.length > 0 && (
-                                <div className="space-y-3 border-t border-slate-700 pt-3">
-                                    <div className="flex items-center justify-between">
-                                        <h5 className="text-xs font-bold text-emerald-400 uppercase">
-                                            📋 Extracted Questions ({extractedQuestions.length})
-                                        </h5>
-                                        <button
-                                            onClick={addQuestion}
-                                            className="text-[10px] text-indigo-400 hover:text-indigo-300 font-bold"
-                                        >
-                                            + Add Question
-                                        </button>
-                                    </div>
-
-                                    <div className="space-y-2 max-h-[200px] overflow-y-auto custom-scrollbar">
-                                        {extractedQuestions.map((q, i) => (
-                                            <div key={i} className="flex items-start gap-2">
-                                                <span className="text-[10px] text-slate-600 mt-2 flex-shrink-0">{i + 1}.</span>
-                                                <input
-                                                    type="text"
-                                                    value={q}
-                                                    onChange={(e) => updateQuestion(i, e.target.value)}
-                                                    className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-300 focus:border-indigo-500/50 focus:outline-none"
-                                                />
-                                                <button
-                                                    onClick={() => removeQuestion(i)}
-                                                    className="text-slate-600 hover:text-red-400 text-xs mt-1 flex-shrink-0"
-                                                >
-                                                    ✕
-                                                </button>
-                                            </div>
-                                        ))}
-                                    </div>
-
-                                    <button
-                                        onClick={handleApproveQuestions}
-                                        className="w-full py-2 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 text-emerald-300 text-xs font-bold rounded-xl transition-all"
-                                    >
-                                        ✓ Approve & Generate Prompt
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="relative">
-                            <Textarea
-                                placeholder="AI Interviewer System Instruction"
-                                value={coursePrompt}
-                                onChange={(e) => setCoursePrompt(e.target.value)}
-                                className="pr-24"
-                                aria-label="AI interviewer instruction"
-                            />
-                            <button
-                                onClick={handleGeneratePrompt}
-                                disabled={isGeneratingPrompt}
-                                className="absolute right-2 bottom-2 bg-indigo-500/20 hover:bg-indigo-500/40 text-indigo-300 text-[10px] font-bold px-2 py-1 rounded border border-indigo-500/30 flex items-center gap-1 transition-all disabled:opacity-50"
-                                aria-label="Generate prompt with AI"
-                            >
-                                {isGeneratingPrompt ? (
-                                    <span className="spinner w-3 h-3" />
-                                ) : (
-                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                                    </svg>
-                                )}
-                                AI Generate
-                            </button>
-                        </div>
-
-                        <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4 space-y-4">
-                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                                <div>
-                                    <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600 font-bold">Reusable templates</p>
-                                    <p className="text-xs text-slate-500 mt-1">Save the current draft so future institution rollouts start from a proven prompt.</p>
-                                </div>
-                                <span className="badge badge-accent">{courseTemplates.length}</span>
-                            </div>
-
-                            <div className="flex flex-col sm:flex-row gap-3">
-                                <Input
-                                    placeholder="Template name"
-                                    value={templateDraftName}
-                                    onChange={(e) => setTemplateDraftName(e.target.value)}
-                                    aria-label="Template name"
-                                />
-                                <Button onClick={handleSaveTemplateFromForm} variant="ghost" className="sm:w-auto">
-                                    Save Template
-                                </Button>
-                            </div>
-
-                            {templatesLoading ? (
-                                <p className="text-xs text-slate-500">Loading templates...</p>
-                            ) : courseTemplates.length === 0 ? (
-                                <p className="text-xs text-slate-600">No templates yet. Save this draft or a live course to seed your reusable library.</p>
-                            ) : (
-                                <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar pr-1">
-                                    {courseTemplates.slice(0, 4).map((template) => (
-                                        <div key={template.id} className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
-                                            <div className="flex items-start justify-between gap-3">
-                                                <div className="min-w-0">
-                                                    <p className="text-sm font-medium text-white truncate">{template.name}</p>
-                                                    <p className="text-[11px] text-slate-500 mt-1">
-                                                        {template.institutionName || 'Shared template'} • {template.instructorName}
-                                                    </p>
-                                                </div>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleDeleteTemplate(template.id)}
-                                                    className="text-xs text-slate-500 hover:text-red-400"
-                                                >
-                                                    Delete
-                                                </button>
-                                            </div>
-                                            <div className="flex flex-wrap gap-2 mt-3">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleLoadTemplate(template)}
-                                                    className="px-3 py-1.5 rounded-full text-[11px] border border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-                                                >
-                                                    Load into form
-                                                </button>
-                                                <span className="px-3 py-1.5 rounded-full text-[11px] border border-slate-800 bg-slate-900/60 text-slate-500">
-                                                    {template.prompt.length} chars
-                                                </span>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-
-                        {formError && (
-                            <p className="text-red-400 text-sm" role="alert">{formError}</p>
-                        )}
-                        {templateError && (
-                            <p className="text-amber-400 text-sm" role="status">{templateError}</p>
-                        )}
-
-                        <Button
-                            onClick={handleAddCourse}
-                            variant="accent"
-                            className="w-full"
-                        >
-                            Create Course
-                        </Button>
-                    </div>
                     )}
 
                     {leftPanelMode === 'library' && (
-                    <div className="glass-panel p-6 rounded-3xl">
-                        <div className="flex items-center justify-between gap-3 mb-4">
-                            <div>
-                                <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest">
-                                    Live Courses
-                                </h3>
-                                <p className="text-xs text-slate-600 mt-1">
-                                    Review or remove institution-scoped course workspaces.
-                                </p>
-                            </div>
-                            <span className="badge badge-accent">{visibleCourses.length}</span>
-                        </div>
-
-                        <div className="space-y-3">
-                            {visibleCourses.length === 0 ? (
-                                <p className="text-slate-600 text-xs italic">No courses created yet.</p>
-                            ) : (
-                                visibleCourses.map(c => (
-                                    <div
-                                        key={c.id}
-                                        className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex justify-between items-center group"
-                                    >
-                                        <div className="flex-1 min-w-0 pr-2">
-                                            <p className="text-white font-medium text-sm truncate">{c.name}</p>
-                                            <p className="text-[10px] text-indigo-400 font-mono">
-                                                ID: {c.id} | by {c.instructorName || 'Unknown'}
-                                            </p>
-                                            {c.institutionName && (
-                                                <p className="text-[10px] text-slate-500 mt-1">
-                                                    Workspace: {c.institutionName}
-                                                </p>
-                                            )}
-                                        </div>
-                                        <div className="flex items-center gap-2 flex-shrink-0">
-                                            <button
-                                                onClick={() => handleSaveCourseAsTemplate(c)}
-                                                className="p-1.5 bg-slate-800 hover:bg-emerald-950/40 text-slate-500 hover:text-emerald-300 rounded-lg transition-all"
-                                                title="Save as template"
-                                                aria-label={`Save ${c.name} as template`}
-                                            >
-                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5h14v14H5z" />
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 9h6v6H9z" />
-                                                </svg>
-                                            </button>
-                                            {/* Verified indicator */}
-                                            {verifiedCourses.has(c.id) && (
-                                                <span className="text-emerald-400 text-xs" title="Verified this session">
-                                                    ✓
-                                                </span>
-                                            )}
-                                            <button
-                                                onClick={() => handlePinAction(c, 'view')}
-                                                className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-indigo-400 rounded-lg transition-all"
-                                                title="View Submissions (PIN required)"
-                                                aria-label={`View submissions for ${c.name}`}
-                                            >
-                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                                </svg>
-                                            </button>
-                                            <button
-                                                onClick={() => handlePinAction(c, 'delete')}
-                                                className="p-1.5 bg-slate-800 hover:bg-red-950/40 text-slate-600 hover:text-red-400 rounded-lg transition-all"
-                                                title="Delete Course (PIN required)"
-                                                aria-label={`Delete ${c.name}`}
-                                            >
-                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                </svg>
-                                            </button>
-                                        </div>
-                                    </div>
-                                ))
-                            )}
-                        </div>
-                    </div>
+                        <CourseList
+                            visibleCourses={visibleCourses}
+                            verifiedCourses={pin.verifiedCourses}
+                            onSaveAsTemplate={templates.handleSaveCourseAsTemplate}
+                            onPinAction={pin.handlePinAction}
+                        />
                     )}
                 </div>
 
                 {/* Right Column - Submissions Feed */}
                 <div className="lg:col-span-8">
-                    <div className="glass-panel rounded-3xl overflow-hidden flex flex-col min-h-[500px]">
-                        <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900/30">
-                            <h3 className="text-lg font-semibold text-white">Student Submissions</h3>
-                            <span className="text-xs text-slate-500">
-                                {totalSubmissions} Total Interview{totalSubmissions !== 1 ? 's' : ''}
-                            </span>
-                        </div>
-
-                        <div className="p-6 flex-1 overflow-y-auto space-y-4 custom-scrollbar">
-                            {/* Check: Admin or course owner can see submissions */}
-                            {!isAdmin && visibleCourses.length === 0 ? (
-                                <div className="h-full flex flex-col items-center justify-center text-slate-600 py-20">
-                                    <svg className="w-16 h-16 mb-4 text-red-500/30" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                                    </svg>
-                                    <p className="text-slate-500 font-medium mb-2">No Courses Found</p>
-                                    <p className="text-slate-600 text-sm text-center max-w-xs">
-                                        Create a course to view student submissions.
-                                    </p>
-                                </div>
-                            ) : totalSubmissions === 0 ? (
-                                <div className="h-full flex flex-col items-center justify-center text-slate-600 py-20">
-                                    <svg className="w-12 h-12 mb-4 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                    </svg>
-                                    <p>Awaiting student submissions...</p>
-                                </div>
-                            ) : (
-                                allSubmissions.map(sub => {
-                                    const finalScore = sub.instructorReview?.overrideScore ?? sub.score;
-                                    const mastery = getMasteryLevel(finalScore);
-
-                                    return (
-                                    <div
-                                        key={sub.id}
-                                        className="w-full bg-slate-900/50 border border-slate-800 p-4 rounded-2xl hover:border-indigo-500/30 transition-all group"
-                                    >
-                                        <div className="flex justify-between items-center">
-                                            <button
-                                                className="flex-1 text-left cursor-pointer"
-                                                onClick={() => onSelectSubmission(sub)}
-                                                aria-label={`View submission from ${sub.studentName}`}
-                                            >
-                                                <div>
-                                                    <p className="text-white font-bold">{sub.studentName}</p>
-                                                    <p className="text-xs text-slate-400">
-                                                        {sub.courseName} • {new Date(sub.timestamp).toLocaleDateString()}
-                                                    </p>
-                                                </div>
-                                            </button>
-                                            <div className="flex items-center gap-3">
-                                                <button
-                                                    className="flex-1 text-left cursor-pointer"
-                                                    onClick={() => onSelectSubmission(sub)}
-                                                >
-                                                    <div className="text-right">
-                                                        <div className={`text-xl font-bold ${mastery.color}`}>
-                                                            {mastery.emoji} {finalScore}%
-                                                        </div>
-                                                        <p className={`text-[10px] uppercase ${mastery.color}`}>
-                                                            {mastery.label}
-                                                        </p>
-                                                    </div>
-                                                </button>
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        if (confirm(`Delete ${sub.studentName}'s submission?`)) {
-                                                            onDeleteSubmission(sub._courseId, sub.id);
-                                                        }
-                                                    }}
-                                                    className="p-1.5 text-slate-600 hover:text-red-400 hover:bg-red-950/30 rounded-lg transition-all opacity-0 group-hover:opacity-100"
-                                                    title="Delete submission"
-                                                    aria-label={`Delete submission from ${sub.studentName}`}
-                                                >
-                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                    </svg>
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    );
-                                })
-                            )}
-                        </div>
-                    </div>
+                    <SubmissionsPanel
+                        isAdmin={isAdmin}
+                        visibleCourseCount={visibleCourses.length}
+                        allSubmissions={allSubmissions}
+                        totalSubmissions={totalSubmissions}
+                        onSelectSubmission={onSelectSubmission}
+                        onDeleteSubmission={onDeleteSubmission}
+                    />
                 </div>
             </div>
 
             {/* Course Prompt Modal */}
-            <Modal
-                isOpen={!!viewingCourse}
-                onClose={() => setViewingCourse(null)}
-                title={viewingCourse?.name || ''}
-                subtitle={`Instructor: ${viewingCourse?.instructorName || 'Unknown'} | ${viewingCourse?.submissions?.length || 0} Submissions`}
-                size="md"
-                footer={
-                    <div className="flex justify-end">
-                        <Button variant="ghost" onClick={() => setViewingCourse(null)}>
-                            Close
-                        </Button>
-                    </div>
-                }
-            >
-                <div className="space-y-4">
-                    {/* System Prompt - Editable */}
-                    <div>
-                        <div className="flex items-center justify-between mb-2">
-                            <h4 className="text-xs font-semibold text-slate-500 uppercase">System Prompt</h4>
-                            {!isEditingPrompt ? (
-                                <button
-                                    onClick={() => {
-                                        setIsEditingPrompt(true);
-                                        setEditedPrompt(viewingCourse?.prompt || '');
-                                    }}
-                                    className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
-                                >
-                                    ✏️ Edit
-                                </button>
-                            ) : (
-                                <div className="flex gap-2">
-                                    <button
-                                        onClick={() => {
-                                            if (viewingCourse && onUpdateCourse && editedPrompt !== viewingCourse.prompt) {
-                                                onUpdateCourse(viewingCourse.id, { prompt: editedPrompt });
-                                                setViewingCourse({ ...viewingCourse, prompt: editedPrompt });
-                                            }
-                                            setIsEditingPrompt(false);
-                                        }}
-                                        className="text-xs text-emerald-400 hover:text-emerald-300 font-medium"
-                                    >
-                                        ✓ Save
-                                    </button>
-                                    <button
-                                        onClick={() => setIsEditingPrompt(false)}
-                                        className="text-xs text-slate-500 hover:text-slate-400"
-                                    >
-                                        ✕ Cancel
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-                        {isEditingPrompt ? (
-                            <textarea
-                                value={editedPrompt}
-                                onChange={(e) => setEditedPrompt(e.target.value)}
-                                className="w-full p-4 bg-slate-950/50 border border-indigo-500/50 rounded-xl text-slate-300 text-sm leading-relaxed font-mono min-h-[30vh] max-h-[50vh] resize-y focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-                                placeholder="Enter system prompt..."
-                            />
-                        ) : (
-                            <div className="p-4 bg-slate-950/50 border border-slate-800 rounded-xl text-slate-300 text-sm leading-relaxed whitespace-pre-wrap font-mono max-h-[30vh] overflow-y-auto custom-scrollbar">
-                                {viewingCourse?.prompt || <span className="text-slate-600 italic">No prompt set</span>}
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Submissions List */}
-                    <div>
-                        <h4 className="text-xs font-semibold text-slate-500 uppercase mb-2">Student Submissions</h4>
-                        {viewingCourse?.submissions?.length === 0 ? (
-                            <p className="text-slate-600 text-sm italic">No submissions yet.</p>
-                        ) : (
-                            <div className="space-y-2 max-h-[30vh] overflow-y-auto custom-scrollbar">
-                                {viewingCourse?.submissions?.map(sub => (
-                                    <div
-                                        key={sub.id}
-                                        className="w-full p-3 bg-slate-900 rounded-xl border border-slate-800 flex justify-between items-center hover:border-indigo-500/50 transition-all"
-                                    >
-                                        <button
-                                            onClick={() => {
-                                                onSelectSubmission(sub);
-                                                setViewingCourse(null);
-                                            }}
-                                            className="flex-1 text-left"
-                                        >
-                                            <p className="text-white text-sm font-medium">{sub.studentName}</p>
-                                            <p className="text-slate-500 text-xs">
-                                                {new Date(sub.timestamp).toLocaleDateString()} • {getMasteryLevel(sub.score).emoji} {getMasteryLevel(sub.score).label}
-                                            </p>
-                                        </button>
-                                        <div className="flex items-center gap-2">
-                                            <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                            </svg>
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    if (window.confirm(`Delete submission from ${sub.studentName}?`)) {
-                                                        onDeleteSubmission(viewingCourse!.id, sub.id);
-                                                    }
-                                                }}
-                                                className="p-1 hover:bg-red-500/20 rounded-lg transition-colors"
-                                                title="Delete submission"
-                                            >
-                                                <svg className="w-4 h-4 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                </svg>
-                                            </button>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Group Knowledge Network */}
-                    <div>
-                        <h4 className="text-xs font-semibold text-slate-500 uppercase mb-2">👥 Group Knowledge Network</h4>
-                        {viewingCourse && GroupKnowledgeService.hasEnoughData(viewingCourse.submissions || []) ? (() => {
-                            const network = GroupKnowledgeService.buildGroupNetwork(viewingCourse.submissions || []);
-                            if (!network || network.nodes.length === 0) {
-                                return <p className="text-slate-600 text-sm italic">Not enough concept data to build network.</p>;
-                            }
-                            const maxFreq = Math.max(...network.nodes.map(n => n.frequency), 1);
-                            const typeColors: Record<string, string> = {
-                                claim: 'bg-blue-500/30 text-blue-400',
-                                evidence: 'bg-emerald-500/30 text-emerald-400',
-                                counterargument: 'bg-red-500/30 text-red-400',
-                                justification: 'bg-amber-500/30 text-amber-400'
-                            };
-                            return (
-                                <div className="space-y-2">
-                                    <p className="text-xs text-slate-500 mb-3">
-                                        Aggregated from {network.totalStudents} students • {network.nodes.length} concepts
-                                    </p>
-                                    {network.nodes.slice(0, 12).map(node => (
-                                        <div key={node.id} className="flex items-center gap-3 p-2 bg-slate-900/50 rounded-lg">
-                                            <span className={`flex-shrink-0 px-2 py-0.5 rounded-full text-xs font-medium ${
-                                                typeColors[node.type] || 'bg-slate-500/30 text-slate-400'
-                                            }`}>
-                                                {node.type}
-                                            </span>
-                                            <span className="text-sm text-slate-300 flex-1 truncate">{node.label}</span>
-                                            <div className="flex items-center gap-2 flex-shrink-0">
-                                                <div className="w-20 bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                                                    <div
-                                                        className="h-full bg-indigo-500/60 rounded-full"
-                                                        style={{ width: `${(node.frequency / maxFreq) * 100}%` }}
-                                                    />
-                                                </div>
-                                                <span className="text-xs text-slate-500 font-mono w-16 text-right">
-                                                    {node.frequency}/{node.studentCount}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            );
-                        })() : (
-                            <div className="text-center py-4">
-                                <p className="text-slate-600 text-sm">
-                                    Group network requires 3+ submissions with argument data.
-                                </p>
-                                <p className="text-slate-700 text-xs mt-1">
-                                    {viewingCourse?.submissions?.length || 0} submissions so far
-                                </p>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            </Modal>
+            <CoursePromptModal
+                viewingCourse={viewing.viewingCourse}
+                setViewingCourse={viewing.setViewingCourse}
+                onUpdateCourse={onUpdateCourse}
+                onSelectSubmission={onSelectSubmission}
+                onDeleteSubmission={onDeleteSubmission}
+            />
 
             {/* PIN Verification Modal */}
             <PinVerifyModal
-                isOpen={!!pinModalCourse}
-                onClose={() => {
-                    setPinModalCourse(null);
-                    setPinModalAction(null);
-                }}
-                onVerified={handlePinVerified}
-                courseId={pinModalCourse?.id || ''}
-                courseName={pinModalCourse?.name || ''}
-                instructorPinHash={pinModalCourse?.instructorPinHash || ''}
-                title={pinModalAction === 'delete' ? 'Confirm Deletion' : 'View Submissions'}
+                isOpen={!!pin.pinModalCourse}
+                onClose={pin.closePinModal}
+                onVerified={pin.handlePinVerified}
+                courseId={pin.pinModalCourse?.id || ''}
+                courseName={pin.pinModalCourse?.name || ''}
+                instructorPinHash={pin.pinModalCourse?.instructorPinHash || ''}
+                title={pin.pinModalAction === 'delete' ? 'Confirm Deletion' : 'View Submissions'}
                 description={
-                    pinModalAction === 'delete'
+                    pin.pinModalAction === 'delete'
                         ? 'Enter the instructor PIN to delete this course.'
                         : 'Enter your instructor PIN to view submissions.'
                 }

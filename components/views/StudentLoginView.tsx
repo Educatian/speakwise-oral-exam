@@ -3,10 +3,9 @@ import { Course } from '../../types';
 import { Button, Input, MicTest } from '../ui';
 import { sanitizeStudentName } from '../../lib/security/sanitize';
 import { verifyCourseEntry, CourseEntryGrant } from '../../lib/supabase';
+import { useCourseContext } from '../../contexts/CourseContext';
 
 interface StudentLoginViewProps {
-    courses: Course[];
-    selectedCourse?: Course | null;  // Pre-selected course from StudentCoursesView
     defaultName?: string;            // Display name of the signed-in student (skips re-entry)
     onLogin: (course: Course, studentName: string) => void;
     onViewHistory: () => void;
@@ -51,14 +50,15 @@ function mergeGrantIntoCourse(knownCourse: Course | null, grant: CourseEntryGran
  * Simplified form when course is pre-selected
  */
 export const StudentLoginView: React.FC<StudentLoginViewProps> = ({
-    courses,
-    selectedCourse,
     defaultName,
     onLogin,
     onViewHistory,
     onManagerAccess,
     onBack
 }) => {
+    // Course roster + the course pre-selected on StudentCoursesView come from
+    // the app-root course context (previously drilled as props).
+    const { courses, activeCourse: selectedCourse } = useCourseContext();
     const [studentName, setStudentName] = useState(defaultName ?? '');
     const [courseNumber, setCourseNumber] = useState('');
     const [passcode, setPasscode] = useState('');
