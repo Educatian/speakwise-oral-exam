@@ -1,0 +1,42 @@
+[
+  {
+    "scene": "01-landing",
+    "startSec": 1.391,
+    "narrationSec": 15.650249
+  },
+  {
+    "scene": "02-enter-student",
+    "startSec": 18.047,
+    "narrationSec": 4.040272
+  },
+  {
+    "scene": "03-sign-in",
+    "startSec": 23.091,
+    "narrationSec": 10.634739
+  },
+  {
+    "scene": "04-institution",
+    "startSec": 34.74,
+    "narrationSec": 11.609977
+  },
+  {
+    "scene": "05-courses",
+    "startSec": 47.358,
+    "narrationSec": 7.801905
+  },
+  {
+    "scene": "06-pre-interview",
+    "startSec": 56.174,
+    "narrationSec": 11.563537
+  },
+  {
+    "scene": "07-start-interview",
+    "startSec": 68.737,
+    "narrationSec": 14.582132
+  },
+  {
+    "scene": "08-wrap-up",
+    "startSec": 84.334,
+    "narrationSec": 19.458322
+  }
+]

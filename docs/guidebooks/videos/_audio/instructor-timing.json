@@ -1,0 +1,47 @@
+[
+  {
+    "scene": "01-landing",
+    "startSec": 1.318,
+    "narrationSec": 15.650249
+  },
+  {
+    "scene": "02-sign-in",
+    "startSec": 17.97,
+    "narrationSec": 10.21678
+  },
+  {
+    "scene": "03-dashboard",
+    "startSec": 29.192,
+    "narrationSec": 14.396372
+  },
+  {
+    "scene": "04-create-course",
+    "startSec": 44.59,
+    "narrationSec": 17.600726
+  },
+  {
+    "scene": "05-publish",
+    "startSec": 63.33,
+    "narrationSec": 10.40254
+  },
+  {
+    "scene": "06-analytics",
+    "startSec": 74.736,
+    "narrationSec": 22.244717
+  },
+  {
+    "scene": "07-submission",
+    "startSec": 97.989,
+    "narrationSec": 20.61932
+  },
+  {
+    "scene": "08-concept-map",
+    "startSec": 119.615,
+    "narrationSec": 19.736961
+  },
+  {
+    "scene": "09-wrap-up",
+    "startSec": 140.351,
+    "narrationSec": 15.13941
+  }
+]

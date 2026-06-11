@@ -2,6 +2,8 @@
 
 > **Audience**: Students taking an oral interview on SpeakWise.
 > **What you'll need**: a laptop or desktop with a working microphone, a quiet space for 5 to 10 minutes, and the **institution access code** and **course passcode** your instructor gave you.
+>
+> 🎬 **Narrated video tutorial** (≈2 min): [student-tutorial.mp4](https://speakwise-guide.pages.dev/videos/student-tutorial.mp4) — the full student journey with voice guidance and an on-screen cursor.
 
 ---
 

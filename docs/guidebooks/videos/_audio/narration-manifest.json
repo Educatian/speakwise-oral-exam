@@ -1,0 +1,87 @@
+{
+  "student/01-landing": {
+    "hash": "1bab85c5355e55f33dc01d954639039f492fd0bc",
+    "duration": 15.650249,
+    "chars": 228
+  },
+  "student/02-enter-student": {
+    "hash": "3cccea1b5f981c0cbfb3c7fbb8cfd0d7fe38cb44",
+    "duration": 4.040272,
+    "chars": 61
+  },
+  "student/03-sign-in": {
+    "hash": "d4bc381e68023b2bd8a722ba6cd292dac5dd1e56",
+    "duration": 10.634739,
+    "chars": 172
+  },
+  "student/04-institution": {
+    "hash": "db266caee7bf5cb675991372809a551999423987",
+    "duration": 11.609977,
+    "chars": 180
+  },
+  "student/05-courses": {
+    "hash": "47dd8d8e19a473be17ded37acd5f30c8deb105ac",
+    "duration": 7.801905,
+    "chars": 125
+  },
+  "student/06-pre-interview": {
+    "hash": "1268c63c0610f573562b6bf7f7d1a272b0e7c1c8",
+    "duration": 11.563537,
+    "chars": 175
+  },
+  "student/07-start-interview": {
+    "hash": "8e12b6f8dbd92ab4e2aa91173c9b42a5ea3705a9",
+    "duration": 14.582132,
+    "chars": 222
+  },
+  "student/08-wrap-up": {
+    "hash": "aebae278a61bd18ee228f16effd5883767b2d4ed",
+    "duration": 19.458322,
+    "chars": 292
+  },
+  "instructor/01-landing": {
+    "hash": "8f8115df54101b1ed2589af5219f6a150789bb32",
+    "duration": 15.650249,
+    "chars": 225
+  },
+  "instructor/02-sign-in": {
+    "hash": "c21cb4dddd8de864a73580eb7126058e66bdc165",
+    "duration": 10.21678,
+    "chars": 137
+  },
+  "instructor/03-dashboard": {
+    "hash": "eb88b18d9ed52a8c787c8e763db7bedf93f074e2",
+    "duration": 14.396372,
+    "chars": 209
+  },
+  "instructor/04-create-course": {
+    "hash": "78932f0327c95d55739530259fbfaa768e4aeb7e",
+    "duration": 17.600726,
+    "chars": 247
+  },
+  "instructor/05-publish": {
+    "hash": "6ddba5b07802d8844e29e7829adb89407ef51feb",
+    "duration": 10.40254,
+    "chars": 161
+  },
+  "instructor/06-analytics": {
+    "hash": "eadcde9f8ba27277f5073d14befecc295a81ba3e",
+    "duration": 22.244717,
+    "chars": 289
+  },
+  "instructor/07-submission": {
+    "hash": "eb3d1ac6688a35f871c43acdcaeb9fe44d9ea8b2",
+    "duration": 20.61932,
+    "chars": 275
+  },
+  "instructor/08-concept-map": {
+    "hash": "33c14410517cf8695868e3e2f1a2418a76c07d2e",
+    "duration": 19.736961,
+    "chars": 274
+  },
+  "instructor/09-wrap-up": {
+    "hash": "2f9a60e2ef9e8e3cc97ba176f5f616dc5a1bd526",
+    "duration": 15.13941,
+    "chars": 213
+  }
+}

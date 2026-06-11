@@ -30,3 +30,9 @@ dist-ssr
 /.backfill-*.mjs
 /.backfill-*.json
 videos/_raw_*/
+docs/guidebooks/videos/_raw_*/
+docs/guidebooks/videos/*-tutorial.webm
+/_frames/
+/.wrangler/
+/.next/
+playwright/smoke-landing.png

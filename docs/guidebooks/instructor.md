@@ -2,6 +2,8 @@
 
 > **대상**: 본인 과목에서 SpeakWise로 구술 인터뷰를 운영하고, 학생 응답을 채점·분석하는 강사 및 연구자.
 > **버전 기준**: 2026-04-24 시점 `master` — Class Analytics 섹션, Submission 분석 패널, Concept Map Toulmin 모드 포함.
+>
+> 🎬 **나레이션 비디오 튜토리얼** (약 3분): [instructor-tutorial.mp4](https://speakwise-guide.pages.dev/videos/instructor-tutorial.mp4) — 코스 생성 → 분석 → 제출물 리뷰 → 컨셉맵까지, 음성 안내와 커서 표시가 포함된 강사 여정 전체 영상 (영어 나레이션).
 
 ---
 

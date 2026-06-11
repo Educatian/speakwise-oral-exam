@@ -90,10 +90,11 @@
   <section class="flow student active" id="student">
     <div class="hero">
       <video controls preload="metadata" poster="screenshots/student/01-landing.png">
+        <source src="videos/student-tutorial.mp4" type="video/mp4" />
         <source src="videos/student-journey.webm" type="video/webm" />
-        Your browser can't play this video — see <a href="videos/student-journey.webm">student-journey.webm</a>.
+        Your browser can't play this video — see <a href="videos/student-tutorial.mp4">student-tutorial.mp4</a>.
       </video>
-      <div class="cap">🎬 Student journey recorded live with Playwright: landing → create account → institution → course → pre-interview.</div>
+      <div class="cap">🎬 <b>Narrated tutorial</b> — the full student journey with voice guidance and an on-screen cursor: landing → sign in → institution → course → mic check → interview. <span style="color:var(--dim)">(Recorded live with Playwright; narration by ElevenLabs.)</span></div>
     </div>
 
     <div class="step"><h3><span class="num">1</span> Open SpeakWise and choose "Student"</h3>
@@ -140,10 +141,11 @@
   <section class="flow instructor" id="instructor">
     <div class="hero">
       <video controls preload="metadata" poster="screenshots/instructor/03-dashboard-overview.png">
+        <source src="videos/instructor-tutorial.mp4" type="video/mp4" />
         <source src="videos/instructor-journey.webm" type="video/webm" />
-        Your browser can't play this video — see <a href="videos/instructor-journey.webm">instructor-journey.webm</a>.
+        Your browser can't play this video — see <a href="videos/instructor-tutorial.mp4">instructor-tutorial.mp4</a>.
       </video>
-      <div class="cap">🎬 Instructor journey recorded live: sign-in → dashboard → create a course → analytics.</div>
+      <div class="cap">🎬 <b>Narrated tutorial</b> — the full instructor loop with voice guidance and an on-screen cursor: sign-in → dashboard → create a course → analytics → submission review → concept map. <span style="color:var(--dim)">(Recorded live with Playwright; narration by ElevenLabs.)</span></div>
     </div>
 
     <div class="step"><h3><span class="num">1</span> Open SpeakWise and choose "Instructor"</h3>
@@ -205,10 +207,11 @@
       </div>
       <img src="screenshots/instructor/42-concept-map-toulmin.png" alt="Toulmin colour mode" loading="lazy"/></div>
 
-    <div class="step"><h3>Regenerate this walkthrough</h3>
-      <pre>INSTRUCTOR_EMAIL='demo.instructor@speakwise-test.com' INSTRUCTOR_PASSWORD='********' \
-FLOW=instructor node playwright/walkthrough.mjs</pre>
-      <p>Use <code>FLOW=student</code> or <code>FLOW=both</code> for the other journey. The instructor email must be in the <code>instructors</code> registry (or be the admin) so the signup trigger grants the instructor role.</p></div>
+    <div class="step"><h3>Regenerate the narrated tutorials</h3>
+      <pre>ELEVENLABS_API_KEY=... node playwright/narrate.mjs   # 1) narration clips + durations
+node playwright/tutorial.mjs                          # 2) cursor-following screencast
+node playwright/mux.mjs                               # 3) align audio → mp4</pre>
+      <p>Scene scripts and narration live together in <code>playwright/tutorial-scenes.mjs</code>, so the voice-over and on-screen action can't drift apart. Step screenshots come from <code>playwright/walkthrough.mjs</code> (<code>FLOW=student|instructor|both</code>). The instructor email must be in the <code>instructors</code> registry (or be the admin) so the signup trigger grants the instructor role.</p></div>
   </section>
 
   <footer>

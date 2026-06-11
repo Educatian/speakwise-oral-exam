@@ -3,7 +3,8 @@
 A step-by-step guide for students taking an oral interview on SpeakWise.
 Live app: **https://speakwise-oral-exam.pages.dev**
 
-🎬 **Video walkthrough:** [`videos/student-journey.webm`](videos/student-journey.webm)
+🎬 **Narrated video tutorial:** [`videos/student-tutorial.mp4`](videos/student-tutorial.mp4) — voice-guided, with an on-screen cursor (ElevenLabs narration)
+🎬 **Silent walkthrough:** [`videos/student-journey.webm`](videos/student-journey.webm)
 *(recorded with Playwright against the live deployment; screenshots below are frames from the same run)*
 
 ---

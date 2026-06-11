@@ -2,6 +2,8 @@
 
 > **Audience**: Instructors and researchers running oral interviews in their own courses with SpeakWise, and scoring or analysing the resulting student responses.
 > **Version**: Based on `master` as of 2026-04-24. Includes the Class Analytics panel, the Submission Analytics panels, and the Concept Map Toulmin mode.
+>
+> 🎬 **Narrated video tutorial** (≈3 min): [instructor-tutorial.mp4](https://speakwise-guide.pages.dev/videos/instructor-tutorial.mp4) — the full instructor loop (course creation → analytics → submission review → concept map) with voice guidance and an on-screen cursor.
 
 ---
 

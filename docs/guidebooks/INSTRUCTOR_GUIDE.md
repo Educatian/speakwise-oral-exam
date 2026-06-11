@@ -3,7 +3,8 @@
 A step-by-step guide for instructors: create a test, manage participating students, and read analytics.
 Live app: **https://speakwise-oral-exam.pages.dev**
 
-🎬 **Video walkthrough:** [`videos/instructor-journey.webm`](videos/instructor-journey.webm)
+🎬 **Narrated video tutorial:** [`videos/instructor-tutorial.mp4`](videos/instructor-tutorial.mp4) — voice-guided, with an on-screen cursor (ElevenLabs narration)
+🎬 **Silent walkthrough:** [`videos/instructor-journey.webm`](videos/instructor-journey.webm)
 *(recorded live: sign-in → dashboard → create course → analytics, with a demo instructor account.)*
 
 ---

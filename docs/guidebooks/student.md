@@ -2,6 +2,8 @@
 
 > **대상**: SpeakWise로 구술 인터뷰를 보는 학생.
 > **준비물**: 마이크가 동작하는 노트북/데스크톱, 조용한 공간 5–10분, 강사로부터 받은 **기관 access code**와 **코스 passcode**.
+>
+> 🎬 **나레이션 비디오 튜토리얼** (약 2분): [student-tutorial.mp4](https://speakwise-guide.pages.dev/videos/student-tutorial.mp4) — 음성 안내와 커서 표시가 포함된 학생 여정 전체 영상 (영어 나레이션).
 
 ---
 

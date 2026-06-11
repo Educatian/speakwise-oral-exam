@@ -898,3 +898,27 @@ import { ArgumentGraphBuilder, analyzeReasoningPatterns } from './lib/reasoning'
 *Document Version: 2.3.0 (Full Auth + Reasoning Analytics)*  
 *Last Updated: 2026-01-29*  
 *Author: SpeakWise Development Team*
+
+
+---
+
+## 19. Documentation & Tutorial Video Pipeline (2026-06-11)
+
+The walkthrough guide (speakwise-guide.pages.dev) ships narrated tutorial videos generated from code, so they can be regenerated whenever the UI changes.
+
+| Script | Role |
+|---|---|
+| `playwright/tutorial-scenes.mjs` | Single source of truth: per-scene narration text + Playwright actions (student 8 scenes, instructor 9 scenes) |
+| `playwright/narrate.mjs` | ElevenLabs TTS per scene (voice: Alice, `eleven_multilingual_v2`), measures durations with ffprobe, caches by text hash in `narration-manifest.json` |
+| `playwright/tutorial.mjs` | Records the screencast with an injected software cursor (follows the real mouse, click ripple), paces each scene to its narration length, writes scene start times to `<flow>-timing.json` |
+| `playwright/mux.mjs` | ffmpeg: `adelay`s each narration clip to its measured scene start, `amix` + loudnorm, transcodes to H.264/AAC mp4 (`student-tutorial.mp4`, `instructor-tutorial.mp4`) |
+
+Run order:
+
+```bash
+ELEVENLABS_API_KEY=... node playwright/narrate.mjs
+node playwright/tutorial.mjs        # BASE_URL / FLOW=student|instructor|both
+node playwright/mux.mjs
+```
+
+Sync model: narration starts exactly at each scene's measured start; a scene never ends before its narration does (runner waits out the remainder + 1s pad). Demo accounts and codes are read from env (`STUDENT_EMAIL`, `INSTRUCTOR_EMAIL`, `COURSE_PASSCODE`, ...), with speakwise-test.com demo defaults.

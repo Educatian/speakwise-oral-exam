@@ -8,6 +8,24 @@ Institution-ready AI oral assessment platform for structured speaking interviews
 
 **Live:** [app](https://speakwise-oral-exam.pages.dev) · [walkthrough guide](https://speakwise-guide.pages.dev)
 
+[![CI](https://github.com/Educatian/speakwise-oral-exam/actions/workflows/ci.yml/badge.svg)](https://github.com/Educatian/speakwise-oral-exam/actions/workflows/ci.yml)
+![React 19](https://img.shields.io/badge/React-19-149eca?logo=react&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178c6?logo=typescript&logoColor=white)
+![Supabase](https://img.shields.io/badge/Supabase-Auth%20%2B%20RLS-3ecf8e?logo=supabase&logoColor=white)
+![Cloudflare Pages](https://img.shields.io/badge/Cloudflare-Pages-f38020?logo=cloudflare&logoColor=white)
+
+## At a Glance
+
+| Student experience | Instructor analytics |
+| --- | --- |
+| ![Pre-interview screen](docs/guidebooks/screenshots/student/06-pre-interview.png) | ![Class analytics](docs/guidebooks/screenshots/instructor/06-class-analytics.png) |
+| Calm pre-interview screen with mic check | Cohort statistics, triage list, CSV/JSON export |
+| ![Course list](docs/guidebooks/screenshots/student/05-courses.png) | ![Concept map](docs/guidebooks/screenshots/instructor/41-concept-map-radial.png) |
+| Institution-scoped course list | Radial argument / concept map with Toulmin colour mode |
+
+🎬 **Narrated video tutorials** (Playwright screencast + ElevenLabs narration, with an on-screen guiding cursor):
+[Student tutorial](https://speakwise-guide.pages.dev/videos/student-tutorial.mp4) · [Instructor tutorial](https://speakwise-guide.pages.dev/videos/instructor-tutorial.mp4) — embedded in the [walkthrough guide](https://speakwise-guide.pages.dev).
+
 ## Overview
 
 SpeakWise is built for schools, programs, and instructors who need more than a generic AI voice demo. It provides a calmer, assessment-focused environment where:
@@ -77,6 +95,52 @@ For the guiding principles behind the product, see [PRODUCT_PHILOSOPHY.md](PRODU
 - D3 for the argument/concept map
 - Cloudflare Pages hosting
 
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph Browser["Browser (React 19 + Vite)"]
+        UI[Views & Modals]
+        Hooks[useGeminiLive · useAuth · useCourseStorage]
+        Reasoning[lib/reasoning<br/>argument graph · patterns · normalizer]
+    end
+
+    subgraph CF["Cloudflare Pages"]
+        Assets[Static assets]
+        Worker[_worker.js proxy<br/>/api/llm · /api/gemini-token]
+    end
+
+    subgraph Supabase["Supabase"]
+        Auth[Auth]
+        PG[(Postgres + RLS<br/>institution-scoped)]
+        RPC[SECURITY DEFINER RPCs<br/>passcode verify · staff secrets]
+    end
+
+    Gemini[Google Gemini Live<br/>voice examiner]
+    OpenRouter[OpenRouter<br/>transcription + scoring]
+
+    UI --> Hooks --> Reasoning
+    Browser -->|anon key| Auth
+    Browser --> PG
+    Browser --> RPC
+    Browser -->|ephemeral token| Gemini
+    Browser --> Worker
+    Worker -->|server-side keys| OpenRouter
+    Worker -->|mints token| Gemini
+    CF --> Browser
+```
+
+API keys for LLM calls never ship in the client bundle: the Pages worker proxies OpenRouter requests and mints **ephemeral** Gemini Live tokens server-side.
+
+## Quality Gates
+
+- `npm run type-check` — TypeScript
+- `npm run lint` — ESLint 9 (flat config)
+- `npm run test` — Vitest unit tests for the reasoning/analytics/utils layers
+- `npm run build` — Vite production build
+- `npm run smoke` — Playwright smoke test against a deployment
+- CI runs all of the above on every push/PR ([.github/workflows/ci.yml](.github/workflows/ci.yml))
+
 ## Local Development
 
 ### Prerequisites
@@ -85,7 +149,7 @@ For the guiding principles behind the product, see [PRODUCT_PHILOSOPHY.md](PRODU
 
 ### Environment
 
-Create a local `.env` based on [.env.example](C:\Users\jewoo\Desktop\speakwise1.1\speakwise-oral-exam\.env.example).
+Create a local `.env` based on [.env.example](.env.example).
 
 Required values:
 
@@ -111,9 +175,9 @@ npm run build
 
 For production setup:
 
-1. Apply [supabase/production_schema.sql](C:\Users\jewoo\Desktop\speakwise1.1\speakwise-oral-exam\supabase\production_schema.sql) in Supabase SQL Editor.
+1. Apply [supabase/production_schema.sql](supabase/production_schema.sql) in Supabase SQL Editor.
 2. Configure environment variables for Gemini and Supabase.
-3. Follow [DEPLOYMENT_CHECKLIST.md](C:\Users\jewoo\Desktop\speakwise1.1\speakwise-oral-exam\DEPLOYMENT_CHECKLIST.md).
+3. Follow [DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md).
 
 ## Current Architecture Notes
 
@@ -125,12 +189,12 @@ For production setup:
 
 ## Repository Structure
 
-- [App.tsx](C:\Users\jewoo\Desktop\speakwise1.1\speakwise-oral-exam\App.tsx): application shell and route orchestration
-- [components/views](C:\Users\jewoo\Desktop\speakwise1.1\speakwise-oral-exam\components\views): student, instructor, and admin screens
-- [components/modals](C:\Users\jewoo\Desktop\speakwise1.1\speakwise-oral-exam\components\modals): submission review and detailed analysis surfaces
-- [hooks](C:\Users\jewoo\Desktop\speakwise1.1\speakwise-oral-exam\hooks): auth, storage, history, and live interview hooks
-- [lib/supabase](C:\Users\jewoo\Desktop\speakwise1.1\speakwise-oral-exam\lib\supabase): database access and app-managed auth integration
-- [supabase](C:\Users\jewoo\Desktop\speakwise1.1\speakwise-oral-exam\supabase): production SQL schema
+- [App.tsx](App.tsx): application shell and route orchestration
+- [components/views](components/views): student, instructor, and admin screens
+- [components/modals](components/modals): submission review and detailed analysis surfaces
+- [hooks](hooks): auth, storage, history, and live interview hooks
+- [lib/supabase](lib/supabase): database access and app-managed auth integration
+- [supabase](supabase): production SQL schema
 
 ## Status
 
