@@ -15,9 +15,9 @@ interface InterviewSessionViewProps {
 }
 
 const statusCopy = (status: InterviewStatus, turnPhase: string) => {
-    if (status === InterviewStatus.CONNECTING) return 'Connecting to interviewer...';
+    if (status === InterviewStatus.CONNECTING) return 'Requesting microphone access...';
     if (status === InterviewStatus.ENDED) return 'Interview completed';
-    if (status === InterviewStatus.ERROR) return 'Connection error';
+    if (status === InterviewStatus.ERROR) return 'Interview setup or connection error';
     if (status !== InterviewStatus.LIVE) return 'Ready to start';
     if (turnPhase === 'ai_speaking') return 'Listen to the prompt';
     if (turnPhase === 'recording') return 'Respond when you are ready';
@@ -177,6 +177,10 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
                         <p className="text-xs text-slate-500 mt-2">
                             {status === InterviewStatus.IDLE
                                 ? 'Prepare your microphone, then begin when you feel ready.'
+                                : status === InterviewStatus.CONNECTING
+                                    ? 'Choose Allow in your browser microphone prompt. Permission requests time out after 20 seconds so you can retry.'
+                                : status === InterviewStatus.ERROR
+                                    ? 'Check the message below, then retry the interview connection.'
                                 : status === InterviewStatus.LIVE
                                     ? 'The transcript updates automatically while the system listens and responds.'
                                     : 'Your work is being prepared for review.'}
@@ -214,7 +218,7 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
                         </div>
                     ) : (
                         <div className="space-y-3">
-                            <Button onClick={handleEndAndSubmit} disabled={turnPhase === 'transcribing'} variant="danger" size="lg" className="w-full">
+                            <Button onClick={handleEndAndSubmit} disabled={status === InterviewStatus.CONNECTING || turnPhase === 'transcribing'} variant="danger" size="lg" className="w-full">
                                 End and Submit Session
                             </Button>
                             {status === InterviewStatus.LIVE && turnPhase === 'recording' && (
@@ -227,7 +231,7 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
 
                     {submissionNotice && <p role="alert" className="text-amber-300 text-sm">{submissionNotice}</p>}
                     {error && (
-                        <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl">
+                        <div role="alert" className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl">
                             <p className="text-red-400 text-sm font-medium">{error}</p>
                             <ul className="list-disc list-inside text-xs text-slate-500 space-y-1 mt-3">
                                 <li>Check microphone permissions in your browser.</li>

@@ -1,0 +1,29 @@
+name: Production demo regression checks
+on:
+  push:
+    branches: [release/production-demo-20261015]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: production-demo-checks-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: cp .env.example .env
+      - run: npx vitest run tests/voice-recovery.test.ts tests/mic-permission.test.ts tests/course-refresh.test.ts
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: speakwise-production-demo-dist
+          path: dist/
+          retention-days: 7
+          if-no-files-found: error

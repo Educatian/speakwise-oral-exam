@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { createRefreshController, listenForRefresh, upsertById } from '../utils/courseRefresh';
 import { Submission } from '../types';
 import {
     getStudentHistory,
@@ -10,6 +11,7 @@ import { getAuthEventName } from '../lib/supabase/auth';
 interface UseStudentHistoryReturn {
     history: Submission[];
     loading: boolean;
+    error: string | null;
     addToHistory: (submission: Submission) => Promise<void>;
     clearHistory: () => void;
 }
@@ -24,46 +26,36 @@ export function useStudentHistory(): UseStudentHistoryReturn {
     const [history, setHistory] = useState<Submission[]>([]);
     const [loading, setLoading] = useState(true);
 
-    // Load initial history
+    const [error, setError] = useState<string | null>(null);
+    const session = useRef(0);
+    const refresh = useRef<{ invalidate: () => void } | null>(null);
     useEffect(() => {
-        async function loadHistory() {
-            setLoading(true);
-
-            if (isSupabaseConfigured()) {
-                try {
-                    const supabaseHistory = await getStudentHistory();
-                    setHistory(supabaseHistory);
-                } catch (e) {
-                    console.error('Failed to load history from Supabase:', e);
-                    loadFromLocalStorage();
-                }
-            } else {
-                loadFromLocalStorage();
-            }
-
+        const controller = createRefreshController(getStudentHistory, value => {
+            setHistory(value);
             setLoading(false);
-        }
-
-        function loadFromLocalStorage() {
-            try {
-                const saved = localStorage.getItem(STORAGE_KEY);
-                setHistory(saved ? JSON.parse(saved) : []);
-            } catch (e) {
-                console.error('Failed to load history from localStorage:', e);
-                setHistory([]);
-            }
-        }
-
-        loadHistory();
-
-        const authEventName = getAuthEventName();
-        const handleAuthChanged = () => {
-            loadHistory();
-        };
-
-        window.addEventListener(authEventName, handleAuthChanged);
+            setError(null);
+        }, error => {
+            console.error('Failed to refresh student history:', error);
+            setError('Failed to refresh student history. Please try again.');
+            setLoading(false);
+        });
+        refresh.current = controller;
+        void controller.refresh();
+        const unlisten = listenForRefresh(getAuthEventName(), () => {
+            if (isSupabaseConfigured()) void controller.refresh();
+        }, () => {
+            ++session.current;
+            controller.invalidate();
+            setHistory([]);
+            setError(null);
+            setLoading(true);
+            void controller.refresh();
+        });
         return () => {
-            window.removeEventListener(authEventName, handleAuthChanged);
+            ++session.current;
+            unlisten();
+            controller.dispose();
+            refresh.current = null;
         };
     }, []);
 
@@ -80,26 +72,31 @@ export function useStudentHistory(): UseStudentHistoryReturn {
 
     // Add a submission to history
     const addToHistory = useCallback(async (submission: Submission): Promise<void> => {
+        const mutationSession = session.current;
         try {
-            if (isSupabaseConfigured()) {
-                await addToStudentHistory(submission);
-            }
-            // Always update local state for immediate UI feedback
-            setHistory(prev => [submission, ...prev]);
+            if (isSupabaseConfigured()) await addToStudentHistory(submission);
+            if (mutationSession !== session.current) return;
+            refresh.current?.invalidate();
+            setLoading(false);
+            setError(null);
+            setHistory(prev => upsertById(prev, submission));
         } catch (e) {
             console.error('Failed to add to history:', e);
-            // Still add locally as fallback
-            setHistory(prev => [submission, ...prev]);
+            if (mutationSession === session.current) setError('Failed to save student history. Please try again.');
+            throw e;
         }
     }, []);
 
     // Clear local history (localStorage only for privacy)
     const clearHistory = useCallback(() => {
+        ++session.current;
+        refresh.current?.invalidate();
+        setLoading(false);
         setHistory([]);
         localStorage.removeItem(STORAGE_KEY);
     }, []);
 
-    return { history, loading, addToHistory, clearHistory };
+    return { history, loading, error, addToHistory, clearHistory };
 }
 
 export default useStudentHistory;

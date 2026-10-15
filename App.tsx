@@ -1,7 +1,8 @@
-import React, { Suspense, lazy, useState, useEffect, useCallback } from 'react';
+import React, { Suspense, lazy, useState, useEffect, useCallback, useRef } from 'react';
 import { AppView, Course, InstructorReview, Submission, ADMIN_EMAIL } from './types';
 import { useCourseStorage, useStudentHistory, useAuth, useInstitutions } from './hooks';
 import { isSupabaseConfigured } from './lib/supabase';
+import { getAuthEventName } from './lib/supabase/auth';
 import { AppRouter } from './components/AppRouter';
 
 const SubmissionDetailModal = lazy(() =>
@@ -36,6 +37,7 @@ const App: React.FC = () => {
   const {
     courses,
     loading: coursesLoading,
+    error: coursesError,
     addCourse,
     updateCourse,
     deleteCourse,
@@ -43,7 +45,24 @@ const App: React.FC = () => {
     deleteSubmission,
     updateSubmissionReview
   } = useCourseStorage();
-  const { history, loading: historyLoading, addToHistory } = useStudentHistory();
+  const { history, loading: historyLoading, error: historyError, addToHistory } = useStudentHistory();
+
+  const authGeneration = useRef(0);
+  const [submissionSaveError, setSubmissionSaveError] = useState<string | null>(null);
+  useEffect(() => {
+    const resetSessionView = () => {
+      ++authGeneration.current;
+      setActiveCourse(null);
+      setSelectedSubmission(null);
+      setLastSubmission(null);
+      setSubmissionSaveError(null);
+    };
+    window.addEventListener(getAuthEventName(), resetSessionView);
+    return () => {
+      ++authGeneration.current;
+      window.removeEventListener(getAuthEventName(), resetSessionView);
+    };
+  }, []);
 
   const isLoading = coursesLoading || historyLoading || institutionsLoading;
   const activeInstitution = institutions.find((institution) =>
@@ -64,6 +83,8 @@ const App: React.FC = () => {
   };
 
   const handleInterviewComplete = async (submission: Submission) => {
+    const completionGeneration = authGeneration.current;
+    setSubmissionSaveError(null);
     console.log('[App] handleInterviewComplete called:', {
       hasTranscript: submission.transcript?.length,
       studentName: submission.studentName,
@@ -80,10 +101,13 @@ const App: React.FC = () => {
         console.log('[App] Submission saved to course:', activeCourse.id);
       } catch (e) {
         console.error('[App] Failed to save submission to course:', e);
+        if (completionGeneration === authGeneration.current) setSubmissionSaveError('Your course submission could not be saved. Keep these results and contact your instructor.');
       }
     } else {
       console.warn('[App] No activeCourse — submission not saved to course!');
     }
+
+    if (completionGeneration !== authGeneration.current) return;
 
     // Save to student history
     try {
@@ -91,7 +115,10 @@ const App: React.FC = () => {
       console.log('[App] Submission saved to student history');
     } catch (e) {
       console.error('[App] Failed to save to history:', e);
+      if (completionGeneration === authGeneration.current) setSubmissionSaveError(previous => previous || 'Your student history could not be saved. Keep these results and contact your instructor.');
     }
+
+    if (completionGeneration !== authGeneration.current) return;
 
     // Store and navigate to results
     setLastSubmission(submission);
@@ -275,6 +302,12 @@ const App: React.FC = () => {
       <a href="#main-content" className="skip-link">
         Skip to main content
       </a>
+
+      {(submissionSaveError || coursesError || historyError) && (
+        <div role="alert" className="w-full max-w-6xl mb-4 rounded-xl border border-amber-500 p-4 text-amber-200">
+          {submissionSaveError || coursesError || historyError}
+        </div>
+      )}
 
       {/* Platform Header */}
       <header className="w-full max-w-6xl flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-center mb-8 md:mb-12">

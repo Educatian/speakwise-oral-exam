@@ -1,4 +1,4 @@
-import { AudioContexts } from '../../types';
+import { requestMicrophone } from '../../utils/micPermission';
 import { createAudioProcessor, AudioProcessorResult, AudioProcessorCallbacks } from '../../utils/audioPipeline';
 import { decodeAudioData, decode } from '../../utils/audioHelpers';
 
@@ -21,32 +21,35 @@ export class AudioStreamService {
     private nextStartTime: number = 0;
     private outputGain: GainNode | null = null;
 
+    private initialization: AbortController | null = null;
+    private detachAbort: (() => void) | null = null;
+
     constructor() { }
 
-    async initialize(callbacks: AudioProcessorCallbacks): Promise<void> {
+    async initialize(callbacks: AudioProcessorCallbacks, signal?: AbortSignal): Promise<void> {
+        this.cleanup();
+        const controller = new AbortController();
+        this.initialization = controller;
+        const ensureCurrent = () => {
+            if (controller.signal.aborted || this.initialization !== controller) {
+                throw new DOMException('Audio initialization cancelled.', 'AbortError');
+            }
+        };
+        const abort = () => {
+            if (this.initialization === controller) this.cleanup();
+        };
+        signal?.addEventListener('abort', abort, { once: true });
+        this.detachAbort = () => signal?.removeEventListener('abort', abort);
+        if (signal?.aborted) abort();
+
         try {
-            // ── Input context: interactive-latency, native sample rate ──
-            this.inputCtx = new AudioContext({
-                latencyHint: 'interactive',
-            });
-
-            // ── Output context: 24 kHz for Gemini audio playback ──
-            this.outputCtx = new AudioContext({
-                sampleRate: 24000,
-                latencyHint: 'interactive',
-            });
-
-            // Resume both contexts
-            if (this.inputCtx.state === 'suspended') await this.inputCtx.resume();
-            if (this.outputCtx.state === 'suspended') await this.outputCtx.resume();
-
-            // ── Create output gain node for volume control ──
-            this.outputGain = this.outputCtx.createGain();
-            this.outputGain.gain.setValueAtTime(1, this.outputCtx.currentTime);
-            this.outputGain.connect(this.outputCtx.destination);
-
-            // ── Request microphone with pro-grade constraints ──
-            this.stream = await navigator.mediaDevices.getUserMedia({
+            ensureCurrent();
+            // Start WebAudio inside the user's click, before waiting on permission.
+            const inputCtx = new AudioContext({ latencyHint: 'interactive' });
+            this.inputCtx = inputCtx;
+            const outputCtx = new AudioContext({ sampleRate: 24000, latencyHint: 'interactive' });
+            this.outputCtx = outputCtx;
+            const streamPromise = requestMicrophone({
                 audio: {
                     sampleRate: { ideal: 48000 },
                     channelCount: { ideal: 1 },
@@ -57,23 +60,37 @@ export class AudioStreamService {
                     latency: { ideal: 0.01 },
                     sampleSize: { ideal: 16 },
                 }
+            }, { signal: controller.signal }).then(stream => {
+                if (controller.signal.aborted || this.initialization !== controller) {
+                    stream.getTracks().forEach(track => track.stop());
+                    ensureCurrent();
+                }
+                this.stream = stream;
+                return stream;
             });
+            const [stream] = await Promise.all([
+                streamPromise,
+                inputCtx.state === 'suspended' ? inputCtx.resume() : Promise.resolve(),
+                outputCtx.state === 'suspended' ? outputCtx.resume() : Promise.resolve()
+            ]);
+            ensureCurrent();
 
-            // ── Log actual audio track settings ──
-            const track = this.stream.getAudioTracks()[0];
+            this.outputGain = outputCtx.createGain();
+            this.outputGain.gain.setValueAtTime(1, outputCtx.currentTime);
+            this.outputGain.connect(outputCtx.destination);
+
+            const track = stream.getAudioTracks()[0];
             const settings = track.getSettings();
-            console.log(`[AudioStreamService] Mic: "${track.label}"`);
-            console.log(`[AudioStreamService] Settings: ${settings.sampleRate}Hz, ${settings.channelCount}ch, echo:${settings.echoCancellation}, noise:${settings.noiseSuppression}, agc:${settings.autoGainControl}`);
-            console.log(`[AudioStreamService] InputCtx sampleRate: ${this.inputCtx.sampleRate}Hz, baseLatency: ${(this.inputCtx.baseLatency * 1000).toFixed(1)}ms`);
+            console.log('[AudioStreamService] Mic:', track.label, settings);
 
-            // ── Build audio processor (DSP chain + Worklet) ──
-            this.audioProcessor = await createAudioProcessor(
-                this.inputCtx,
-                this.stream,
-                callbacks
-            );
+            const processor = await createAudioProcessor(inputCtx, stream, callbacks);
+            if (controller.signal.aborted || this.initialization !== controller) {
+                processor.cleanup();
+                ensureCurrent();
+            }
+            this.audioProcessor = processor;
         } catch (error) {
-            console.error('[AudioStreamService] Failed to initialize audio components', error);
+            if (this.initialization === controller) this.cleanup();
             throw error;
         }
     }
@@ -166,6 +183,10 @@ export class AudioStreamService {
      * Full cleanup
      */
     cleanup(): void {
+        this.initialization?.abort();
+        this.initialization = null;
+        this.detachAbort?.();
+        this.detachAbort = null;
         this.stopAllAudio();
 
         if (this.audioProcessor) {

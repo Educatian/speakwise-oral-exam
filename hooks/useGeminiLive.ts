@@ -11,6 +11,7 @@ import {
     ArgumentGraph,
     RawTranscriptTurn
 } from '../types';
+import { microphoneErrorMessage } from '../utils/micPermission';
 import { OpenRouterTurnClient } from '../lib/services/OpenRouterTurnClient';
 import { AudioStreamService } from '../lib/services/AudioStreamService';
 import { CapturedAudioTurn, TranscriptionService } from '../lib/services/TranscriptionService';
@@ -62,6 +63,8 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
     const [dialogueMetrics, setDialogueMetrics] = useState<DialogueMetrics>(DEFAULT_DIALOGUE_METRICS);
     const [argumentGraph, setArgumentGraph] = useState<ArgumentGraph>({ nodes: [], edges: [], coherenceScore: 0, complexity: 0 });
 
+    const startupRef = useRef<AbortController | null>(null);
+    const kickoffTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const audioServiceRef = useRef<AudioStreamService | null>(null);
     const sessionRef = useRef<OpenRouterTurnClient | null>(null);
     const transcriptionServiceRef = useRef<TranscriptionService | null>(null);
@@ -128,6 +131,12 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
     }, []);
 
     const cleanup = useCallback(() => {
+        startupRef.current?.abort();
+        startupRef.current = null;
+        if (kickoffTimerRef.current) clearTimeout(kickoffTimerRef.current);
+        kickoffTimerRef.current = null;
+        turnPhaseRef.current = 'idle';
+        transcriptionServiceRef.current = null;
         if (silenceTimerRef.current) {
             clearTimeout(silenceTimerRef.current);
             silenceTimerRef.current = null;
@@ -370,7 +379,16 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
     }, [appendTranscription, processCapturedTurn, startRecordingPhase, updateLatencyMetrics]);
 
     const startSession = useCallback(async () => {
+        cleanup();
+        const controller = new AbortController();
+        startupRef.current = controller;
+        const isCurrent = () => startupRef.current === controller && !controller.signal.aborted;
         try {
+            setIsInterviewerSpeaking(false);
+            setIsUserSpeaking(false);
+            setAudioLevel(0);
+            setPendingAIText('');
+            setPendingUserText('');
             setStatus(InterviewStatus.CONNECTING);
             setError(null);
             setTranscriptions([]);
@@ -395,12 +413,13 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                 systemInstruction,
                 voiceName,
                 onOpen: async () => {
-                    setStatus(InterviewStatus.LIVE);
-
-                    audioServiceRef.current = new AudioStreamService();
-                    await audioServiceRef.current.initialize({
-                        onAudioLevel: (level) => setAudioLevel(level),
+                    if (!isCurrent()) return;
+                    const audioService = new AudioStreamService();
+                    audioServiceRef.current = audioService;
+                    await audioService.initialize({
+                        onAudioLevel: (level) => { if (isCurrent()) setAudioLevel(level); },
                         onVoiceActivity: (isSpeaking) => {
+                            if (!isCurrent()) return;
                             setIsUserSpeaking(isSpeaking);
 
                             if (turnPhaseRef.current === 'ai_speaking' && isSpeaking) {
@@ -425,6 +444,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                             }
                         },
                         onPCMData: (pcmBlob) => {
+                            if (!isCurrent()) return;
                             if (!transcriptionServiceRef.current || turnPhaseRef.current !== 'recording') {
                                 return;
                             }
@@ -439,11 +459,16 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                         onCalibration: (noiseFloor, threshold) => {
                             console.log(`[Audio] Calibrated - Noise: ${noiseFloor.toFixed(4)}, Threshold: ${threshold.toFixed(4)}`);
                         }
-                    });
-
+                    }, controller.signal);
+                    if (!isCurrent()) {
+                        audioService.cleanup();
+                        return;
+                    }
                     transcriptionServiceRef.current = new TranscriptionService('');
+                    setStatus(InterviewStatus.LIVE);
                 },
                 onMessage: async (message: LiveServerMessage) => {
+                    if (!isCurrent()) return;
                     const serverContent = message.serverContent;
 
                     const base64Audio = serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
@@ -452,6 +477,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                         setTurnPhase('ai_speaking');
                         if (audioServiceRef.current) {
                             await audioServiceRef.current.playAudioChunk(base64Audio);
+                            if (!isCurrent()) return;
                         }
                         if (audioEndTimerRef.current) {
                             clearTimeout(audioEndTimerRef.current);
@@ -516,10 +542,21 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                     }
                 },
                 onClose: () => {
+                    if (!isCurrent()) return;
+                    cleanup();
+                    setTurnPhase('idle');
+                    setIsInterviewerSpeaking(false);
+                    setIsUserSpeaking(false);
+                    setAudioLevel(0);
                     setStatus(InterviewStatus.ERROR);
                     setError('The interviewer disconnected. No empty result was submitted. Please retry.');
                 },
                 onError: (connectionError: unknown) => {
+                    if (!isCurrent()) return;
+                    setTurnPhase('idle');
+                    setIsInterviewerSpeaking(false);
+                    setIsUserSpeaking(false);
+                    setAudioLevel(0);
                     console.error('Voice interviewer error:', connectionError);
                     setError('Connection error occurred. Please try again.');
                     setStatus(InterviewStatus.ERROR);
@@ -530,22 +567,22 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
             sessionRef.current = wsClient;
             await wsClient.connect();
 
-            setTimeout(() => {
-                if (sessionRef.current) {
-                    setTurnPhase('ai_speaking');
-                    sessionRef.current.sendText("I am ready. Briefly welcome me and ask the first substantive course question now, without a readiness or feelings question.");
+            if (!isCurrent()) return;
+            kickoffTimerRef.current = setTimeout(() => {
+                kickoffTimerRef.current = null;
+                if (isCurrent() && sessionRef.current === wsClient) {
+                    wsClient.sendText("I am ready. Briefly welcome me and ask the first substantive course question now, without a readiness or feelings question.");
                 }
             }, 1000);
-        } catch (sessionError: any) {
+        } catch (sessionError: unknown) {
+            if (!isCurrent()) return;
             console.error('Failed to start session:', sessionError);
-            if (sessionError?.name === 'NotAllowedError') {
-                setError('Microphone access denied. Please allow microphone access and try again.');
-            } else if (sessionError?.name === 'NotFoundError') {
-                setError('No microphone found. Please connect a microphone and try again.');
-            } else {
-                setError('Failed to start interview session. Please check your connection and try again.');
-            }
-            setStatus(InterviewStatus.IDLE);
+            setError(microphoneErrorMessage(sessionError));
+            setStatus(InterviewStatus.ERROR);
+            setTurnPhase('idle');
+            setIsInterviewerSpeaking(false);
+            setIsUserSpeaking(false);
+            setAudioLevel(0);
             cleanup();
         }
     }, [

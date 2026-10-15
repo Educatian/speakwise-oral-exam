@@ -1,7 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Course, InstructorReview, Submission } from '../types';
 import {
-    getAllCourses,
     addCourse as addCourseToSupabase,
     deleteCourse as deleteCourseFromSupabase,
     addSubmissionToCourse,
@@ -11,6 +10,9 @@ import {
     isSupabaseConfigured,
     supabase
 } from '../lib/supabase';
+
+import { getAuthEventName } from '../lib/supabase/auth';
+import { listenForRefresh, upsertById } from '../utils/courseRefresh';
 
 interface UseCourseStorageReturn {
     courses: Course[];
@@ -42,30 +44,37 @@ export function useCourseStorage(): UseCourseStorageReturn {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    // Initialize and subscribe to real-time updates
+    const session = useRef(0);
+    const subscription = useRef<ReturnType<typeof subscribeToCoursesRealtime> | null>(null);
     useEffect(() => {
         setLoading(true);
         setError(null);
-
-        if (isSupabaseConfigured()) {
-            // Use real-time subscription for Supabase
-            const unsubscribe = subscribeToCoursesRealtime((updatedCourses) => {
-                setCourses(updatedCourses);
-                setLoading(false);
-            });
-
-            return () => unsubscribe();
-        } else {
-            // Fallback to localStorage
-            try {
-                const saved = localStorage.getItem(STORAGE_KEY);
-                setCourses(saved ? JSON.parse(saved) : []);
-            } catch (e) {
-                console.error('Failed to load courses from localStorage:', e);
-                setCourses([]);
-            }
+        const unsubscribe = subscribeToCoursesRealtime(updatedCourses => {
+            setCourses(updatedCourses);
             setLoading(false);
-        }
+            setError(null);
+        }, error => {
+            console.error('Failed to refresh courses:', error);
+            setError('Failed to refresh courses. Please try again.');
+            setLoading(false);
+        });
+        subscription.current = unsubscribe;
+        const unlisten = listenForRefresh(getAuthEventName(), () => {
+            if (isSupabaseConfigured()) void unsubscribe.refresh();
+        }, () => {
+            ++session.current;
+            unsubscribe.invalidate();
+            setCourses([]);
+            setLoading(true);
+            setError(null);
+            void unsubscribe.refresh();
+        });
+        return () => {
+            ++session.current;
+            unlisten();
+            unsubscribe();
+            subscription.current = null;
+        };
     }, []);
 
     // Persist to localStorage when courses change (fallback mode)
@@ -89,6 +98,8 @@ export function useCourseStorage(): UseCourseStorageReturn {
             submissions: []
         };
 
+        const mutationSession = session.current;
+        subscription.current?.invalidate();
         // Optimistic update - add to UI immediately
         setCourses(prev => [newCourse, ...prev]);
 
@@ -97,17 +108,20 @@ export function useCourseStorage(): UseCourseStorageReturn {
                 await addCourseToSupabase(newCourse);
             }
         } catch (e) {
+            if (mutationSession !== session.current) return;
             console.error('Failed to add course:', e);
             setError('Failed to add course. Please try again.');
             // Revert by refetching
             if (isSupabaseConfigured()) {
-                getAllCourses().then(setCourses);
+                void subscription.current?.refresh();
             }
         }
     }, []);
 
     // Delete a course
     const deleteCourse = useCallback(async (id: string): Promise<void> => {
+        const mutationSession = session.current;
+        subscription.current?.invalidate();
         // Optimistic update - remove from UI immediately
         setCourses(prev => prev.filter(c => c.id !== id));
 
@@ -116,11 +130,12 @@ export function useCourseStorage(): UseCourseStorageReturn {
                 await deleteCourseFromSupabase(id);
             }
         } catch (e) {
+            if (mutationSession !== session.current) return;
             console.error('Failed to delete course:', e);
             setError('Failed to delete course. Please try again.');
             // Revert by refetching
             if (isSupabaseConfigured()) {
-                getAllCourses().then(setCourses);
+                void subscription.current?.refresh();
             }
         }
     }, []);
@@ -130,6 +145,8 @@ export function useCourseStorage(): UseCourseStorageReturn {
         courseId: string,
         updates: Partial<Course>
     ): Promise<void> => {
+        const mutationSession = session.current;
+        subscription.current?.invalidate();
         // Optimistic update
         setCourses(prev => prev.map(c =>
             c.id === courseId ? { ...c, ...updates } : c
@@ -155,40 +172,34 @@ export function useCourseStorage(): UseCourseStorageReturn {
                 if (error) throw error;
             }
         } catch (e) {
+            if (mutationSession !== session.current) return;
             console.error('Failed to update course:', e);
             setError('Failed to update course. Please try again.');
             // Revert by refetching
             if (isSupabaseConfigured()) {
-                getAllCourses().then(setCourses);
+                void subscription.current?.refresh();
             }
         }
     }, []);
 
-    // Add a submission to a course
-    const addSubmission = useCallback(async (
-        courseId: string,
-        submission: Submission
-    ): Promise<void> => {
+    // Commit immediately after persistence, without depending on realtime.
+    const addSubmission = useCallback(async (courseId: string, submission: Submission): Promise<void> => {
+        const mutationSession = session.current;
         try {
-            if (isSupabaseConfigured()) {
-                await addSubmissionToCourse(courseId, submission);
-                // Real-time subscription will update the state
-            } else {
-                setCourses(prev => prev.map(c =>
-                    c.id === courseId
-                        ? { ...c, submissions: [submission, ...c.submissions] }
-                        : c
-                ));
-            }
-        } catch (e) {
-            console.error('Failed to add submission:', e);
-            setError('Failed to save submission. Please try again.');
-            // Still add locally as fallback
-            setCourses(prev => prev.map(c =>
-                c.id === courseId
-                    ? { ...c, submissions: [submission, ...c.submissions] }
-                    : c
-            ));
+            if (isSupabaseConfigured()) await addSubmissionToCourse(courseId, submission);
+            if (mutationSession !== session.current) return;
+            subscription.current?.invalidate();
+            setLoading(false);
+            setError(null);
+            setCourses(prev => prev.map(course => course.id === courseId
+                ? { ...course, submissions: upsertById(course.submissions, submission) }
+                : course));
+            // Also reconcile when the course was not yet present in the local list.
+            if (isSupabaseConfigured()) void subscription.current?.refresh();
+        } catch (error) {
+            console.error('Failed to add submission:', error);
+            if (mutationSession === session.current) setError('Failed to save submission. Please try again.');
+            throw error;
         }
     }, []);
 
@@ -197,6 +208,8 @@ export function useCourseStorage(): UseCourseStorageReturn {
         courseId: string,
         submissionId: string
     ): Promise<void> => {
+        const mutationSession = session.current;
+        subscription.current?.invalidate();
         // Optimistic update - remove from UI immediately
         setCourses(prev => prev.map(c =>
             c.id === courseId
@@ -210,11 +223,12 @@ export function useCourseStorage(): UseCourseStorageReturn {
                 // Real-time subscription will handle the update
             }
         } catch (e) {
+            if (mutationSession !== session.current) return;
             console.error('Failed to delete submission:', e);
             setError('Failed to delete submission. Please try again.');
             // Revert by refetching
             if (isSupabaseConfigured()) {
-                getAllCourses().then(setCourses);
+                void subscription.current?.refresh();
             }
         }
     }, []);
@@ -224,6 +238,8 @@ export function useCourseStorage(): UseCourseStorageReturn {
         submissionId: string,
         review: InstructorReview
     ): Promise<void> => {
+        const mutationSession = session.current;
+        subscription.current?.invalidate();
         setCourses(prev => prev.map(course =>
             course.id === courseId
                 ? {
@@ -240,10 +256,11 @@ export function useCourseStorage(): UseCourseStorageReturn {
         try {
             await updateSubmissionReviewInDatabase(submissionId, review);
         } catch (e) {
+            if (mutationSession !== session.current) return;
             console.error('Failed to update submission review:', e);
             setError('Failed to save instructor review. Please try again.');
             if (isSupabaseConfigured()) {
-                getAllCourses().then(setCourses);
+                void subscription.current?.refresh();
             }
         }
     }, []);

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { requestMicrophone, microphoneErrorMessage } from '../../utils/micPermission';
 
 interface MicTestProps {
     className?: string;
@@ -15,6 +16,8 @@ interface MicTestProps {
  * - Device selection
  */
 export const MicTest: React.FC<MicTestProps> = ({ className = '', onDeviceSelect }) => {
+    const [isRequesting, setIsRequesting] = useState(false);
+    const requestRef = useRef<AbortController | null>(null);
     const [isTesting, setIsTesting] = useState(false);
     const [audioLevel, setAudioLevel] = useState(0);
     const [error, setError] = useState<string | null>(null);
@@ -37,14 +40,13 @@ export const MicTest: React.FC<MicTestProps> = ({ className = '', onDeviceSelect
     const animationFrameRef = useRef<number | null>(null);
     const clippingTimeoutRef = useRef<number | null>(null);
 
-    // Enumerate audio devices on mount
+    // Enumerate without requesting permission. Labels refresh after an explicit test.
     useEffect(() => {
+        let active = true;
         const enumerateDevices = async () => {
             try {
-                await navigator.mediaDevices.getUserMedia({ audio: true })
-                    .then(stream => stream.getTracks().forEach(t => t.stop()));
-
                 const devices = await navigator.mediaDevices.enumerateDevices();
+                if (!active) return;
                 const audioInputs = devices.filter(d => d.kind === 'audioinput');
                 setAvailableDevices(audioInputs);
 
@@ -57,9 +59,14 @@ export const MicTest: React.FC<MicTestProps> = ({ className = '', onDeviceSelect
         };
 
         enumerateDevices();
+        return () => { active = false; };
     }, []);
 
-    const stopTest = useCallback(() => {
+    const releaseResources = useCallback(() => {
+        requestRef.current?.abort();
+        requestRef.current = null;
+        if (clippingTimeoutRef.current) clearTimeout(clippingTimeoutRef.current);
+        clippingTimeoutRef.current = null;
         if (animationFrameRef.current) {
             cancelAnimationFrame(animationFrameRef.current);
             animationFrameRef.current = null;
@@ -71,19 +78,28 @@ export const MicTest: React.FC<MicTestProps> = ({ className = '', onDeviceSelect
         }
 
         if (audioContextRef.current) {
-            audioContextRef.current.close();
+            void audioContextRef.current.close().catch(() => {});
             audioContextRef.current = null;
         }
 
         analyserRef.current = null;
+    }, []);
+
+    const stopTest = useCallback(() => {
+        releaseResources();
+        setIsRequesting(false);
         setAudioLevel(0);
         setSpectrumBands(Array(8).fill(0));
         setPeakDb(-60);
         setIsClipping(false);
         setIsTesting(false);
-    }, []);
+    }, [releaseResources]);
 
     const startTest = useCallback(async () => {
+        if (requestRef.current) return;
+        const controller = new AbortController();
+        requestRef.current = controller;
+        setIsRequesting(true);
         setError(null);
 
         try {
@@ -98,7 +114,11 @@ export const MicTest: React.FC<MicTestProps> = ({ className = '', onDeviceSelect
                 }
             };
 
-            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            const stream = await requestMicrophone(constraints, { signal: controller.signal });
+            if (controller.signal.aborted || requestRef.current !== controller) {
+                stream.getTracks().forEach(track => track.stop());
+                return;
+            }
             streamRef.current = stream;
 
             const audioTrack = stream.getAudioTracks()[0];
@@ -128,7 +148,13 @@ export const MicTest: React.FC<MicTestProps> = ({ className = '', onDeviceSelect
             source.connect(highPass);
             highPass.connect(analyser);
 
+            setIsRequesting(false);
             setIsTesting(true);
+            void navigator.mediaDevices.enumerateDevices().then(devices => {
+                if (requestRef.current === controller && !controller.signal.aborted) {
+                    setAvailableDevices(devices.filter(device => device.kind === 'audioinput'));
+                }
+            }).catch(() => {});
 
             // Noise floor calibration (first 1 second)
             let calibrationFrames = 0;
@@ -192,26 +218,18 @@ export const MicTest: React.FC<MicTestProps> = ({ className = '', onDeviceSelect
 
             updateLevel();
 
-        } catch (err: any) {
-            if (err.name === 'NotAllowedError') {
-                setError('마이크 접근이 거부되었습니다. 브라우저 설정에서 허용해주세요.');
-            } else if (err.name === 'NotFoundError') {
-                setError('마이크를 찾을 수 없습니다. 연결 상태를 확인해주세요.');
-            } else {
-                setError('마이크 테스트 실패. 다시 시도해주세요.');
-            }
+        } catch (err: unknown) {
+            if (controller.signal.aborted || requestRef.current !== controller) return;
+            stopTest();
+            setError(microphoneErrorMessage(err));
             console.error('Mic test error:', err);
         }
-    }, [selectedDeviceId]);
+    }, [selectedDeviceId, stopTest]);
 
-    useEffect(() => {
-        return () => {
-            stopTest();
-        };
-    }, [stopTest]);
+    useEffect(() => releaseResources, [releaseResources]);
 
     const handleToggle = () => {
-        if (isTesting) {
+        if (isTesting || isRequesting) {
             stopTest();
         } else {
             startTest();
@@ -228,6 +246,7 @@ export const MicTest: React.FC<MicTestProps> = ({ className = '', onDeviceSelect
     };
 
     const getLevelText = () => {
+        if (isRequesting) return 'Requesting microphone access...';
         if (!isTesting) return 'Click to test';
         if (isClipping) return '⚠️ Clipping! Move back';
         if (audioLevel < 10) return '🔇 No sound detected';
@@ -285,9 +304,15 @@ export const MicTest: React.FC<MicTestProps> = ({ className = '', onDeviceSelect
                         color: isTesting ? '#f87171' : '#818cf8',
                     }}
                 >
-                    {isTesting ? 'Stop' : 'Test Mic'}
+                    {isRequesting ? 'Cancel' : isTesting ? 'Stop' : 'Test Mic'}
                 </button>
             </div>
+
+            {isRequesting && (
+                <p role="status" aria-live="polite" style={{ color: '#cbd5e1', fontSize: '12px', marginBottom: '12px' }}>
+                    Requesting microphone access. Choose Allow in your browser prompt. If it stays pending, this request will time out after 20 seconds so you can retry.
+                </p>
+            )}
 
             {/* Device Selector */}
             {availableDevices.length > 1 && (
@@ -299,7 +324,7 @@ export const MicTest: React.FC<MicTestProps> = ({ className = '', onDeviceSelect
                             onDeviceSelect?.(e.target.value);
                             if (isTesting) stopTest();
                         }}
-                        disabled={isTesting}
+                        disabled={isTesting || isRequesting}
                         style={{
                             width: '100%',
                             background: '#0f172a',

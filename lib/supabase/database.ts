@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from './client';
+import { createRefreshController } from '../../utils/courseRefresh';
 import {
     AuditLogEntry,
     Course,
@@ -161,7 +162,7 @@ export async function getAllCourses(): Promise<Course[]> {
         }));
     } catch (error) {
         console.error('Error fetching courses from Supabase:', error);
-        return [];
+        throw error;
     }
 }
 
@@ -295,7 +296,7 @@ export async function addSubmissionToCourse(
             });
         } catch (error) {
             console.error('Error adding submission to Supabase:', error);
-            addSubmissionToLocalStorage(courseId, submission);
+            throw error;
         }
     }
 
@@ -389,60 +390,24 @@ export async function deleteSubmission(
  * Subscribe to real-time course updates
  */
 export function subscribeToCoursesRealtime(
-    onUpdate: (courses: Course[]) => void
-): () => void {
-    if (!isSupabaseConfigured()) {
-        const courses = getCoursesFromLocalStorage();
-        onUpdate(courses);
-        return () => { };
-    }
-
-    // Initial load
-    getAllCourses().then(onUpdate);
-
-    // Subscribe to changes on courses table
-    const coursesChannel = supabase
+    onUpdate: (courses: Course[]) => void,
+    onError: (error: unknown) => void = error => console.error('Failed to refresh courses:', error)
+): (() => void) & { refresh: () => Promise<void>; invalidate: () => void } {
+    const controller = createRefreshController(getAllCourses, onUpdate, onError);
+    void controller.refresh();
+    // Keep native Supabase realtime support; D1 uses explicit lifecycle refreshes.
+    const channel = isSupabaseConfigured() ? supabase
         .channel('courses-changes')
-        .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: 'courses' },
-            () => {
-                getAllCourses().then(onUpdate);
-            }
-        )
-        .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: 'submissions' },
-            () => {
-                getAllCourses().then(onUpdate);
-            }
-        )
-        .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: 'submission_reviews' },
-            () => {
-                getAllCourses().then(onUpdate);
-            }
-        )
-        .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: 'submission_annotations' },
-            () => {
-                getAllCourses().then(onUpdate);
-            }
-        )
-        .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: 'audit_logs' },
-            () => {
-                getAllCourses().then(onUpdate);
-            }
-        )
-        .subscribe();
-
-    return () => {
-        supabase.removeChannel(coursesChannel);
-    };
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'courses' }, () => { void controller.refresh(); })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'submissions' }, () => { void controller.refresh(); })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'submission_reviews' }, () => { void controller.refresh(); })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'submission_annotations' }, () => { void controller.refresh(); })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'audit_logs' }, () => { void controller.refresh(); })
+        .subscribe() : null;
+    return Object.assign(() => {
+        controller.dispose();
+        if (channel) void supabase.removeChannel(channel);
+    }, { refresh: controller.refresh, invalidate: controller.invalidate });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -459,9 +424,7 @@ export async function getStudentHistory(): Promise<Submission[]> {
 
     try {
         const currentUser = getPersistedAppUser();
-        if (!currentUser?.id) {
-            return getHistoryFromLocalStorage();
-        }
+        if (!currentUser?.id) return [];
 
         const { data, error } = await supabase
             .from('student_history')
@@ -475,7 +438,7 @@ export async function getStudentHistory(): Promise<Submission[]> {
         return (data || []).map(s => mapSubmissionRecord(s, reviewMap));
     } catch (error) {
         console.error('Error fetching student history from Supabase:', error);
-        return getHistoryFromLocalStorage();
+        throw error;
     }
 }
 
@@ -490,10 +453,7 @@ export async function addToStudentHistory(submission: Submission): Promise<void>
 
     try {
         const currentUser = getPersistedAppUser();
-        if (!currentUser?.id) {
-            addToHistoryLocalStorage(submission);
-            return;
-        }
+        if (!currentUser?.id) throw new Error('Sign in before saving student history.');
 
         const deviceId = getDeviceId();
         const savedSchoolRaw = localStorage.getItem('speakwise_school');
@@ -526,7 +486,7 @@ export async function addToStudentHistory(submission: Submission): Promise<void>
         if (error) throw error;
     } catch (error) {
         console.error('Error adding to student history in Supabase:', error);
-        addToHistoryLocalStorage(submission);
+        throw error;
     }
 }
 
