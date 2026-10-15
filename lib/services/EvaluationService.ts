@@ -67,6 +67,9 @@ Return the full object (score, feedback, confidenceScore, confidenceRationale, r
 
 export class EvaluationService {
     static async evaluateTranscripts(payload: EvaluationPayload): Promise<Submission> {
+        if (!payload.transcriptions.some(item => item.speaker === 'user' && item.text.trim())) {
+            throw new Error('No student response was captured; this attempt cannot be scored.');
+        }
         const {
             courseName,
             studentName,
@@ -87,6 +90,9 @@ export class EvaluationService {
         const feedbackPrompt = createFeedbackPrompt(courseName, transcriptStr) + TOULMIN_PROMPT_ADDENDUM;
 
         const analysis = await chatCompleteJson<FeedbackResponse>(feedbackPrompt);
+        if (typeof analysis.score !== 'number' || !Number.isFinite(analysis.score) || analysis.score < 0 || analysis.score > 100 || typeof analysis.feedback !== 'string' || !analysis.feedback.trim()) {
+            throw new Error('Evaluation returned an invalid score or feedback. Please retry.');
+        }
 
         // ── Merge LLM Toulmin with pattern-based Toulmin ──
         // LLM provides context-aware classification; pattern-based provides real-time baseline

@@ -396,7 +396,7 @@ const App: React.FC = () => {
       {/* Footer */}
       <footer className="mt-auto pt-12 pb-6 text-center">
         <p className="text-slate-800 text-[10px] font-bold tracking-[0.3em] uppercase">
-          Gemini 2.5 Native Voice Pipeline • SpeakWise Educational Technology
+          SpeakWise • Evidence-centered oral assessment
         </p>
       </footer>
     </div>

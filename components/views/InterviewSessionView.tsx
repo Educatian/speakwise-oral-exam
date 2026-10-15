@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Course, InterviewStatus, Submission } from '../../types';
+import { Course, InterviewStatus, Submission, TranscriptionItem } from '../../types';
 import { useGeminiLive } from '../../hooks';
 import { createInterviewerPrompt } from '../../lib/prompts/interviewerSystem';
 import { AudioVisualizer } from '../AudioVisualizer';
@@ -10,7 +10,7 @@ import { usePresence } from '../../hooks/usePresence';
 interface InterviewSessionViewProps {
     course: Course;
     studentName: string;
-    onComplete: (submission: Submission) => void;
+    onComplete: (submission: Submission) => void | Promise<void>;
     onBack: () => void;
 }
 
@@ -30,10 +30,12 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
     const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
     const lastActivityRef = useRef<number>(Date.now());
     const hasSubmittedRef = useRef(false);
+    const finalTranscriptsRef = useRef<TranscriptionItem[] | null>(null);
 
     const [silenceSeconds, setSilenceSeconds] = useState(0);
     const [showThinkingPrompt, setShowThinkingPrompt] = useState(false);
     const [showAnalytics, setShowAnalytics] = useState(false);
+    const [submissionNotice, setSubmissionNotice] = useState<string | null>(null);
 
     const systemInstruction = useMemo(() => createInterviewerPrompt(course), [course]);
     const {
@@ -70,7 +72,7 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
     }, [transcriptions, pendingAIText, pendingUserText, isInterviewerSpeaking]);
 
     useEffect(() => {
-        if (status !== InterviewStatus.LIVE || isInterviewerSpeaking || isUserSpeaking) {
+        if (status !== InterviewStatus.LIVE || turnPhase !== 'recording' || isInterviewerSpeaking || isUserSpeaking) {
             setSilenceSeconds(0);
             setShowThinkingPrompt(false);
             lastActivityRef.current = Date.now();
@@ -86,7 +88,7 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
         return () => {
             if (silenceTimerRef.current) clearInterval(silenceTimerRef.current);
         };
-    }, [status, isInterviewerSpeaking, isUserSpeaking]);
+    }, [status, turnPhase, isInterviewerSpeaking, isUserSpeaking]);
 
     useEffect(() => {
         if (isUserSpeaking || isInterviewerSpeaking || pendingUserText || pendingAIText) {
@@ -99,7 +101,14 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
     const handleEndAndSubmit = async () => {
         if (hasSubmittedRef.current) return;
         hasSubmittedRef.current = true;
-        const finalTranscripts = await endSession();
+        setSubmissionNotice(null);
+        const finalTranscripts = finalTranscriptsRef.current || await endSession();
+        finalTranscriptsRef.current = finalTranscripts;
+
+        if (!finalTranscripts.some(item => item.speaker === 'user' && item.text.trim())) {
+            setSubmissionNotice('No spoken response was captured. Nothing was submitted or scored. Return and start a new attempt.');
+            return;
+        }
 
         try {
             const submission = await EvaluationService.evaluateTranscripts({
@@ -114,25 +123,11 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
                 argumentGraph,
                 reasoningRubric: getReasoningRubric()
             });
-            onComplete(submission);
+            await onComplete(submission);
         } catch (submitError) {
             console.error('Failed to generate feedback:', submitError);
-            onComplete({
-                id: Math.random().toString(36).substr(2, 9),
-                studentName,
-                courseName: course.name,
-                timestamp: Date.now(),
-                transcript: finalTranscripts,
-                score: 0,
-                feedback: 'Feedback generation failed. Please contact your instructor.',
-                latencyMetrics,
-                bargeInEvents,
-                rawTranscriptTurns,
-                failedTranscriptions,
-                dialogueMetrics,
-                argumentGraph,
-                reasoningRubric: getReasoningRubric()
-            });
+            setSubmissionNotice('Evaluation could not be completed. Your transcript is still available here. Retry evaluation before leaving this page.');
+            hasSubmittedRef.current = false;
         }
     };
 
@@ -200,21 +195,26 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
                         ))}
                     </div>
 
-                    {status === InterviewStatus.IDLE ? (
+                    {status === InterviewStatus.IDLE || status === InterviewStatus.ERROR ? (
                         <div className="space-y-4">
                             <MicTest className="mb-4" />
                             <Button onClick={startSession} variant="primary" size="lg" className="w-full">
-                                Start Interview Session
+                                {status === InterviewStatus.ERROR ? 'Retry Interview Connection' : 'Start Interview Session'}
                             </Button>
                             <p className="text-xs text-slate-500 text-center">Run the microphone check above before starting.</p>
                         </div>
                     ) : status === InterviewStatus.ENDED ? (
+                        <div className="space-y-3">
+                        {submissionNotice && finalTranscriptsRef.current?.some(item => item.speaker === 'user') && (
+                            <Button onClick={handleEndAndSubmit} variant="primary" size="lg" className="w-full">Retry Evaluation</Button>
+                        )}
                         <Button onClick={onBack} variant="ghost" size="lg" className="w-full">
                             Return to Login
                         </Button>
+                        </div>
                     ) : (
                         <div className="space-y-3">
-                            <Button onClick={handleEndAndSubmit} variant="danger" size="lg" className="w-full">
+                            <Button onClick={handleEndAndSubmit} disabled={turnPhase === 'transcribing'} variant="danger" size="lg" className="w-full">
                                 End and Submit Session
                             </Button>
                             {status === InterviewStatus.LIVE && turnPhase === 'recording' && (
@@ -225,6 +225,7 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
                         </div>
                     )}
 
+                    {submissionNotice && <p role="alert" className="text-amber-300 text-sm">{submissionNotice}</p>}
                     {error && (
                         <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl">
                             <p className="text-red-400 text-sm font-medium">{error}</p>
@@ -377,7 +378,7 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
                         <div ref={scrollAnchorRef} />
                     </div>
 
-                    {status === InterviewStatus.ENDED && (
+                    {status === InterviewStatus.ENDED && !submissionNotice && (
                         <div className="p-6 lg:p-8 bg-slate-900/50 border-t border-slate-800 text-center space-y-4">
                             <div className="flex items-center justify-center gap-2 text-emerald-400">
                                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -385,7 +386,7 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
                                 </svg>
                                 <h4 className="font-bold">Interview completed</h4>
                             </div>
-                            <p className="text-slate-400 text-xs">Your transcript and analysis have been saved successfully.</p>
+                            <p className="text-slate-400 text-xs">Preparing your evaluation. Keep this page open until your results appear.</p>
                         </div>
                     )}
                 </div>

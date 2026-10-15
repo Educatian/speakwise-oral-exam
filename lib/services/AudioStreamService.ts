@@ -118,6 +118,10 @@ export class AudioStreamService {
         }
     }
 
+    getPendingPlaybackMs(): number {
+        return this.outputCtx ? Math.max(0, (this.nextStartTime - this.outputCtx.currentTime) * 1000) : 0;
+    }
+
     /**
      * Stop all audio with smooth fade-out
      */

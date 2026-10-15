@@ -140,7 +140,7 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({ submissi
                             <div key={key} className="rounded-2xl border border-emerald-500/15 bg-emerald-500/5 p-4">
                                 <div className="flex items-center justify-between gap-3">
                                     <p className="text-sm font-semibold text-white">{RUBRIC_LABELS[key] || key}</p>
-                                    <span className="text-sm font-mono text-emerald-300">{entry.score}/5</span>
+                                    <span className="text-sm font-mono text-emerald-300">{entry.score}/25</span>
                                 </div>
                                 <p className="text-xs text-slate-400 mt-2">{entry.evidence?.[0] || 'This area scored well, but no excerpt was captured.'}</p>
                             </div>
@@ -156,7 +156,7 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({ submissi
                             <div key={key} className="rounded-2xl border border-amber-500/15 bg-amber-500/5 p-4">
                                 <div className="flex items-center justify-between gap-3">
                                     <p className="text-sm font-semibold text-white">{RUBRIC_LABELS[key] || key}</p>
-                                    <span className="text-sm font-mono text-amber-300">{entry.score}/5</span>
+                                    <span className="text-sm font-mono text-amber-300">{entry.score}/25</span>
                                 </div>
                                 <p className="text-xs text-slate-400 mt-2">{entry.evidence?.[0] || 'This area needs more support, but no excerpt was captured.'}</p>
                             </div>
@@ -174,7 +174,7 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({ submissi
                             <div key={key} className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
                                 <div className="flex items-center justify-between gap-3">
                                     <p className="text-sm font-medium text-white">{RUBRIC_LABELS[key] || key}</p>
-                                    <span className="text-sm font-mono text-emerald-400">{entry.score}/5</span>
+                                    <span className="text-sm font-mono text-emerald-400">{entry.score}/25</span>
                                 </div>
                                 <p className="text-xs text-slate-500 mt-2">{entry.evidence?.[0] || 'No direct quote was stored for this rubric area.'}</p>
                             </div>

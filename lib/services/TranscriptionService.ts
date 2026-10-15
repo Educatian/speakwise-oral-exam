@@ -97,8 +97,13 @@ export class TranscriptionService {
 
     hasAudio(): boolean {
         let total = 0;
-        for (const chunk of this.pcmChunks) total += chunk.length;
-        return total > SAMPLE_RATE * 0.5;
+        let voicedSamples = 0;
+        for (const chunk of this.pcmChunks) {
+            total += chunk.length;
+            for (const sample of chunk) if (Math.abs(sample) > 260) voicedSamples++;
+        }
+        // Silent audio can otherwise produce hallucinated transcript words.
+        return total > SAMPLE_RATE * 0.5 && voicedSamples > SAMPLE_RATE * 0.05;
     }
 
     getSampleCount(): number {
@@ -139,7 +144,7 @@ export class TranscriptionService {
         }
         try {
             const durationSec = turn.durationMs / 1000;
-            console.log(`[Transcription] Sending ${durationSec.toFixed(1)}s via OpenRouter → gpt-4o-audio`);
+            console.log(`[Transcription] Sending ${durationSec.toFixed(1)}s to speech recognition`);
             const text = await transcribeAudio(turn.wavBase64, 'wav');
             console.log(`[Transcription] Result: "${(text || '').substring(0, 60)}..."`);
             return { text: text || null };

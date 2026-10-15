@@ -87,7 +87,11 @@ async function setupAudioWorklet(
     // Build DSP chain and connect to worklet
     const dspOutput = buildDSPChain(audioContext, source);
     dspOutput.connect(workletNode);
-    // Don't connect to destination — avoid feedback
+    // Keep the processing graph active without playing microphone feedback.
+    const silentSink = audioContext.createGain();
+    silentSink.gain.value = 0;
+    workletNode.connect(silentSink);
+    silentSink.connect(audioContext.destination);
 
     workletNode.port.onmessage = (event) => {
         const { type, audioLevel, isSpeaking, pcmData, noiseFloor, threshold, peakDb } = event.data;
@@ -107,6 +111,7 @@ async function setupAudioWorklet(
     return {
         cleanup: () => {
             workletNode.disconnect();
+            silentSink.disconnect();
             dspOutput.disconnect();
             source.disconnect();
         }

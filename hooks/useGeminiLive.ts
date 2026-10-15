@@ -11,7 +11,7 @@ import {
     ArgumentGraph,
     RawTranscriptTurn
 } from '../types';
-import { GeminiWebsocketClient } from '../lib/services/GeminiWebsocketClient';
+import { OpenRouterTurnClient } from '../lib/services/OpenRouterTurnClient';
 import { AudioStreamService } from '../lib/services/AudioStreamService';
 import { CapturedAudioTurn, TranscriptionService } from '../lib/services/TranscriptionService';
 import {
@@ -63,7 +63,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
     const [argumentGraph, setArgumentGraph] = useState<ArgumentGraph>({ nodes: [], edges: [], coherenceScore: 0, complexity: 0 });
 
     const audioServiceRef = useRef<AudioStreamService | null>(null);
-    const sessionRef = useRef<GeminiWebsocketClient | null>(null);
+    const sessionRef = useRef<OpenRouterTurnClient | null>(null);
     const transcriptionServiceRef = useRef<TranscriptionService | null>(null);
 
     const lastTurnEndTimeRef = useRef<number>(0);
@@ -80,6 +80,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
     const aiTextBufferRef = useRef<string>('');
     const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
     const recordingStartTimeRef = useRef<number>(0);
+    const heardSpeechRef = useRef(false);
     const audioEndTimerRef = useRef<NodeJS.Timeout | null>(null);
     const turnPhaseRef = useRef<TurnPhase>('idle');
 
@@ -251,6 +252,9 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
     }, [appendRawTurn, minTurnDurationMs, patchRawTurn, queueFailedTurn]);
 
     const startRecordingPhase = useCallback(() => {
+        if (!sessionRef.current) return;
+        turnPhaseRef.current = 'recording';
+        heardSpeechRef.current = false;
         setTurnPhase('recording');
         recordingStartTimeRef.current = Date.now();
         setPendingUserText('');
@@ -265,6 +269,8 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
             return;
         }
 
+        if (!heardSpeechRef.current) return;
+        turnPhaseRef.current = 'transcribing';
         setTurnPhase('transcribing');
 
         if (silenceTimerRef.current) {
@@ -385,8 +391,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
             previousUserTextRef.current = '';
             aiTextBufferRef.current = '';
 
-            const wsClient = new GeminiWebsocketClient({
-                apiKey: process.env.API_KEY as string,
+            const wsClient = new OpenRouterTurnClient({
                 systemInstruction,
                 voiceName,
                 onOpen: async () => {
@@ -407,11 +412,12 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                             }
 
                             if (isSpeaking) {
+                                heardSpeechRef.current = true;
                                 if (silenceTimerRef.current) {
                                     clearTimeout(silenceTimerRef.current);
                                     silenceTimerRef.current = null;
                                 }
-                            } else if (!silenceTimerRef.current) {
+                            } else if (heardSpeechRef.current && !silenceTimerRef.current) {
                                 silenceTimerRef.current = setTimeout(() => {
                                     silenceTimerRef.current = null;
                                     stopRecording();
@@ -435,7 +441,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                         }
                     });
 
-                    transcriptionServiceRef.current = new TranscriptionService(process.env.API_KEY as string);
+                    transcriptionServiceRef.current = new TranscriptionService('');
                 },
                 onMessage: async (message: LiveServerMessage) => {
                     const serverContent = message.serverContent;
@@ -445,14 +451,14 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                         setIsInterviewerSpeaking(true);
                         setTurnPhase('ai_speaking');
                         if (audioServiceRef.current) {
-                            audioServiceRef.current.playAudioChunk(base64Audio);
+                            await audioServiceRef.current.playAudioChunk(base64Audio);
                         }
                         if (audioEndTimerRef.current) {
                             clearTimeout(audioEndTimerRef.current);
                         }
                         audioEndTimerRef.current = setTimeout(() => {
                             setIsInterviewerSpeaking(false);
-                        }, 2000);
+                        }, audioServiceRef.current?.getPendingPlaybackMs() || 2000);
                     }
 
                     if (serverContent?.outputTranscription?.text) {
@@ -461,9 +467,9 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                         setPendingAIText(displayText);
 
                         if (aiTextBufferRef.current.includes('[END_INTERVIEW]')) {
-                            setTimeout(() => {
+                            audioEndTimerRef.current = setTimeout(() => {
                                 setStatus(InterviewStatus.ENDED);
-                            }, 5000);
+                            }, (audioServiceRef.current?.getPendingPlaybackMs() || 0) + 300);
                         }
                     }
 
@@ -491,9 +497,9 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                             }
                         }
 
+                        const shouldEnd = aiTextBufferRef.current.includes('[END_INTERVIEW]');
                         aiTextBufferRef.current = '';
                         setPendingAIText('');
-                        setIsInterviewerSpeaking(false);
                         if (audioEndTimerRef.current) {
                             clearTimeout(audioEndTimerRef.current);
                         }
@@ -501,20 +507,20 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
                         lastTurnEndTimeRef.current = now;
                         setLatencyMetrics(updateLatencyMetrics());
 
-                        setTimeout(() => {
-                            startRecordingPhase();
-                        }, 500);
+                        audioEndTimerRef.current = setTimeout(() => {
+                            if (!sessionRef.current) return;
+                            setIsInterviewerSpeaking(false);
+                            if (shouldEnd) setStatus(InterviewStatus.ENDED);
+                            else startRecordingPhase();
+                        }, (audioServiceRef.current?.getPendingPlaybackMs() || 0) + 300);
                     }
                 },
                 onClose: () => {
-                    setStatus(InterviewStatus.ENDED);
-                    setLatencyMetrics(updateLatencyMetrics());
-                    if (onTranscriptionComplete) {
-                        onTranscriptionComplete(transcriptionsRef.current);
-                    }
+                    setStatus(InterviewStatus.ERROR);
+                    setError('The interviewer disconnected. No empty result was submitted. Please retry.');
                 },
                 onError: (connectionError: unknown) => {
-                    console.error('Gemini Live error:', connectionError);
+                    console.error('Voice interviewer error:', connectionError);
                     setError('Connection error occurred. Please try again.');
                     setStatus(InterviewStatus.ERROR);
                     cleanup();
@@ -527,7 +533,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
             setTimeout(() => {
                 if (sessionRef.current) {
                     setTurnPhase('ai_speaking');
-                    sessionRef.current.sendText("Hello! I'm ready for the interview. Please introduce yourself and start with the first question.");
+                    sessionRef.current.sendText("I am ready. Briefly welcome me and ask the first substantive course question now, without a readiness or feelings question.");
                 }
             }, 1000);
         } catch (sessionError: any) {
@@ -563,7 +569,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
         if (turnPhaseRef.current === 'recording' || turnPhaseRef.current === 'idle') {
             if (transcriptionServiceRef.current) {
                 transcriptionServiceRef.current.stopAccumulating();
-                if (transcriptionServiceRef.current.hasAudio()) {
+                if (heardSpeechRef.current && transcriptionServiceRef.current.hasAudio()) {
                     setTurnPhase('transcribing');
                     try {
                         const capturedTurn = transcriptionServiceRef.current.consumeCurrentTurn();
