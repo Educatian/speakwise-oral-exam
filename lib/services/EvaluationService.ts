@@ -45,7 +45,7 @@ const sanitizeTranscript = (text: string) => {
     return text.replace(/\[\/?(thought|reflection)\]/g, '').trim();
 };
 
-// OpenRouter's json_object mode enforces valid JSON but does not enforce a
+// Foundry's json_object mode enforces valid JSON but does not enforce a
 // schema. The structured instruction lives in the prompt itself — the base
 // prompt in interviewerSystem.ts already lists score / feedback /
 // rubricBreakdown; we only append the Toulmin block.

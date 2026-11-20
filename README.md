@@ -69,7 +69,7 @@ For the guiding principles behind the product, see [PRODUCT_PHILOSOPHY.md](C:\Us
 - TypeScript
 - Vite
 - Supabase database and RPCs
-- Google Gemini for interview and evaluation workflows
+- Microsoft Foundry for interview dialogue, voice, transcription and evaluation
 
 ## Local Development
 
@@ -79,20 +79,20 @@ For the guiding principles behind the product, see [PRODUCT_PHILOSOPHY.md](C:\Us
 
 ### Environment
 
-Create a local `.env` based on [.env.example](C:\Users\jewoo\Desktop\speakwise1.1\speakwise-oral-exam\.env.example).
-
-Required values:
-
-- `GEMINI_API_KEY`
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_ANON_KEY`
+Copy the browser-visible Supabase settings from [.env.example](.env.example) into `.env`.
+For AI requests, place the Foundry settings from the same example in `.dev.vars`.
+Supply the exact names of the chat, transcription and speech deployments on the configured resource.
+The Pages worker uses the API key server-side.
 
 ### Run
 
 ```bash
 npm install
-npm run dev
+npm run build
+npx wrangler pages dev dist
 ```
+
+For frontend-only development use `npm run dev`.
 
 ### Quality Checks
 
@@ -106,7 +106,7 @@ npm run build
 For production setup:
 
 1. Apply [supabase/production_schema.sql](C:\Users\jewoo\Desktop\speakwise1.1\speakwise-oral-exam\supabase\production_schema.sql) in Supabase SQL Editor.
-2. Configure environment variables for Gemini and Supabase.
+2. Configure the server-side Foundry bindings and browser-visible Supabase settings.
 3. Follow [DEPLOYMENT_CHECKLIST.md](C:\Users\jewoo\Desktop\speakwise1.1\speakwise-oral-exam\DEPLOYMENT_CHECKLIST.md).
 
 ## Current Architecture Notes

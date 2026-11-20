@@ -202,7 +202,7 @@ export const LandingView: React.FC<LandingViewProps> = ({ onNavigate }) => {
             </div>
 
             <div className="mt-12 text-center text-slate-600 text-xs animate-slide-in-up" style={{ animationDelay: '0.2s' }}>
-                <p>Powered by Google Gemini live audio workflows</p>
+                <p>Interview AI powered by Microsoft Foundry</p>
             </div>
         </div>
     );

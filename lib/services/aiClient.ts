@@ -1,15 +1,4 @@
-/**
- * OpenAI-compatible chat completion client routed through OpenRouter.
- *
- * Requests a same-origin server proxy. The provider key remains server-side. Any model listed
- * at https://openrouter.ai/models can be used; default is
- * `google/gemini-3-flash-preview` to match the previous native-Gemini
- * behaviour of SpeakWise's scoring paths.
- *
- * Scope: text chat plus OpenRouter's dedicated speech-to-text endpoint.
- */
-
-export const DEFAULT_MODEL = 'google/gemini-3-flash-preview';
+/** Same-origin client for the server-configured Microsoft Foundry deployments. */
 
 export interface ChatMessage {
     role: 'system' | 'user' | 'assistant';
@@ -23,7 +12,6 @@ export type ChatContentPart =
 
 export interface ChatCompleteOptions {
     messages: ChatMessage[];
-    model?: string;
     /** Set to 'json_object' to force the model to return valid JSON. */
     responseFormat?: 'json_object' | null;
     temperature?: number;
@@ -37,18 +25,11 @@ export interface ChatCompleteOptions {
     timeoutMs?: number;
 }
 
-// All LLM traffic goes through the same-origin proxy (Cloudflare Pages worker
-// in prod, vite dev middleware locally). The OpenRouter key is injected
-// server-side and never ships in the client bundle.
 const ENDPOINT = '/api/llm';
-
-/** Current model used by OpenRouter's dedicated transcription endpoint. */
-export const AUDIO_TRANSCRIPTION_MODEL = 'openai/whisper-large-v3';
 const TRANSCRIPTION_ENDPOINT = '/api/transcriptions';
 
 export async function chatComplete(options: ChatCompleteOptions): Promise<string> {
     const payload: Record<string, unknown> = {
-        model: options.model || DEFAULT_MODEL,
         messages: options.messages
     };
     if (options.responseFormat === 'json_object') {
@@ -79,7 +60,7 @@ export async function chatComplete(options: ChatCompleteOptions): Promise<string
 
         if (!res.ok) {
             const text = await res.text();
-            throw new Error(`OpenRouter ${res.status}: ${text.slice(0, 500)}`);
+            throw new Error(`Microsoft Foundry ${res.status}: ${text.slice(0, 500)}`);
         }
 
         data = await res.json();
@@ -94,7 +75,7 @@ export async function chatComplete(options: ChatCompleteOptions): Promise<string
 
     const content = data?.choices?.[0]?.message?.content;
     if (typeof content !== 'string') {
-        throw new Error('OpenRouter returned no text content');
+        throw new Error('Microsoft Foundry returned no text content');
     }
     return content;
 }
@@ -124,8 +105,8 @@ export async function chatCompleteJson<T>(
 /**
  * Transcribe a WAV or MP3 audio clip to text.
  *
- * Routes through the same-origin proxy to OpenRouter's dedicated
- * `/api/v1/audio/transcriptions` endpoint.
+ * Routes through the same-origin proxy to Microsoft Foundry's dedicated
+ * `/openai/v1/audio/transcriptions` endpoint.
  *
  * @param audioBase64 base64-encoded audio bytes (no data-url prefix)
  * @param format      'wav' (default) or 'mp3'
@@ -141,16 +122,15 @@ export async function transcribeAudio(
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                model: AUDIO_TRANSCRIPTION_MODEL,
                 input_audio: { data: audioBase64, format }
             }),
             signal: controller.signal
         });
         if (!response.ok) {
-            throw new Error(`OpenRouter transcription ${response.status}: ${(await response.text()).slice(0, 500)}`);
+            throw new Error(`Microsoft Foundry transcription ${response.status}: ${(await response.text()).slice(0, 500)}`);
         }
         const data = await response.json();
-        if (typeof data?.text !== 'string') throw new Error('OpenRouter transcription returned no text');
+        if (typeof data?.text !== 'string') throw new Error('Microsoft Foundry transcription returned no text');
         return data.text.trim();
     } catch (error) {
         if (controller.signal.aborted) throw new Error('Transcription timed out after 15000ms');

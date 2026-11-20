@@ -1,8 +1,7 @@
 import { ChatMessage, chatComplete } from './aiClient';
 
-interface OpenRouterTurnClientOptions {
+interface FoundryTurnClientOptions {
     systemInstruction: string;
-    voiceName?: string;
     onOpen: () => void | Promise<void>;
     onClose: (event: unknown) => void;
     onError: (error: unknown) => void;
@@ -19,17 +18,17 @@ const bufferToBase64 = (buffer: ArrayBuffer) => {
 };
 
 /**
- * Auditable, turn-based OpenRouter interviewer.
+ * Auditable, turn-based Foundry interviewer.
  * Dialogue generation and speech synthesis stay server-proxied; only text
  * history and the returned audio file reach the browser.
  */
-export class OpenRouterTurnClient {
-    private options: OpenRouterTurnClientOptions;
+export class FoundryTurnClient {
+    private options: FoundryTurnClientOptions;
     private history: ChatMessage[] = [];
     private connected = false;
     private generation = 0;
 
-    constructor(options: OpenRouterTurnClientOptions) {
+    constructor(options: FoundryTurnClientOptions) {
         this.options = options;
     }
 
@@ -47,7 +46,6 @@ export class OpenRouterTurnClient {
         const boundedHistory = this.history.slice(-18);
 
         void chatComplete({
-            model: 'openai/gpt-4.1-mini',
             temperature: 0.45,
             maxTokens: 160,
             timeoutMs: 20000,
@@ -65,13 +63,13 @@ export class OpenRouterTurnClient {
                 body: JSON.stringify({ input: responseText.replace('[END_INTERVIEW]', '') }),
                 signal: AbortSignal.timeout(30000)
             });
-            if (!speech.ok) throw new Error(`OpenRouter speech ${speech.status}: ${(await speech.text()).slice(0, 200)}`);
+            if (!speech.ok) throw new Error(`Foundry speech ${speech.status}: ${(await speech.text()).slice(0, 200)}`);
             const audioBase64 = bufferToBase64(await speech.arrayBuffer());
             if (!this.connected || run !== this.generation) return;
 
             await this.options.onMessage({
                 serverContent: {
-                    modelTurn: { parts: [{ inlineData: { data: audioBase64, mimeType: speech.headers.get('content-type') || 'audio/mpeg' } }] },
+                    modelTurn: { parts: [{ inlineData: { data: audioBase64, mimeType: speech.headers.get('content-type') || 'audio/pcm' } }] },
                     outputTranscription: { text: responseText },
                     turnComplete: true
                 }

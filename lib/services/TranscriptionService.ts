@@ -4,11 +4,7 @@
  * Accumulates PCM audio during the student's speaking turn, then transcribes
  * via a chat-completion call when the turn ends (AI starts responding).
  *
- * Previously used the native Gemini SDK; now routes through OpenRouter via
- * `aiClient.transcribeAudio`, which targets openai/gpt-4o-audio-preview.
- * The constructor still accepts an apiKey argument for backward compatibility
- * with call sites (e.g. useGeminiLive), but the value is ignored — the
- * OpenRouter key in VITE_OPENROUTER_API_KEY is what actually authenticates.
+ * Audio is sent to the same-origin Foundry transcription proxy.
  */
 import { transcribeAudio } from './aiClient';
 
@@ -135,7 +131,7 @@ export class TranscriptionService {
         return turn;
     }
 
-    /** Transcribe a captured turn via OpenRouter → gpt-4o-audio-preview. */
+    /** Transcribe a captured turn via the server-configured deployment. */
     async transcribeCapturedTurn(
         turn: CapturedAudioTurn | null
     ): Promise<TranscriptionAttemptResult> {

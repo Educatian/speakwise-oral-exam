@@ -1,6 +1,6 @@
 /**
  * AI-Powered Hierarchical Concept Network Generator
- * Uses Gemini to extract 3-level hierarchical concept networks from interview transcripts.
+ * Uses Foundry to extract 3-level hierarchical concept networks from interview transcripts.
  * 
  * Structure:
  *   Level 0 (ROOT): 1 node — the main theoretical concept being assessed
@@ -89,7 +89,7 @@ Use ONLY these relation types:
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Generate a hierarchical concept network from transcript using Gemini AI.
+ * Generate a hierarchical concept network from transcript using Foundry AI.
  * Returns an ArgumentGraph compatible with the visualization system.
  */
 export async function generateConceptNetwork(

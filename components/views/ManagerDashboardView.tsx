@@ -199,14 +199,14 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
         setShowQuestionReview(false);
     };
 
-    // Extract questions from uploaded files using Gemini
+    // Extract questions from uploaded files using Foundry
     const handleExtractFromFiles = async () => {
         if (uploadedFiles.length === 0) return;
         setIsExtracting(true);
         setFormError(null);
 
         try {
-            // Convert every upload to text client-side. The OpenRouter-based
+            // Convert every upload to text client-side. The Foundry-based
             // aiClient doesn't pipe raw binaries for PDF; users with PDF-only
             // sources can either convert to DOCX/TXT, or we'll drop in a
             // client-side pdf-parse pass when that feature is funded.

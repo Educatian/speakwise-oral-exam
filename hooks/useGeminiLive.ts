@@ -11,7 +11,7 @@ import {
     ArgumentGraph,
     RawTranscriptTurn
 } from '../types';
-import { OpenRouterTurnClient } from '../lib/services/OpenRouterTurnClient';
+import { FoundryTurnClient } from '../lib/services/FoundryTurnClient';
 import { AudioStreamService } from '../lib/services/AudioStreamService';
 import { CapturedAudioTurn, TranscriptionService } from '../lib/services/TranscriptionService';
 import {
@@ -29,7 +29,6 @@ import {
 
 interface UseGeminiLiveOptions {
     systemInstruction: string;
-    voiceName?: string;
     onTranscriptionComplete?: (transcriptions: TranscriptionItem[]) => void;
     silenceThresholdMs?: number;
     minTurnDurationMs?: number;
@@ -38,7 +37,6 @@ interface UseGeminiLiveOptions {
 export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveReturn {
     const {
         systemInstruction,
-        voiceName = 'Kore',
         onTranscriptionComplete,
         silenceThresholdMs = 3000,
         minTurnDurationMs = 700
@@ -63,7 +61,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
     const [argumentGraph, setArgumentGraph] = useState<ArgumentGraph>({ nodes: [], edges: [], coherenceScore: 0, complexity: 0 });
 
     const audioServiceRef = useRef<AudioStreamService | null>(null);
-    const sessionRef = useRef<OpenRouterTurnClient | null>(null);
+    const sessionRef = useRef<FoundryTurnClient | null>(null);
     const transcriptionServiceRef = useRef<TranscriptionService | null>(null);
 
     const lastTurnEndTimeRef = useRef<number>(0);
@@ -391,9 +389,8 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
             previousUserTextRef.current = '';
             aiTextBufferRef.current = '';
 
-            const wsClient = new OpenRouterTurnClient({
+            const wsClient = new FoundryTurnClient({
                 systemInstruction,
-                voiceName,
                 onOpen: async () => {
                     setStatus(InterviewStatus.LIVE);
 
@@ -559,7 +556,6 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
         syncRawTurns,
         systemInstruction,
         updateLatencyMetrics,
-        voiceName,
         appendTranscription
     ]);
 

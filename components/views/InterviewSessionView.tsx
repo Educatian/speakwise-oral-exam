@@ -62,7 +62,6 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
         stopRecording
     } = useGeminiLive({
         systemInstruction,
-        voiceName: 'Kore',
         silenceThresholdMs: course.interviewSettings?.silenceThresholdMs,
         minTurnDurationMs: course.interviewSettings?.minTurnDurationMs
     });
