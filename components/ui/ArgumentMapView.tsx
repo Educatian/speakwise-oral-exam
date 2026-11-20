@@ -243,11 +243,18 @@ function buildForceLayout(
 const FullArgumentMap: React.FC<ArgumentMapViewProps> = ({
     graph,
     transcript = EMPTY_TRANSCRIPT,
-    activeTurnIndex = null,
-    onActiveTurnIndexChange,
+    activeTurnIndex: suppliedTurnIndex,
+    onActiveTurnIndexChange: onTurnChange,
     onHighlightTurnsChange,
     storageKey
 }) => {
+    const [localTurnIndex, setLocalTurnIndex] = useState<number | null>(null);
+    const activeTurnIndex = suppliedTurnIndex === undefined ? localTurnIndex : suppliedTurnIndex;
+    const managesTurn = suppliedTurnIndex === undefined;
+    const changeTurn = React.useCallback((index: number | null) => {
+        if (managesTurn) setLocalTurnIndex(index);
+        onTurnChange?.(index);
+    }, [managesTurn, onTurnChange]);
     const paintId = useId().replace(/[^a-zA-Z0-9_-]/g, '');
     const svgRef = useRef<SVGSVGElement | null>(null);
     const [layoutMode, setLayoutMode] = useState<LayoutMode>('radial');
@@ -463,56 +470,32 @@ const FullArgumentMap: React.FC<ArgumentMapViewProps> = ({
         return () => window.clearTimeout(timer);
     }, [visibleNodeIds]);
 
-    // Keyboard shortcuts for scrubbing the timeline. Skip when the user is
-    // typing in an input or similar (e.g. the search box above).
-    useEffect(() => {
-        if (transcript.length === 0) return;
+    function togglePlayback() {
+        if (!isPlaying && (activeTurnIndex == null || activeTurnIndex >= transcript.length - 1)) changeTurn(0);
+        setIsPlaying(!isPlaying);
+    }
 
-        const handleKeyDown = (event: KeyboardEvent) => {
-            const target = event.target as HTMLElement | null;
-            if (target) {
-                const tag = target.tagName;
-                if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) return;
-            }
-
-            const current = activeTurnIndex ?? -1;
-            const last = transcript.length - 1;
-            switch (event.key) {
-                case 'ArrowLeft':
-                    event.preventDefault();
-                    onActiveTurnIndexChange?.(current <= 0 ? null : current - 1);
-                    setIsPlaying(false);
-                    break;
-                case 'ArrowRight':
-                    event.preventDefault();
-                    onActiveTurnIndexChange?.(Math.min(last, current + 1));
-                    setIsPlaying(false);
-                    break;
-                case 'Home':
-                    event.preventDefault();
-                    onActiveTurnIndexChange?.(0);
-                    setIsPlaying(false);
-                    break;
-                case 'End':
-                    event.preventDefault();
-                    onActiveTurnIndexChange?.(last);
-                    setIsPlaying(false);
-                    break;
-                case ' ':
-                    event.preventDefault();
-                    if (activeTurnIndex == null) {
-                        onActiveTurnIndexChange?.(0);
-                        setIsPlaying(true);
-                    } else {
-                        setIsPlaying((prev) => !prev);
-                    }
-                    break;
-            }
-        };
-
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [activeTurnIndex, onActiveTurnIndexChange, transcript.length]);
+    function handleTimelineKey(event: React.KeyboardEvent<HTMLDivElement>) {
+        const target = event.target as Element;
+        if (!transcript.length || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey
+            || target.closest('input, textarea, select, [contenteditable="true"]')) return;
+        const current = activeTurnIndex ?? -1;
+        const last = transcript.length - 1;
+        switch (event.key) {
+            case 'ArrowLeft': changeTurn(current <= 0 ? null : current - 1); break;
+            case 'ArrowRight': changeTurn(Math.min(last, current + 1)); break;
+            case 'Home': changeTurn(0); break;
+            case 'End': changeTurn(last); break;
+            case ' ':
+                if (target.closest('button, [role="button"], summary, a')) return;
+                event.preventDefault();
+                togglePlayback();
+                return;
+            default: return;
+        }
+        event.preventDefault();
+        setIsPlaying(false);
+    }
 
     useEffect(() => {
         if (onHighlightTurnsChange) {
@@ -528,10 +511,10 @@ const FullArgumentMap: React.FC<ArgumentMapViewProps> = ({
                 setIsPlaying(false);
                 return;
             }
-            onActiveTurnIndexChange?.(next);
+            changeTurn(next);
         }, 1100);
         return () => window.clearInterval(timer);
-    }, [activeTurnIndex, isPlaying, onActiveTurnIndexChange, transcript.length]);
+    }, [activeTurnIndex, isPlaying, changeTurn, transcript.length]);
 
     const clientToWorld = (clientX: number, clientY: number): Position | null => {
         const rect = svgRef.current?.getBoundingClientRect();
@@ -608,7 +591,7 @@ const FullArgumentMap: React.FC<ArgumentMapViewProps> = ({
     };
 
     return (
-        <div className="sw-concept-map space-y-4">
+        <div className="sw-concept-map space-y-4" role="region" aria-label="Argument map" tabIndex={0} onKeyDown={handleTimelineKey}>
             <div className="sw-atlas-header">
                 <div>
                     <h4 className="sw-atlas-title">Argument map</h4>
@@ -798,7 +781,11 @@ const FullArgumentMap: React.FC<ArgumentMapViewProps> = ({
                                             if (dragRef.current?.type === 'node' && dragRef.current.nodeId === node.id && dragRef.current.moved) return;
                                             setFocusedNodeId((current) => current === node.id ? null : node.id);
                                             const mentions = mentionMap.get(node.id) || [];
-                                            if (mentions.length > 0) onActiveTurnIndexChange?.(mentions[0]);
+                                            if (mentions.length > 0) {
+                                                setIsPlaying(false);
+                                                const source = mentions.find(i => transcript[i].timestamp === node.timestamp && transcript[i].speaker === node.speaker);
+                                                changeTurn(source ?? mentions[0]);
+                                            }
                                         }}
                                     >
                                         <title>{node.content}</title>
@@ -856,7 +843,7 @@ const FullArgumentMap: React.FC<ArgumentMapViewProps> = ({
                                     <p className="text-xs uppercase tracking-[0.2em] text-slate-600 font-bold mb-3">Transcript references</p>
                                     <div className="space-y-2 max-h-56 overflow-y-auto custom-scrollbar pr-1">
                                         {focusedTurns.length > 0 ? focusedTurns.map((turnIndex) => (
-                                            <button key={turnIndex} type="button" onClick={() => onActiveTurnIndexChange?.(turnIndex)} className={`w-full rounded-xl border px-3 py-3 text-left ${activeTurnIndex === turnIndex ? 'border-emerald-500/30 bg-emerald-500/10' : 'border-slate-800 bg-slate-950/40 hover:border-slate-700'}`}>
+                                            <button key={turnIndex} type="button" onClick={() => { setIsPlaying(false); changeTurn(turnIndex); }} className={`w-full rounded-xl border px-3 py-3 text-left ${activeTurnIndex === turnIndex ? 'border-emerald-500/30 bg-emerald-500/10' : 'border-slate-800 bg-slate-950/40 hover:border-slate-700'}`}>
                                                 <p className="text-[11px] uppercase tracking-[0.18em] text-slate-600 font-semibold mb-2">Turn {turnIndex + 1}</p>
                                                 <p className="text-sm text-slate-300 leading-relaxed">{transcript[turnIndex]?.text || 'Transcript segment unavailable.'}</p>
                                             </button>
@@ -879,16 +866,20 @@ const FullArgumentMap: React.FC<ArgumentMapViewProps> = ({
                                     <p className="text-[11px] text-slate-500 mt-1">Replay the interview turn by turn.</p>
                                 </div>
                                 <div className="flex gap-2">
-                                    <button type="button" onClick={() => { if (activeTurnIndex == null) { onActiveTurnIndexChange?.(0); setIsPlaying(true); } else { setIsPlaying((current) => !current); } }} className="px-3 py-1.5 rounded-xl border border-slate-700 bg-slate-950/40 text-xs text-slate-300">{isPlaying ? 'Pause' : 'Play'}</button>
-                                    <button type="button" onClick={() => { setIsPlaying(false); onActiveTurnIndexChange?.(null); }} className="px-3 py-1.5 rounded-xl border border-slate-700 bg-slate-950/40 text-xs text-slate-400">Full map</button>
+                                    <button type="button" onClick={togglePlayback} className="px-3 py-1.5 rounded-xl border border-slate-700 bg-slate-950/40 text-xs text-slate-300">{isPlaying ? 'Pause' : 'Play'}</button>
+                                    <button type="button" onClick={() => { setIsPlaying(false); changeTurn(null); }} className="px-3 py-1.5 rounded-xl border border-slate-700 bg-slate-950/40 text-xs text-slate-400">Full map</button>
                                 </div>
                             </div>
-                            <input type="range" min={0} max={Math.max(0, transcript.length - 1)} value={activeTurnIndex ?? transcript.length - 1} onChange={(event) => { setIsPlaying(false); onActiveTurnIndexChange?.(Number(event.target.value)); }} className="w-full accent-emerald-400" />
+                            <input type="range" aria-label="Interview turn" min={0} max={Math.max(0, transcript.length - 1)} value={activeTurnIndex ?? transcript.length - 1} onChange={(event) => { setIsPlaying(false); changeTurn(Number(event.target.value)); }} className="w-full accent-emerald-400" />
                             <div className="mt-3 flex items-center justify-between text-[11px] text-slate-500">
                                 <span>Turn 1</span>
                                 <span>{activeTurnIndex == null ? 'Showing all turns' : `Focused turn ${activeTurnIndex + 1} of ${transcript.length}`}</span>
                                 <span>Turn {transcript.length}</span>
                             </div>
+                            {activeTurnIndex != null && transcript[activeTurnIndex] && <blockquote className="mt-3 border-l-2 border-emerald-400 pl-3 text-sm text-slate-200">
+                                <span className="block text-xs text-slate-400">{transcript[activeTurnIndex].speaker === 'user' ? 'Student' : 'Interviewer'}</span>
+                                {transcript[activeTurnIndex].text}
+                            </blockquote>}
                         </div>
                     )}
                 </aside>
@@ -903,7 +894,7 @@ export function ArgumentMapView(props: ArgumentMapViewProps) {
         <ClaimEvidencePair graph={props.graph} transcript={props.transcript ?? EMPTY_TRANSCRIPT} />
         {!!props.graph.nodes.length && <details className="sw-disclosure" onToggle={e => setExpanded(e.currentTarget.open)}>
             <summary>Full concept map and tools</summary>
-            {expanded && <FullArgumentMap {...props} />}
+            {expanded && <FullArgumentMap key={props.storageKey} {...props} />}
         </details>}
     </div>;
 }
