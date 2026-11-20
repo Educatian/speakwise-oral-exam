@@ -122,6 +122,8 @@ html[data-astryx-theme="neutral"] {
     font-family: Georgia, 'Times New Roman', serif; font-weight: 500; letter-spacing: -.035em;
     font-size: clamp(1.45rem, 2.5vw, 2rem); line-height: 1.2;
 }
+.sw-evidence-pair > h4, .sw-evidence-pair > p, .sw-evidence-pair .sw-excerpt-card p { color: inherit; }
+.sw-workspace .sw-evidence-pair summary:focus-visible { outline-color: #216b55; }
 .sw-linked-excerpts { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); align-items:center; margin:1.15rem 0; }
 .sw-excerpt-card {
     --role:#684198; --tint:#ede2f7;
