@@ -12,19 +12,25 @@ function Playback({ audio }: { audio: Blob }) {
     return url ? <audio controls className="reflection-audio" src={url} aria-label="Play practice response" /> : null;
 }
 
-export function PracticeResponse({ submissionId, answer, quote, transferPrompt }: {
+export type PracticeDraft = { prompt?: string; text?: string; audio?: Blob };
+
+export function PracticeResponse({ submissionId, answer, quote, transferPrompt, draft, updateDraft, onBusyChange }: {
     submissionId: string; answer: Answer; quote: string; transferPrompt?: string;
+    draft?: PracticeDraft; updateDraft: (changes: PracticeDraft | null) => void; onBusyChange: (busy: boolean) => void;
 }) {
     const revision = 'Say your answer again and explain why your example supports your claim.';
-    const [prompt, setPrompt] = useState(revision);
-    const [text, setText] = useState('');
-    const [audio, setAudio] = useState<Blob>();
+    const { prompt = revision, text = '', audio } = draft ?? {};
     const [history, setHistory] = useState<Practice[]>([]);
     const [phase, setPhase] = useState<'ready'|'requesting'|'recording'|'stopping'|'saving'>('ready');
     const [notice, setNotice] = useState('');
     const alive = useRef(true);
     const recorder = useRef<MediaRecorder | null>(null);
     const pending = useRef(false);
+
+    useEffect(() => {
+        onBusyChange(phase !== 'ready');
+        return () => onBusyChange(false);
+    }, [phase, onBusyChange]);
 
     useEffect(() => {
         alive.current = true;
@@ -62,7 +68,7 @@ export function PracticeResponse({ submissionId, answer, quote, transferPrompt }
                 active.stream.getTracks().forEach(t => t.stop());
                 recorder.current = null;
                 if (!alive.current) return;
-                if (!failed && chunks.length) setAudio(new Blob(chunks, { type: active.mimeType || chunks[0].type }));
+                if (!failed && chunks.length) updateDraft({ audio: new Blob(chunks, { type: active.mimeType || chunks[0].type }) });
                 else if (!failed) setNotice('No audio was captured. Record again or type your answer.');
                 setPhase('ready');
             };
@@ -81,7 +87,7 @@ export function PracticeResponse({ submissionId, answer, quote, transferPrompt }
         try {
             const items = await savePractice({ id: crypto.randomUUID(), submissionId, createdAt: Date.now(),
                 answerId: answer.id, original: quote, prompt, text: text.trim(), audio });
-            if (alive.current) { setHistory(items); setText(''); setAudio(undefined); setNotice('Practice saved on this device.'); }
+            if (alive.current) { setHistory(items); updateDraft(null); setNotice('Practice saved on this device.'); }
         } catch {
             if (alive.current) setNotice('Could not save on this device. Your response is still here.');
         } finally { pending.current = false; if (alive.current) setPhase('ready'); }
@@ -90,13 +96,13 @@ export function PracticeResponse({ submissionId, answer, quote, transferPrompt }
     return <section className="reflection-practice">
         <h4>Try your answer again</h4>
         {transferPrompt && <label>Practice question
-            <select aria-label="Practice question" value={prompt} disabled={phase !== 'ready' || !!audio || !!text} onChange={e => setPrompt(e.target.value)}>
+            <select aria-label="Practice question" value={prompt} disabled={phase !== 'ready' || !!audio || !!text} onChange={e => updateDraft({prompt: e.target.value})}>
                 <option value={revision}>Revise this answer</option><option value={transferPrompt}>Apply it to a new question</option>
             </select></label>}
         <p>{prompt}</p>
         <div className="reflection-comparison">
             {prompt === revision && <div><strong>Your original words</strong><blockquote>{quote}</blockquote></div>}
-            <div><label>Practice response<textarea aria-label="Practice response" rows={3} value={text} disabled={phase === 'saving'} onChange={e => setText(e.target.value)} placeholder="Type your answer or record it below." /></label>
+            <div><label>Practice response<textarea aria-label="Practice response" rows={3} value={text} disabled={phase === 'saving'} onChange={e => updateDraft({text: e.target.value})} placeholder="Type your answer or record it below." /></label>
                 {canRecord && <button type="button" className="results-tab" disabled={phase !== 'ready' && phase !== 'recording'}
                     onClick={() => {
                         if (phase === 'recording' && recorder.current?.state === 'recording') { setPhase('stopping'); recorder.current.stop(); }
@@ -105,7 +111,7 @@ export function PracticeResponse({ submissionId, answer, quote, transferPrompt }
                 {audio && <Playback audio={audio} />}
             </div>
         </div>
-        <p className="reflection-caption">Practice stays on this device and is separate from your submitted grade.</p>
+        <p className="reflection-caption">Drafts stay with each sentence while this reflection is open. Save practice to keep your response on this device. Practice does not affect your grade.</p>
         <button type="button" className="results-tab results-tab-active" disabled={phase !== 'ready' || (!text.trim() && !audio)} onClick={save}>Save practice</button>
         <p role="status">{notice}</p>
         {history.length > 0 && <details><summary>Saved practice ({history.length})</summary>

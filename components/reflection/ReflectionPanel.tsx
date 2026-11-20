@@ -4,7 +4,7 @@ import React, { useId, useMemo, useState } from 'react';
 import type { ReflectionFocus, RubricBreakdown, Submission } from '../../types';
 import { Answer, answersFor, criteria, initialFocus, reasoningSpans, sentences, suggestFocus, validFocus } from '../../lib/reflection/evidence';
 import { ClaimEvidencePair } from '../ui/ClaimEvidencePair';
-import { PracticeResponse } from './PracticeResponse';
+import { PracticeResponse, type PracticeDraft } from './PracticeResponse';
 
 type Criterion = keyof RubricBreakdown;
 const roleLabels: Record<string, string> = { claim: 'Claim', evidence: 'Evidence', justification: 'How they connect' };
@@ -49,6 +49,20 @@ export function ReflectionPanel({ submission }: { submission: Submission }) {
     const [selectedId, setSelectedId] = useState('');
     const [quote, setQuote] = useState('');
     const [compared, setCompared] = useState(false);
+    const [drafts, setDrafts] = useState<Record<string, PracticeDraft>>({});
+    const [practiceBusy, setPracticeBusy] = useState(false);
+    const pickerId = useId();
+    const keyFor = (answerId: string, sentenceIndex: string) => JSON.stringify([submission.id, answerId, sentenceIndex]);
+    const draftKey = keyFor(selectedId, quote);
+
+    function updateDraft(changes: PracticeDraft | null) {
+        setDrafts(previous => {
+            const next = { ...previous };
+            if (changes) next[draftKey] = { ...previous[draftKey], ...changes };
+            else delete next[draftKey];
+            return next;
+        });
+    }
     const answer = answers.find(a => a.id === selectedId);
     const focus = initialFocus(submission, answers);
     const sentenceOptions = answer ? sentences(answer.turn.text) : [];
@@ -56,16 +70,22 @@ export function ReflectionPanel({ submission }: { submission: Submission }) {
     return <section className="reflection-panel">
         <h3>Reflect on your answer</h3>
         <p>Where did you explain your thinking most clearly? Pick your own words before opening the feedback.</p>
-        <fieldset className="sw-passage-picker">
+        <fieldset className="sw-passage-picker" disabled={practiceBusy}>
             <legend>Choose a sentence from the transcript</legend>
             <div className="sw-turn-list">{answers.map(a => <div className="sw-turn" key={a.id}>
                 <small>Turn {a.index + 1}</small>
                 {a.prompt && <p className="reflection-question">{a.prompt.text}</p>}
-                {sentences(a.turn.text).map((sentence, i) => <label className="reflection-choice" key={i}>
-                    <input type="radio" name={'quote-' + submission.id} checked={selectedId === a.id && quote === String(i)}
-                        onChange={() => { setSelectedId(a.id); setQuote(String(i)); setCompared(false); }} />
-                    <span>{sentence}</span>
-                </label>)}
+                {sentences(a.turn.text).map((sentence, i) => {
+                    const entry = drafts[keyFor(a.id, String(i))];
+                    const hasDraft = !!(entry?.audio || entry?.text?.trim());
+                    const hintId = pickerId + '-' + a.id + '-' + i;
+                    return <label className="reflection-choice" key={i}>
+                        <input type="radio" name={'quote-' + submission.id} checked={selectedId === a.id && quote === String(i)}
+                            aria-label={sentence} aria-describedby={hasDraft ? hintId : undefined}
+                            onChange={() => { setSelectedId(a.id); setQuote(String(i)); setCompared(false); }} />
+                        <span>{sentence}{hasDraft && <small id={hintId} className="reflection-draft-note">Unsaved practice draft</small>}</span>
+                    </label>;
+                })}
             </div>)}</div>
         </fieldset>
         {!compared && <AstryxButton type="button" label="Compare with feedback" variant="primary" isDisabled={!answer || quote === ''} clickAction={() => setCompared(true)} />}
@@ -76,7 +96,8 @@ export function ReflectionPanel({ submission }: { submission: Submission }) {
                 <section><p className="reflection-caption">No rubric excerpt could be linked to a specific turn. Review your selected answer.</p>
                     <SourceTurn submission={submission} answer={answer} title="Your selected answer" /></section>}
             {submission.argumentGraph && <ClaimEvidencePair graph={submission.argumentGraph} transcript={submission.transcript} answerTurnIndex={answer.index} />}
-            <PracticeResponse submissionId={submission.id} answer={answer} quote={sentenceOptions[Number(quote)]} transferPrompt={focus?.transferPrompt} />
+            <PracticeResponse draft={drafts[draftKey]} updateDraft={updateDraft} onBusyChange={setPracticeBusy}
+                submissionId={submission.id} answer={answer} quote={sentenceOptions[Number(quote)]} transferPrompt={focus?.transferPrompt} />
         </>}
     </section>;
 }
