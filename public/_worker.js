@@ -24,6 +24,26 @@ function transcriptionForm(clip, model, useSpeechTools) {
   return form;
 }
 
+function cueSpeech(input) {
+  function phrase(text, style, degree, rate) {
+    const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return `<mstts:express-as style="${style}" styledegree="${degree}"><prosody rate="${rate}">${escaped}</prosody></mstts:express-as>`;
+  }
+  const opening = /^(take your time|there['\u2019]s no (?:rush|hurry)|no rush)\b/i;
+  const callback = /^(you (?:mentioned|said|described|noted)|let['\u2019]s (?:look|explore))\b/i;
+  const speak = text => {
+    if (opening.test(text)) return phrase(text, 'empathetic', 1.15, '-5%');
+    if (callback.test(text)) return phrase(text, 'chat', 1.2, '-2%');
+    return phrase(text, 'friendly', 1.3, '-2%');
+  };
+  const text = input.trim();
+  const lead = /^(.*?[.!])\s+([\s\S]+)$/.exec(text);
+  const body = lead && (opening.test(lead[1]) || callback.test(lead[1]))
+    ? speak(lead[1]) + '<break time="180ms"/>' + speak(lead[2])
+    : speak(text);
+  return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="en-US"><voice name="en-US-AriaNeural">${body}</voice></speak>`;
+}
+
 export default {
   async fetch(request, env) {
     const { pathname } = new URL(request.url);
@@ -69,8 +89,7 @@ export default {
           headers['Content-Type'] = 'application/ssml+xml';
           headers['User-Agent'] = 'SpeakWise';
           headers['X-Microsoft-OutputFormat'] = 'raw-24khz-16bit-mono-pcm';
-          const text = input.input.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-          body = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US"><voice name="en-US-JennyNeural">${text}</voice></speak>`;
+          body = cueSpeech(input.input);
         } else {
           upstreamUrl.searchParams.set('api-version', 'preview');
           body = JSON.stringify({ model, input: input.input, voice: env.AZURE_OPENAI_VOICE || 'alloy', response_format: 'pcm' });

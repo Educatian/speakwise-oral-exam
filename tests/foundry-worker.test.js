@@ -57,6 +57,19 @@ describe('Microsoft Foundry proxy', () => {
     expect(options.body).toContain('A &lt; B &amp; C');
     expect(res.headers.get('content-type')).toBe('audio/pcm');
   });
+  it.each([
+    ['What would you try first?', 'friendly', false],
+    ['You mentioned the first step. Why start there?', 'chat', true],
+    ['Take your time. Where would you begin?', 'empathetic', true]
+  ])('voices the interviewer prompt with the intended delivery: %s', async (input, style, withPause) => {
+    const upstream = vi.fn().mockResolvedValue(new Response(new Uint8Array([0, 0])));
+    vi.stubGlobal('fetch', upstream);
+    await post('speech', {input}, {...env, AZURE_SPEECH_ENDPOINT:'https://example.cognitiveservices.azure.com'});
+    const ssml = upstream.mock.calls[0][1].body;
+    expect(ssml).toContain('en-US-AriaNeural');
+    expect(ssml).toContain(`style="${style}"`);
+    expect(ssml.includes('<break')).toBe(withPause);
+  });
   it('maps fast transcription phrases to the client text response', async () => {
     const upstream = vi.fn().mockResolvedValue(Response.json({combinedPhrases:[{text:'First.'},{text:'Second.'}]}));
     vi.stubGlobal('fetch', upstream);
