@@ -94,21 +94,16 @@ describe('Microsoft Foundry proxy', () => {
     expect(retry).toMatchObject({model:'secondary',reasoning_effort:'low',max_completion_tokens:512});
     expect(retry.temperature).toBeUndefined();
   });
-  it('returns decoded Sulafat speech and sends only the interviewer line to Google', async () => {
-    const wav = Buffer.from('524946462800000057415645666d74201000000001000100c05d000080bb000002001000646174610400000001000200','hex');
-    const mock = vi.fn().mockResolvedValue(Response.json({steps:[{type:'model_output',content:[{type:'audio',data:wav.toString('base64')}]}]}));
+  it('uses only Foundry even when legacy voice settings are present', async () => {
+    const mock = vi.fn().mockResolvedValue(new Response(new Uint8Array([2,0])));
     vi.stubGlobal('fetch', mock);
-    const res = await post('speech',{input:'Why that example?'},{...env,GEMINI_API_KEY:'test',CUE_VOICE_PROVIDER:'gemini'});
-    expect(res.headers.get('X-Cue-Voice')).toBe('Sulafat');
-    expect([...new Uint8Array(await res.arrayBuffer())]).toEqual([1,0,2,0]);
-    expect(JSON.parse(mock.mock.calls[0][1].body).input[0].content[0].text).toBe('Why that example?');
-  });
-  it.each([401,429])('falls back to Aria on Google HTTP %s', async status => {
-    const mock = vi.fn().mockResolvedValueOnce(new Response(null,{status})).mockResolvedValueOnce(new Response(new Uint8Array([2,0])));
-    vi.stubGlobal('fetch', mock);
-    const res = await post('speech',{input:'How so?'},{...env,AZURE_SPEECH_ENDPOINT:'https://example.cognitiveservices.azure.com',GEMINI_API_KEY:'test',CUE_VOICE_PROVIDER:'gemini'});
+    const res = await post('speech', {input:'How so?'}, {...env,
+      AZURE_SPEECH_ENDPOINT:'https://example.cognitiveservices.azure.com',
+      GEMINI_API_KEY:'unused', OPENROUTER_API_KEY:'unused', CUE_VOICE_PROVIDER:'gemini'});
+    expect(mock).toHaveBeenCalledTimes(1);
+    expect(mock.mock.calls[0][0].hostname).toBe('example.cognitiveservices.azure.com');
+    expect(mock.mock.calls[0][1].body).toContain('en-US-AriaNeural');
     expect(res.headers.get('X-Cue-Voice')).toBe('Aria');
-    expect(mock.mock.calls[1][1].headers['x-goog-api-key']).toBeUndefined();
   });
   it('fails without forwarding when configuration or audio is invalid', async () => {
     const upstream = vi.fn();
