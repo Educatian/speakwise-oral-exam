@@ -67,6 +67,7 @@ export default {
         if (typeof input.input !== 'string' || !input.input.trim() || input.input.length > 4096) return errorResponse('Invalid speech text', 400);
         if (useSpeechTools) {
           headers['Content-Type'] = 'application/ssml+xml';
+          headers['User-Agent'] = 'SpeakWise';
           headers['X-Microsoft-OutputFormat'] = 'raw-24khz-16bit-mono-pcm';
           const text = input.input.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
           body = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US"><voice name="en-US-JennyNeural">${text}</voice></speak>`;
@@ -77,14 +78,27 @@ export default {
       } else {
         if (!Array.isArray(input.messages) || !input.messages.length) return errorResponse('Messages required', 400);
         const { messages, response_format, modalities, max_tokens } = input;
-        const chat = { model, messages, response_format, modalities, max_completion_tokens: max_tokens };
+        const chat = { model, messages, response_format, modalities, max_completion_tokens: max_tokens ?? 4096 };
         if (env.AZURE_OPENAI_REASONING_EFFORT) chat.reasoning_effort = env.AZURE_OPENAI_REASONING_EFFORT;
         else if (input.temperature != null) chat.temperature = input.temperature;
         body = JSON.stringify(chat);
       }
     }
     try {
-      const upstream = await fetch(upstreamUrl, { method: 'POST', headers, body, redirect: 'error', signal: AbortSignal.timeout(45000) });
+      const options = { method: 'POST', headers, body, redirect: 'manual', signal: AbortSignal.timeout(45000) };
+      let upstream = await fetch(upstreamUrl, options);
+      if (operation === 'chat/completions' && [429, 503].includes(upstream.status) && env.AZURE_OPENAI_FALLBACK_CHAT_DEPLOYMENT) {
+        await upstream.body?.cancel();
+        const retry = JSON.parse(body);
+        retry.model = env.AZURE_OPENAI_FALLBACK_CHAT_DEPLOYMENT;
+        retry.reasoning_effort = env.AZURE_OPENAI_FALLBACK_REASONING_EFFORT;
+        if (retry.reasoning_effort) {
+          delete retry.temperature;
+          retry.max_completion_tokens = Math.max(512, retry.max_completion_tokens);
+        }
+        upstream = await fetch(upstreamUrl, { ...options, body: JSON.stringify(retry) });
+      }
+      if (upstream.status >= 300 && upstream.status < 400) return errorResponse('Unexpected Foundry redirect.', 502);
       if (useSpeechTools && operation === 'audio/transcriptions' && upstream.ok) {
         const data = await upstream.json();
         if (!Array.isArray(data.combinedPhrases)) return errorResponse('Invalid Speech transcription response.', 502);

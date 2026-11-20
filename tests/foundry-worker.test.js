@@ -52,6 +52,7 @@ describe('Microsoft Foundry proxy', () => {
     const res = await post('speech', {input:'A < B & C'}, {...env, AZURE_SPEECH_ENDPOINT:'https://example.cognitiveservices.azure.com'});
     const [url, options] = upstream.mock.calls[0];
     expect(url.pathname).toBe('/tts/cognitiveservices/v1');
+    expect(options.headers['User-Agent']).toBe('SpeakWise');
     expect(options.headers['X-Microsoft-OutputFormat']).toBe('raw-24khz-16bit-mono-pcm');
     expect(options.body).toContain('A &lt; B &amp; C');
     expect(res.headers.get('content-type')).toBe('audio/pcm');
@@ -66,6 +67,19 @@ describe('Microsoft Foundry proxy', () => {
     expect(url.searchParams.get('api-version')).toBe('2024-11-15');
     expect(options.body.get('audio').name).toBe('answer.wav');
     expect(await res.json()).toEqual({text:'First. Second.'});
+  });
+  it('uses the secondary deployment once when the primary has no capacity', async () => {
+    const upstream = vi.fn().mockResolvedValueOnce(new Response('busy', {status:429})).mockResolvedValueOnce(Response.json({choices:[]}));
+    vi.stubGlobal('fetch', upstream);
+    const res = await post('llm', {messages:[{role:'user',content:'Test'}],temperature:.4,max_tokens:160},
+      {...env, AZURE_OPENAI_FALLBACK_CHAT_DEPLOYMENT:'secondary', AZURE_OPENAI_FALLBACK_REASONING_EFFORT:'low'});
+    expect(res.status).toBe(200);
+    const [url, options] = upstream.mock.calls[1];
+    expect(url.hostname).toBe('example.openai.azure.com');
+    expect(options.redirect).toBe('manual');
+    const retry = JSON.parse(options.body);
+    expect(retry).toMatchObject({model:'secondary',reasoning_effort:'low',max_completion_tokens:512});
+    expect(retry.temperature).toBeUndefined();
   });
   it('fails without forwarding when configuration or audio is invalid', async () => {
     const upstream = vi.fn();
