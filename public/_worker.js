@@ -44,6 +44,50 @@ function cueSpeech(input) {
   return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="en-US"><voice name="en-US-AriaNeural">${body}</voice></speak>`;
 }
 
+// Cue's audio player consumes headerless 24 kHz, 16-bit, mono PCM.
+function cuePcm(wav) {
+  const view = new DataView(wav.buffer, wav.byteOffset, wav.byteLength);
+  if (wav.length < 44 || view.getUint32(0) !== 0x52494646 || view.getUint32(8) !== 0x57415645) return null;
+  let playable = false;
+  for (let at = 12; at + 8 <= wav.length;) {
+    const id = view.getUint32(at), size = view.getUint32(at + 4, true);
+    const start = at + 8;
+    if (start + size > wav.length) return null;
+    if (id === 0x666d7420 && size >= 16) {
+      playable = view.getUint16(start, true) === 1 && view.getUint16(start + 2, true) === 1
+        && view.getUint32(start + 4, true) === 24000 && view.getUint16(start + 14, true) === 16;
+    }
+    if (id === 0x64617461 && playable && size && size % 2 === 0) return wav.subarray(start, start + size);
+    at = start + size + (size % 2);
+  }
+  return null;
+}
+
+async function geminiCue(text, key) {
+  const response = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+    method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(12000),
+    headers: {'Content-Type':'application/json', 'x-goog-api-key':key},
+    body: JSON.stringify({
+      model: 'gemini-3.8-flash-tts', store: false,
+      input: [{type:'user_input', content:[{type:'text', text, annotations:[{
+        type:'speech_metadata', style:'A warm, attentive interviewer. Acknowledge a previous idea gently, then pause briefly and ask with genuine curiosity. Give the learner time. Avoid implying that their answer is right or wrong.'
+      }]}]}],
+      response_format: {type:'audio', mime_type:'audio/wav'},
+      generation_config: {speech_config:[{voice:'Sulafat'}]}
+    })
+  });
+  if (!response.ok) {
+    const failure = await response.json().catch(() => ({}));
+    const reason = failure.error?.details?.find(item => typeof item.reason === 'string')?.reason || failure.error?.status;
+    console.warn('Gemini TTS HTTP', response.status, /^[A-Z_]{1,64}$/.test(reason || '') ? reason : 'UNAVAILABLE');
+    return null;
+  }
+  const result = await response.json();
+  const audio = result.steps?.filter(step => step.type === 'model_output')
+    .flatMap(step => step.content ?? []).filter(part => part.type === 'audio' && part.data).pop();
+  return audio ? cuePcm(Uint8Array.from(atob(audio.data), char => char.charCodeAt(0))) : null;
+}
+
 export default {
   async fetch(request, env) {
     const { pathname } = new URL(request.url);
@@ -85,6 +129,12 @@ export default {
       headers['Content-Type'] = 'application/json';
       if (operation === 'audio/speech') {
         if (typeof input.input !== 'string' || !input.input.trim() || input.input.length > 4096) return errorResponse('Invalid speech text', 400);
+        if (env.CUE_VOICE_PROVIDER === 'gemini' && env.GEMINI_API_KEY) {
+          try {
+            const audio = await geminiCue(input.input, env.GEMINI_API_KEY);
+            if (audio) return new Response(audio, {headers:{'Content-Type':'audio/pcm', 'Cache-Control':'no-store', 'X-Cue-Voice':'Sulafat'}});
+          } catch { console.warn('Gemini TTS unavailable; using Foundry speech'); }
+        }
         if (useSpeechTools) {
           headers['Content-Type'] = 'application/ssml+xml';
           headers['User-Agent'] = 'SpeakWise';
@@ -124,7 +174,7 @@ export default {
         return Response.json({text: data.combinedPhrases.map(phrase => phrase.text).filter(Boolean).join(' ')}, {headers:{'Cache-Control':'no-store'}});
       }
       const type = operation === 'audio/speech' && upstream.ok ? 'audio/pcm' : upstream.headers.get('content-type') || 'application/json';
-      return new Response(upstream.body, { status: upstream.status, headers: { 'Content-Type': type, 'Cache-Control': 'no-store' } });
+      return new Response(upstream.body, { status: upstream.status, headers: { 'Content-Type': type, 'Cache-Control': 'no-store', ...(useSpeechTools && operation === 'audio/speech' && upstream.ok ? {'X-Cue-Voice':'Aria'} : {}) } });
     } catch { return errorResponse('Foundry request failed or timed out. Please retry.', 502); }
   }
 };
