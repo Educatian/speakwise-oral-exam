@@ -234,7 +234,15 @@ export interface RubricBreakdown {
 
 export type InstructorReviewStatus = 'pending' | 'validated' | 'overridden';
 
+export interface ReflectionFocus {
+  criterion: keyof RubricBreakdown;
+  initialId: string;
+  followUpId?: string;
+  transferPrompt?: string;
+}
+
 export interface InstructorReview {
+  reflectionFocus?: ReflectionFocus;
   status: InstructorReviewStatus;
   reviewerName: string;
   reviewerEmail?: string;
@@ -283,6 +291,7 @@ export interface CourseTemplate {
 }
 
 export interface CourseInterviewSettings {
+  showInterviewerAvatar?: boolean;
   silenceThresholdMs: number;
   minTurnDurationMs: number;
 }

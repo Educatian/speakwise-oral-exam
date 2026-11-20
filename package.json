@@ -16,17 +16,22 @@
     "test:voice": "vitest run tests/voice-recovery.test.ts"
   },
   "dependencies": {
+    "@astryxdesign/core": "^0.7.16",
+    "@astryxdesign/theme-neutral": "^0.7.16",
     "@google/genai": "^1.38.0",
+    "@stylexjs/stylex": "^0.19.2",
     "@supabase/supabase-js": "^2.93.2",
     "d3": "^7.9.0",
     "mammoth": "^1.11.0",
     "react": "^19.2.3",
-    "react-dom": "^19.2.3"
+    "react-dom": "^19.2.3",
+    "three": "^0.180.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
     "@types/d3": "^7.4.3",
     "@types/node": "^22.14.0",
+    "@types/three": "^0.180.0",
     "@vitejs/plugin-react": "^5.0.0",
     "marked": "^18.0.2",
     "typescript": "~5.8.2",

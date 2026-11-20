@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { chatComplete, chatCompleteJson } from '../../lib/services/aiClient';
 import mammoth from 'mammoth';
+import { TeacherAvatarPreview } from '../interviewer/InterviewerAvatar';
 import { Course, CourseTemplate, Institution, Submission } from '../../types';
 import { GroupKnowledgeService } from '../../lib/services/GroupKnowledgeService';
 import { Button, Input, Textarea, Modal, PinVerifyModal } from '../ui';
@@ -57,6 +58,7 @@ export const ManagerDashboardView: React.FC<ManagerDashboardViewProps> = ({
     const [instructorPin, setInstructorPin] = useState('');
     const [coursePassword, setCoursePassword] = useState('');
     const [coursePrompt, setCoursePrompt] = useState('');
+    const [showInterviewerAvatar, setShowInterviewerAvatar] = useState(false);
     const [silenceThresholdMs, setSilenceThresholdMs] = useState(3000);
     const [minTurnDurationMs, setMinTurnDurationMs] = useState(700);
     const [selectedInstitutionId, setSelectedInstitutionId] = useState(currentInstitution?.schoolId || '');
@@ -311,6 +313,7 @@ ${joinedSources}`;
             createdByEmail: effectiveEmail || '',
             createdAt: Date.now(),
             interviewSettings: {
+                showInterviewerAvatar,
                 silenceThresholdMs,
                 minTurnDurationMs
             }
@@ -346,6 +349,7 @@ ${joinedSources}`;
         setCoursePrompt(template.prompt);
         setSelectedInstitutionId(template.institutionId || currentInstitution?.schoolId || '');
         setTemplateDraftName(template.name);
+        setShowInterviewerAvatar(template.interviewSettings?.showInterviewerAvatar ?? false);
         setSilenceThresholdMs(template.interviewSettings?.silenceThresholdMs || 3000);
         setMinTurnDurationMs(template.interviewSettings?.minTurnDurationMs || 700);
         setLeftPanelMode('create');
@@ -418,6 +422,7 @@ ${joinedSources}`;
             institutionId: selectedInstitutionId,
             institutionName: selectedInstitution?.name || currentInstitution?.schoolName || '',
             interviewSettings: {
+                showInterviewerAvatar,
                 silenceThresholdMs,
                 minTurnDurationMs
             }
@@ -429,6 +434,7 @@ ${joinedSources}`;
         setInstructorPin('');
         setCoursePassword('');
         setCoursePrompt('');
+        setShowInterviewerAvatar(false);
         setSilenceThresholdMs(3000);
         setMinTurnDurationMs(700);
         setSelectedInstitutionId(currentInstitution?.schoolId || '');
@@ -714,7 +720,12 @@ ${joinedSources}`;
 
                         <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4 space-y-4">
                             <div>
-                                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Interview tuning</p>
+                                <label className="flex items-center gap-2 text-sm text-slate-200">
+                                    <input type="checkbox" checked={showInterviewerAvatar} onChange={e => setShowInterviewerAvatar(e.target.checked)} />
+                                    Show interviewer avatar by default
+                                </label>
+                                <TeacherAvatarPreview />
+                                <p className="mt-4 text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Interview tuning</p>
                                 <p className="text-xs text-slate-500 mt-1">Adjust how long the system waits before closing a turn and how short a captured response can be.</p>
                             </div>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

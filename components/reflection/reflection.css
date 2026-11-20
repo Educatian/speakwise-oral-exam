@@ -1,0 +1,22 @@
+.reflection-panel { background: var(--surface, #16232d); color: #eaf1f0; border: 1px solid #385154; border-radius: 1.25rem; padding: clamp(1rem, 3vw, 2rem); }
+.reflection-panel h3, .reflection-panel legend { font-weight: 650; font-size: 1.1rem; }
+.reflection-panel h4 { font-size: 1.05rem; font-weight: 650; }
+.reflection-panel section, .reflection-panel article, .reflection-panel fieldset { margin-top: 1.2rem; }
+.reflection-panel p, .reflection-panel blockquote, .reflection-panel q { line-height: 1.6; overflow-wrap: anywhere; }
+.reflection-panel label, .reflection-panel small { display: block; margin: .65rem 0; }
+.reflection-panel label, .reflection-panel p, .reflection-panel summary { font-size: .92rem; }
+.reflection-panel select, .reflection-panel textarea { display: block; width: 100%; min-width: 0; margin-top: .35rem; padding: .6rem; border: 1px solid #597173; border-radius: .5rem; background: #142328; color: #f2f6f2; }
+.reflection-panel .reflection-choice { display: flex; align-items: baseline; gap: .65rem; cursor: pointer; }
+.reflection-comparison { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: .8rem; }
+.reflection-comparison > div, .reflection-source { padding: 1rem; border-radius: .75rem; background: #102329; }
+.reflection-question, .reflection-caption, .reflection-panel small { color: #b2c9c7; }
+.reflection-panel details { margin: .75rem 0; }
+.reflection-panel summary { cursor: pointer; color: #94ded0; }
+.reflection-map { padding-left: 1.3rem; border-left: 2px solid #498d85; }
+.reflection-map li { margin: .7rem 0; }
+.reflection-map span, .reflection-map q { display: block; }
+.reflection-panel button { margin: .45rem 0; }
+.reflection-panel button:disabled { opacity: .5; }
+.reflection-audio { display: block; width: 100%; margin-top: .55rem; }
+.reflection-source mark { color: #1c2a29; background: #f4d995; border-radius: .18rem; }
+.reflection-map button[aria-pressed=true] { border-color: #f4d995; }

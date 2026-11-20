@@ -270,7 +270,7 @@ const App: React.FC = () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-slate-950 p-4 md:p-6 lg:p-12 flex flex-col items-center">
+    <div className="sw-workspace min-h-screen bg-slate-950 p-4 md:p-6 lg:p-12 flex flex-col items-center">
       {/* Skip Link for Accessibility */}
       <a href="#main-content" className="skip-link">
         Skip to main content

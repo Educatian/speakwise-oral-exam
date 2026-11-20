@@ -6,6 +6,7 @@ import { generateConceptNetwork } from '../../lib/reasoning/conceptNetwork';
 import { GroupKnowledgeService } from '../../lib/services/GroupKnowledgeService';
 import { getMasteryLevel } from '../../lib/utils/scoreDisplay';
 import { createSubmissionAnnotation, subscribeToSubmissionAnnotationsRealtime } from '../../lib/supabase';
+import { FocusEditor, ReflectionPanel } from '../reflection/ReflectionPanel';
 import { SubmissionAnalyticsSection } from './SubmissionAnalyticsPanels';
 
 interface SubmissionDetailModalProps {
@@ -43,6 +44,7 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
     const [argumentGraph, setArgumentGraph] = useState<ArgumentGraph | null>(null);
     const [graphLoading, setGraphLoading] = useState(false);
     const [reviewDraft, setReviewDraft] = useState<InstructorReview | null>(null);
+    const [reviewNotice, setReviewNotice] = useState('');
     const [isSavingReview, setIsSavingReview] = useState(false);
     const [activeTranscriptIndex, setActiveTranscriptIndex] = useState<number | null>(null);
     const [highlightedTranscriptIndices, setHighlightedTranscriptIndices] = useState<number[]>([]);
@@ -111,7 +113,9 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
         setHighlightedTranscriptIndices([]);
         setAnnotationTurnIndex(null);
         setAnnotationDraft('');
-    }, [submission, currentReviewerEmail, currentReviewerName]);
+    }, [submission?.id, submission?.instructorReview, currentReviewerEmail, currentReviewerName]);
+
+    useEffect(() => { setReviewNotice(''); }, [submission?.id]);
 
     useEffect(() => {
         if (!submission) return;
@@ -165,6 +169,9 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
         setIsSavingReview(true);
         try {
             await onUpdateReview(submission.id, normalizedReview);
+            setReviewNotice('Instructor review saved.');
+        } catch {
+            setReviewNotice('The review could not be saved. Your edits are still here.');
         } finally {
             setIsSavingReview(false);
         }
@@ -174,10 +181,10 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
         if (!submission) return [];
 
         const evidencePool = [
-            ...(submission.rubricBreakdown?.conceptualUnderstanding.evidence || []),
-            ...(submission.rubricBreakdown?.communicationClarity.evidence || []),
-            ...(submission.rubricBreakdown?.criticalThinking.evidence || []),
-            ...(submission.rubricBreakdown?.engagement.evidence || []),
+            ...(submission.rubricBreakdown?.conceptualUnderstanding?.evidence || []),
+            ...(submission.rubricBreakdown?.communicationClarity?.evidence || []),
+            ...(submission.rubricBreakdown?.criticalThinking?.evidence || []),
+            ...(submission.rubricBreakdown?.engagement?.evidence || []),
             ...(submission.reasoningRubric?.explicitJustification.examples || []),
             ...(submission.reasoningRubric?.abstractionGeneralization.instances || [])
         ];
@@ -234,6 +241,7 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
             size="lg"
         >
             <div className="space-y-6">
+                {!canEditReview && <div key={submission.id}><ReflectionPanel submission={submission} /></div>}
                 <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between bg-slate-900/50 p-6 rounded-2xl border border-slate-800 gap-4">
                     <div className="flex flex-col gap-3">
                         <div className="flex items-center gap-4 flex-wrap">
@@ -362,6 +370,10 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                         </div>
                     )}
 
+                    {canEditReview && onUpdateReview && reviewDraft && <FocusEditor submission={submission}
+                        value={reviewDraft.reflectionFocus} disabled={isSavingReview}
+                        onChange={focus => setReviewDraft(current => current ? { ...current, reflectionFocus: focus } : current)} />}
+                    {reviewNotice && <p role="status">{reviewNotice}</p>}
                     {canEditReview && onUpdateReview ? (
                         <div className="flex justify-end">
                             <Button onClick={handleSaveReview} disabled={isSavingReview}>

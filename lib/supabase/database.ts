@@ -23,6 +23,7 @@ function normalizeInstructorReview(review: any): InstructorReview | undefined {
             ? new Date(review.reviewed_at).getTime()
             : (review.reviewedAt || Date.now()),
         overrideScore: review.override_score ?? review.overrideScore ?? null,
+        reflectionFocus: review.reflection_focus ?? review.reflectionFocus ?? undefined,
         notes: review.notes || ''
     };
 }
@@ -322,6 +323,7 @@ export async function updateSubmissionReview(
                 reviewer_email: review.reviewerEmail || null,
                 reviewed_at: new Date(review.reviewedAt).toISOString(),
                 override_score: review.overrideScore ?? null,
+                reflection_focus: review.reflectionFocus ?? null,
                 notes: review.notes || null
             };
 
@@ -332,7 +334,7 @@ export async function updateSubmissionReview(
             if (error) throw error;
         } catch (error) {
             console.error('Error updating submission review in Supabase:', error);
-            upsertSubmissionReviewInLocalStorage(submissionId, review);
+            throw error;
         }
     }
 

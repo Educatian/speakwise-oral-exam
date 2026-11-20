@@ -193,6 +193,7 @@ Do NOT assign scores first and then find evidence to justify them.
 4. **Engagement & Responsiveness** (0-25 points): Interaction quality and follow-up handling
 
 ## Output Requirements:
+For rubric evidence, copy the student's exact words from a single turn for each excerpt. If there is no supporting excerpt, return an empty evidence array. Put interpretations in feedback.
 Provide a JSON response with the following structure:
 
 \`\`\`json
@@ -204,19 +205,19 @@ Provide a JSON response with the following structure:
   "rubricBreakdown": {
     "conceptualUnderstanding": {
       "score": <number 0-25>,
-      "evidence": ["<specific quote or observation>", "..."]
+      "evidence": ["<verbatim excerpt from one student turn>", "..."]
     },
     "communicationClarity": {
       "score": <number 0-25>,
-      "evidence": ["<specific quote or observation>", "..."]
+      "evidence": ["<verbatim excerpt from one student turn>", "..."]
     },
     "criticalThinking": {
       "score": <number 0-25>,
-      "evidence": ["<specific quote or observation>", "..."]
+      "evidence": ["<verbatim excerpt from one student turn>", "..."]
     },
     "engagement": {
       "score": <number 0-25>,
-      "evidence": ["<specific quote or observation>", "..."]
+      "evidence": ["<verbatim excerpt from one student turn>", "..."]
     }
   }
 }

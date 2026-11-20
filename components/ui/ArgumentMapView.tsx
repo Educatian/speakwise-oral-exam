@@ -1,4 +1,4 @@
-import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useDeferredValue, useId, useEffect, useMemo, useRef, useState } from 'react';
 import {
     forceCenter,
     forceCollide,
@@ -10,6 +10,7 @@ import {
     type SimulationLinkDatum,
     type SimulationNodeDatum
 } from 'd3-force';
+import { ClaimEvidencePair } from './ClaimEvidencePair';
 import { ArgumentEdge, ArgumentGraph, ArgumentNode } from '../../types';
 
 interface TranscriptTurn {
@@ -31,6 +32,8 @@ type Position = { x: number; y: number };
 type ViewportState = { x: number; y: number; scale: number };
 type LayoutMode = 'radial' | 'force';
 
+const EMPTY_TURNS: number[] = [];
+const EMPTY_TRANSCRIPT: TranscriptTurn[] = [];
 const VIEW_WIDTH = 880;
 const VIEW_HEIGHT = 560;
 const DEFAULT_VIEWPORT: ViewportState = { x: 20, y: 20, scale: 0.92 };
@@ -47,7 +50,7 @@ const RELATION_LABELS: Record<string, string> = {
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 function normalizeText(value: string): string {
-    return value.toLowerCase().replace(/[^a-z0-9\s]/gi, ' ').replace(/\s+/g, ' ').trim();
+    return value.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
 }
 
 function getNodeSize(node: ArgumentNode): { width: number; height: number } {
@@ -59,7 +62,8 @@ function getNodeSize(node: ArgumentNode): { width: number; height: number } {
 }
 
 function getNodeVisual(node: ArgumentNode) {
-    switch (node.metadata?.conceptType) {
+    switch (node.metadata?.conceptType?.toUpperCase()) {
+        case 'DEFINITION':
         case 'THEORY':
             return { fill: '#0f172a', stroke: '#818cf8', text: '#e0e7ff' };
         case 'PRINCIPLE':
@@ -88,10 +92,10 @@ const TOULMIN_LABELS: Record<ToulminType, string> = {
     question: 'Question'
 };
 const TOULMIN_VISUALS: Record<ToulminType, { fill: string; stroke: string; text: string }> = {
-    claim:          { fill: '#2b0f14', stroke: '#f87171', text: '#fecaca' },
-    evidence:       { fill: '#052118', stroke: '#34d399', text: '#d1fae5' },
+    claim:          { fill: '#442950', stroke: '#dcadff', text: '#fcf2ff' },
+    evidence:       { fill: '#16403e', stroke: '#70e7c4', text: '#defff6' },
     justification:  { fill: '#2a1d05', stroke: '#fbbf24', text: '#fde68a' },
-    counterargument:{ fill: '#1e1333', stroke: '#a78bfa', text: '#ddd6fe' },
+    counterargument:{ fill: '#472642', stroke: '#ff9ab3', text: '#ffe4ef' },
     question:       { fill: '#0f1b31', stroke: '#60a5fa', text: '#dbeafe' }
 };
 function getToulminVisual(node: ArgumentNode) {
@@ -145,6 +149,7 @@ function buildRadialLayout(nodes: ArgumentNode[], edges: ArgumentEdge[]): Record
 // so the whole graph orbits a stable anchor. Level-aware tuning: deeper
 // nodes have tighter collision radius and weaker repulsion so hubs breathe.
 interface SimNodeDatum extends SimulationNodeDatum {
+    collisionRadius: number;
     id: string;
     level: number;
 }
@@ -164,6 +169,7 @@ function buildForceLayout(
         const seeded = seed[node.id];
         const level = (node.metadata?.level as number | undefined) ?? 2;
         const base: SimNodeDatum = {
+            collisionRadius: Math.hypot(getNodeSize(node).width, getNodeSize(node).height) / 2 + 12,
             id: node.id,
             level,
             x: seeded?.x ?? VIEW_WIDTH / 2,
@@ -202,9 +208,7 @@ function buildForceLayout(
         )
         .force(
             'collide',
-            forceCollide<SimNodeDatum>().radius((d) =>
-                d.level === 0 ? 68 : d.level === 1 ? 54 : 44
-            )
+            forceCollide<SimNodeDatum>().radius(d => d.collisionRadius).iterations(3)
         )
         .force('center', forceCenter(VIEW_WIDTH / 2, VIEW_HEIGHT / 2).strength(0.6))
         .force('x', forceX<SimNodeDatum>(VIEW_WIDTH / 2).strength(0.04))
@@ -226,17 +230,18 @@ function buildForceLayout(
     return result;
 }
 
-export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
+const FullArgumentMap: React.FC<ArgumentMapViewProps> = ({
     graph,
-    transcript = [],
+    transcript = EMPTY_TRANSCRIPT,
     activeTurnIndex = null,
     onActiveTurnIndexChange,
     onHighlightTurnsChange,
     storageKey
 }) => {
+    const paintId = useId().replace(/[^a-zA-Z0-9_-]/g, '');
     const svgRef = useRef<SVGSVGElement | null>(null);
     const [layoutMode, setLayoutMode] = useState<LayoutMode>('radial');
-    const [colorMode, setColorMode] = useState<'concept' | 'toulmin'>('concept');
+    const [colorMode, setColorMode] = useState<'concept' | 'toulmin'>('toulmin');
     const [toulminFilter, setToulminFilter] = useState<ToulminType | null>(null);
     const [viewport, setViewport] = useState<ViewportState>(DEFAULT_VIEWPORT);
     const [positions, setPositions] = useState<Record<string, Position>>(() => buildRadialLayout(graph.nodes, graph.edges));
@@ -329,10 +334,10 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
         const result = new Map<string, number[]>();
         graph.nodes.forEach((node) => {
             const nodeText = normalizeText(node.content);
-            const nodeTerms = nodeText.split(' ').filter((token) => token.length > 2);
             const indices = transcript.flatMap((turn, index) => {
                 const turnText = normalizeText(turn.text);
-                return turnText.includes(nodeText) || nodeTerms.some((token) => turnText.includes(token)) ? [index] : [];
+                const sourceTurn = node.timestamp === turn.timestamp && turn.speaker === node.speaker;
+                return sourceTurn || (nodeText && turnText.includes(nodeText)) ? [index] : [];
             });
             result.set(node.id, Array.from(new Set(indices)));
         });
@@ -427,7 +432,7 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
 
     const visibleNodes = useMemo(() => graph.nodes.filter((node) => visibleNodeIds.has(node.id)), [graph.nodes, visibleNodeIds]);
     const focusedNode = focusedNodeId ? nodesById[focusedNodeId] || null : null;
-    const focusedTurns = focusedNode ? (mentionMap.get(focusedNode.id) || []) : [];
+    const focusedTurns = (focusedNode && mentionMap.get(focusedNode.id)) || EMPTY_TURNS;
     const focusedEdges = focusedNode ? graph.edges.filter((edge) => edge.from === focusedNode.id || edge.to === focusedNode.id) : [];
 
     // Track which node ids just transitioned into the visible set — these get
@@ -560,6 +565,8 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
         return <div className="text-center py-10 text-slate-400">Knowledge network is building...</div>;
     }
 
+    const visualFor = colorMode === 'toulmin' ? getToulminVisual : getNodeVisual;
+    const neighbors = new Set(focusedEdges.flatMap(edge => [edge.from, edge.to]));
     const minimapViewport = { x: (-viewport.x) / viewport.scale, y: (-viewport.y) / viewport.scale, width: VIEW_WIDTH / viewport.scale, height: VIEW_HEIGHT / viewport.scale };
 
     const downloadFile = (filename: string, content: string, mimeType: string) => {
@@ -591,18 +598,18 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
     };
 
     return (
-        <div className="space-y-4">
-            <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
+        <div className="sw-concept-map space-y-4">
+            <div className="sw-map-toolbar flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
                 <div>
                     <h4 className="text-slate-300 font-semibold">Interactive concept map</h4>
-                    <p className="text-xs text-slate-500 mt-1">Pan, zoom, drag nodes, focus concepts, filter edges, and replay the interview.</p>
+                    <p className="text-xs text-slate-500 mt-1">Select a concept to see its connections and original words.</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                     <input
                         type="search"
                         value={searchQuery}
                         onChange={(event) => setSearchQuery(event.target.value)}
-                        placeholder="Search concepts"
+                        aria-label="Search concepts" placeholder="Search concepts"
                         className="w-full sm:w-44 rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
                     />
                     <button type="button" onClick={() => { setLayoutMode('radial'); setPositions(radialPositions); }} className={`px-3 py-2 rounded-xl text-xs border ${layoutMode === 'radial' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-slate-700 bg-slate-900/60 text-slate-400'}`}>Radial</button>
@@ -675,7 +682,7 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
                 </div>
             )}
 
-            <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.9fr)] gap-4">
+            <div className="sw-map-layout">
                 <div className="relative rounded-3xl border border-slate-800 bg-slate-950 overflow-hidden">
                     <svg
                         ref={svgRef}
@@ -695,14 +702,23 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
                             dragRef.current = { type: 'pan', x: event.clientX, y: event.clientY, viewport };
                         }}
                     >
-                        <rect x="0" y="0" width={VIEW_WIDTH} height={VIEW_HEIGHT} fill="#020617" />
+                        <defs>
+                            <radialGradient id={paintId + '-sky'} cx="45%" cy="42%" r="76%">
+                                <stop stopColor="#283250" /><stop offset=".58" stopColor="#182339" /><stop offset="1" stopColor="#101528" />
+                            </radialGradient>
+                            <pattern id={paintId + '-grid'} width="22" height="22" patternUnits="userSpaceOnUse">
+                                <circle cx="1" cy="1" r=".95" fill="#93b1cf" opacity=".28" />
+                            </pattern>
+                        </defs>
+                        <rect width={VIEW_WIDTH} height={VIEW_HEIGHT} fill={`url(#${paintId}-sky)`} />
+                        <rect width={VIEW_WIDTH} height={VIEW_HEIGHT} fill={`url(#${paintId}-grid)`} />
                         <g transform={`translate(${viewport.x} ${viewport.y}) scale(${viewport.scale})`}>
-                            <circle cx={VIEW_WIDTH / 2} cy={VIEW_HEIGHT / 2} r="150" fill="none" stroke="#1e293b" strokeDasharray="4 8" />
-                            <circle cx={VIEW_WIDTH / 2} cy={VIEW_HEIGHT / 2} r="255" fill="none" stroke="#1e293b" strokeDasharray="4 8" />
+                            <circle cx={VIEW_WIDTH / 2} cy={VIEW_HEIGHT / 2} r="150" fill="none" stroke="#54607e" strokeOpacity=".48" strokeDasharray="3 9" />
+                            <circle cx={VIEW_WIDTH / 2} cy={VIEW_HEIGHT / 2} r="255" fill="none" stroke="#54607e" strokeOpacity=".48" strokeDasharray="3 9" />
                             {filteredEdges.map((edge, index) => {
                                 const from = positions[edge.from];
                                 const to = positions[edge.to];
-                                if (!from || !to) return null;
+                                if (!from || !to || !nodesById[edge.from] || !nodesById[edge.to]) return null;
                                 const dx = to.x - from.x;
                                 const dy = to.y - from.y;
                                 const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
@@ -716,12 +732,20 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
                                 const midX = (startX + endX) / 2 - uy * bend;
                                 const midY = (startY + endY) / 2 + ux * bend;
                                 const edgeKey = `${edge.from}-${edge.to}-${edge.relation}`;
-                                const isFocused = selectedEdgeKey === edgeKey;
+                                const isFocused = selectedEdgeKey === edgeKey || focusedNodeId === edge.from || focusedNodeId === edge.to;
+                                const path = `M ${startX} ${startY} Q ${midX} ${midY} ${endX} ${endY}`;
+                                const gradient = paintId + '-link-' + index;
+                                const ink = `url(#${gradient})`;
                                 return (
-                                    <g key={edgeKey}>
-                                        <path d={`M ${startX} ${startY} Q ${midX} ${midY} ${endX} ${endY}`} fill="none" stroke={isFocused ? '#f8fafc' : '#475569'} strokeWidth={isFocused ? 2.4 : 1.35} opacity="0.84" strokeDasharray={edge.relation === 'requires' || edge.relation === 'located_in' ? '5 5' : undefined} />
-                                        <path data-edge="true" d={`M ${startX} ${startY} Q ${midX} ${midY} ${endX} ${endY}`} fill="none" stroke="transparent" strokeWidth="12" className="cursor-pointer" onClick={(event) => { event.stopPropagation(); setSelectedEdgeKey(edgeKey); setSelectedRelation(edge.relation); }} />
-                                        <text x={midX} y={midY - 7} fill={isFocused ? '#f8fafc' : '#94a3b8'} fontSize="9" fontWeight="600" textAnchor="middle">{RELATION_LABELS[edge.relation] || edge.relation}</text>
+                                    <g key={edgeKey} opacity={focusedNodeId && !isFocused ? .44 : 1}>
+                                        <defs><linearGradient id={gradient} gradientUnits="userSpaceOnUse" x1={startX} y1={startY} x2={endX} y2={endY}>
+                                            <stop stopColor={visualFor(nodesById[edge.from]).stroke} />
+                                            <stop offset="1" stopColor={visualFor(nodesById[edge.to]).stroke} />
+                                        </linearGradient></defs>
+                                        {isFocused && <path d={path} fill="none" stroke={ink} strokeWidth="9" opacity=".19" />}
+                                        <path d={path} fill="none" stroke={ink} strokeWidth={isFocused ? 3 : 1.9} opacity={isFocused ? 1 : .86} strokeDasharray={edge.relation === 'requires' || edge.relation === 'located_in' ? '5 5' : undefined} />
+                                        <path data-edge="true" d={path} fill="none" stroke="transparent" strokeWidth="12" className="cursor-pointer" onClick={(event) => { event.stopPropagation(); setSelectedEdgeKey(edgeKey); setSelectedRelation(edge.relation); }} />
+                                        <text x={midX} y={midY - 7} pointerEvents="none" stroke="#19233a" strokeWidth="4" paintOrder="stroke" fill={isFocused ? '#ffffff' : '#c7d5ec'} fontSize="12" fontWeight="600" textAnchor="middle">{RELATION_LABELS[edge.relation] || edge.relation}</text>
                                     </g>
                                 );
                             })}
@@ -729,16 +753,24 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
                                 const position = positions[node.id];
                                 if (!position) return null;
                                 const size = getNodeSize(node);
-                                const visual = colorMode === 'toulmin' ? getToulminVisual(node) : getNodeVisual(node);
+                                const visual = visualFor(node);
                                 const isFocused = focusedNodeId === node.id;
                                 const isMentioned = activeTurnIndex != null && (mentionMap.get(node.id) || []).includes(activeTurnIndex);
                                 const isEntering = newlyVisibleIds.has(node.id);
                                 return (
                                     <g
                                         key={node.id}
+                                        opacity={focusedNodeId && !neighbors.has(node.id) && !isFocused ? .52 : 1}
                                         data-node="true"
                                         transform={`translate(${position.x} ${position.y})`}
-                                        className={`cursor-pointer arg-node${isEntering ? ' arg-node-enter' : ''}${isMentioned ? ' arg-node-active' : ''}`}
+                                        className="cursor-pointer sw-map-node"
+                                        role="button" tabIndex={0} aria-label={node.content} aria-pressed={isFocused}
+                                        onKeyDown={event => {
+                                            if (event.key === 'Enter' || event.key === ' ') {
+                                                event.preventDefault();
+                                                event.currentTarget.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+                                            }
+                                        }}
                                         onPointerDown={(event) => {
                                             event.stopPropagation();
                                             const point = clientToWorld(event.clientX, event.clientY);
@@ -753,26 +785,27 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
                                             if (mentions.length > 0) onActiveTurnIndexChange?.(mentions[0]);
                                         }}
                                     >
-                                        <rect x={-size.width / 2} y={-size.height / 2} width={size.width} height={size.height} rx={node.metadata?.level === 0 ? 18 : 14} fill={visual.fill} stroke={isFocused ? '#f8fafc' : visual.stroke} strokeWidth={isFocused ? 2.8 : 1.8} opacity={selectedRelation && !filteredEdges.some((edge) => edge.from === node.id || edge.to === node.id) ? 0.38 : 1} />
+                                        <title>{node.content}</title>
+                                        <g className={`arg-node${isEntering ? ' arg-node-enter' : ''}${isMentioned ? ' arg-node-active' : ''}`}>
+                                        {isFocused && <rect x={-size.width / 2 - 5} y={-size.height / 2 - 5} width={size.width + 10} height={size.height + 10} rx="18" stroke={visual.stroke} strokeOpacity=".35" strokeWidth="5" fill="none" />}
+                                        <rect x={-size.width / 2} y={-size.height / 2} width={size.width} height={size.height} rx="12" fill={visual.fill} stroke={isFocused ? '#ffffff' : visual.stroke} strokeWidth={isFocused ? 2.8 : 1.7} />
+                                        <text x="0" y="-6" fill={visual.stroke} fontSize="9" letterSpacing="1.1" fontWeight="700" textAnchor="middle">{(colorMode === 'toulmin' ? TOULMIN_LABELS[node.type] : node.metadata?.conceptType || node.type).toUpperCase()}</text>
                                         {isMentioned && <rect x={-size.width / 2 - 4} y={-size.height / 2 - 4} width={size.width + 8} height={size.height + 8} rx={node.metadata?.level === 0 ? 20 : 16} fill="none" stroke="#22c55e" strokeWidth={2} strokeDasharray="4 4" />}
-                                        <text x="0" y="4" fill={visual.text} fontSize={node.metadata?.level === 0 ? 14 : node.metadata?.level === 1 ? 12 : 11} fontWeight={node.metadata?.level === 0 ? 800 : 700} textAnchor="middle">{node.content}</text>
+                                        <text x="0" y="12" fill={visual.text} fontSize={node.metadata?.level === 0 ? 16 : 14} fontWeight={node.metadata?.level === 0 ? 800 : 700} textAnchor="middle">{node.content.length > 24 ? node.content.slice(0, 23) + '…' : node.content}</text>
+                                        </g>
                                     </g>
                                 );
                             })}
                         </g>
                     </svg>
 
-                    <div className="absolute bottom-4 right-4 w-44 rounded-2xl border border-slate-700/70 bg-slate-950/85 p-3 backdrop-blur">
-                        <div className="flex items-center justify-between mb-2">
-                            <span className="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-bold">Minimap</span>
-                            <span className="text-[10px] text-slate-600">{Math.round(viewport.scale * 100)}%</span>
-                        </div>
+                    <details className="sw-minimap"><summary>Minimap · {Math.round(viewport.scale * 100)}%</summary>
                         <svg viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`} className="w-full h-auto rounded-lg bg-slate-900/80">
                             {graph.edges.map((edge) => <line key={`${edge.from}-${edge.to}-${edge.relation}`} x1={positions[edge.from]?.x || 0} y1={positions[edge.from]?.y || 0} x2={positions[edge.to]?.x || 0} y2={positions[edge.to]?.y || 0} stroke="#334155" strokeWidth="1" opacity="0.5" />)}
                             {graph.nodes.map((node) => <circle key={node.id} cx={positions[node.id]?.x || 0} cy={positions[node.id]?.y || 0} r={node.metadata?.level === 0 ? 10 : node.metadata?.level === 1 ? 7 : 5} fill={focusedNodeId === node.id ? '#f8fafc' : (colorMode === 'toulmin' ? getToulminVisual(node).stroke : getNodeVisual(node).stroke)} opacity={visibleNodeIds.has(node.id) ? 0.95 : 0.24} />)}
                             <rect x={minimapViewport.x} y={minimapViewport.y} width={minimapViewport.width} height={minimapViewport.height} fill="none" stroke="#22d3ee" strokeWidth="8" opacity="0.75" />
                         </svg>
-                    </div>
+                    </details>
                 </div>
 
                 <aside className="rounded-3xl border border-slate-800 bg-slate-950/80 p-5 space-y-5">
@@ -847,5 +880,16 @@ export const ArgumentMapView: React.FC<ArgumentMapViewProps> = ({
         </div>
     );
 };
+
+export function ArgumentMapView(props: ArgumentMapViewProps) {
+    const [expanded, setExpanded] = useState(false);
+    return <div className="sw-map-overview">
+        <ClaimEvidencePair graph={props.graph} transcript={props.transcript ?? EMPTY_TRANSCRIPT} />
+        {!!props.graph.nodes.length && <details className="sw-disclosure" onToggle={e => setExpanded(e.currentTarget.open)}>
+            <summary>Full concept map and tools</summary>
+            {expanded && <FullArgumentMap {...props} />}
+        </details>}
+    </div>;
+}
 
 export default ArgumentMapView;

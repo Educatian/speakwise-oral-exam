@@ -123,6 +123,7 @@ create table if not exists public.submission_reviews (
     reviewer_email text,
     reviewed_at timestamptz not null default now(),
     override_score integer check (override_score between 0 and 100),
+    reflection_focus jsonb,
     notes text,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()

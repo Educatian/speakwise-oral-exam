@@ -18,6 +18,7 @@ export default defineConfig(({ mode }) => {
                 return undefined;
               }
 
+              if (id.includes('/three/')) return 'avatar-renderer';
               if (id.includes('@supabase')) {
                 return 'supabase-vendor';
               }

@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { Submission, ArgumentNode, RubricBreakdown } from '../../types';
 import { GroupKnowledgeService } from '../../lib/services/GroupKnowledgeService';
+import { ArgumentMapView } from '../ui/ArgumentMapView';
+import { ReflectionPanel } from '../reflection/ReflectionPanel';
 import { Button } from '../ui';
 
 interface StudentResultsViewProps {
@@ -9,7 +11,7 @@ interface StudentResultsViewProps {
     onBack: () => void;
 }
 
-type ResultsTab = 'overview' | 'reasoning' | 'peers' | 'transcript';
+type ResultsTab = 'reflection' | 'overview' | 'reasoning' | 'peers' | 'transcript';
 type RubricEntry = RubricBreakdown[keyof RubricBreakdown];
 
 const NODE_COLORS: Record<string, { bg: string; text: string; label: string }> = {
@@ -34,7 +36,7 @@ const scoreTone = (score: number) => {
 };
 
 export const StudentResultsView: React.FC<StudentResultsViewProps> = ({ submission, peerSubmissions, onBack }) => {
-    const [activeTab, setActiveTab] = useState<ResultsTab>('overview');
+    const [activeTab, setActiveTab] = useState<ResultsTab>(submission.transcript?.some(t => t.speaker === 'user' && t.text.trim()) ? 'reflection' : 'overview');
     const finalScore = submission.instructorReview?.overrideScore ?? submission.score;
     const tone = scoreTone(finalScore);
     const argGraph = submission.argumentGraph;
@@ -65,10 +67,6 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({ submissi
         return GroupKnowledgeService.getPeerClaims([submission, ...peerSubmissions], submission.studentName);
     }, [peerSubmissions, submission]);
 
-    const transcriptEvidence = useMemo(
-        () => taggedTurns.filter(({ turn }) => turn.speaker === 'user').slice(0, 3),
-        [taggedTurns]
-    );
 
     const summaryCards = [
         ['Overall score', `${finalScore}`, tone.label],
@@ -183,23 +181,8 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({ submissi
                 </div>
 
                 <div className="glass-panel p-6 rounded-3xl">
-                    <h3 className="text-lg font-bold text-white mb-1">Evidence trail</h3>
-                    <p className="text-xs text-slate-500 mb-4">Selected transcript excerpts that help contextualize the evaluation.</p>
-                    <div className="space-y-3">
-                        {transcriptEvidence.length ? transcriptEvidence.map(({ turn, nodes }, index) => (
-                            <div key={`${turn.timestamp}-${index}`} className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
-                                <p className="text-sm text-slate-300 leading-relaxed">"{turn.text}"</p>
-                                {nodes.length > 0 && (
-                                    <div className="flex flex-wrap gap-2 mt-3">
-                                        {nodes.map((node) => {
-                                            const color = NODE_COLORS[node.type] || NODE_COLORS.claim;
-                                            return <span key={node.id} className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${color.bg} ${color.text}`}>{color.label}</span>;
-                                        })}
-                                    </div>
-                                )}
-                            </div>
-                        )) : <p className="text-sm text-slate-500">No transcript evidence trail is available yet.</p>}
-                    </div>
+                    <h3 className="text-lg font-bold text-white mb-1">Evidence from your answers</h3>
+                    <button type="button" className="results-tab" onClick={() => setActiveTab('reflection')}>Open reflection</button>
                 </div>
             </div>
         </div>
@@ -207,6 +190,8 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({ submissi
 
     const renderReasoning = () => (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {argGraph && <div className="glass-panel p-5 rounded-3xl lg:col-span-2"><ArgumentMapView graph={argGraph}
+                transcript={submission.transcript} storageKey={submission.id} /></div>}
             <div className="glass-panel p-6 rounded-3xl">
                 <h3 className="text-lg font-bold text-white mb-1">Reasoning structure</h3>
                 <p className="text-xs text-slate-500 mb-4">A summary of argument quality and reasoning patterns.</p>
@@ -288,22 +273,23 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({ submissi
                         <p className="text-slate-400 text-sm mt-2">{submission.studentName} - {submission.courseName} - {new Date(submission.timestamp).toLocaleDateString()}</p>
                     </div>
                     <div className="flex items-center gap-4">
-                        <div className={`text-center px-4 py-3 rounded-2xl border min-w-[132px] ${tone.box}`}>
+                        {activeTab !== 'reflection' && <div className={`text-center px-4 py-3 rounded-2xl border min-w-[132px] ${tone.box}`}>
                             <div className="text-3xl font-black text-white">{finalScore}</div>
                             <div className="text-xs text-slate-500 uppercase tracking-wider">Score</div>
                             <div className={`text-[11px] mt-1 ${tone.badge}`}>{tone.label}</div>
-                        </div>
+                        </div>}
                         <Button onClick={onBack} variant="secondary" size="sm">Back</Button>
                     </div>
                 </div>
             </div>
             <div className="flex flex-wrap gap-3">
-                {(['overview', 'reasoning', 'peers', 'transcript'] as ResultsTab[]).map((tab) => (
+                {(['reflection', 'overview', 'reasoning', 'peers', 'transcript'] as ResultsTab[]).map((tab) => (
                     <button key={tab} type="button" onClick={() => setActiveTab(tab)} className={`results-tab ${activeTab === tab ? 'results-tab-active' : ''}`}>
-                        {tab === 'overview' ? 'Overview' : tab === 'reasoning' ? 'Reasoning' : tab === 'peers' ? 'Peers' : 'Transcript'}
+                        {tab === 'reflection' ? 'Reflection' : tab === 'overview' ? 'Overview' : tab === 'reasoning' ? 'Reasoning' : tab === 'peers' ? 'Peers' : 'Transcript'}
                     </button>
                 ))}
             </div>
+            {activeTab === 'reflection' && <div key={submission.id}><ReflectionPanel submission={submission} /></div>}
             {activeTab === 'overview' && renderOverview()}
             {activeTab === 'reasoning' && renderReasoning()}
             {activeTab === 'peers' && renderPeers()}

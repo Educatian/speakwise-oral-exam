@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Course, InterviewStatus, Submission, TranscriptionItem } from '../../types';
 import { useGeminiLive } from '../../hooks';
 import { createInterviewerPrompt } from '../../lib/prompts/interviewerSystem';
-import { AudioVisualizer } from '../AudioVisualizer';
+import { StudentAvatar } from '../interviewer/InterviewerAvatar';
 import { Button, MicTest } from '../ui';
 import { EvaluationService } from '../../lib/services/EvaluationService';
 import { usePresence } from '../../hooks/usePresence';
@@ -19,14 +19,16 @@ const statusCopy = (status: InterviewStatus, turnPhase: string) => {
     if (status === InterviewStatus.ENDED) return 'Interview completed';
     if (status === InterviewStatus.ERROR) return 'Connection error';
     if (status !== InterviewStatus.LIVE) return 'Ready to start';
-    if (turnPhase === 'ai_speaking') return 'Listen to the prompt';
-    if (turnPhase === 'recording') return 'Respond when you are ready';
+    if (turnPhase === 'ai_speaking') return 'Cue is speaking';
+    if (turnPhase === 'recording') return 'Recording your answer';
     if (turnPhase === 'transcribing') return 'Saving your spoken response';
     return 'Preparing the next step';
 };
 
 export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ course, studentName, onComplete, onBack }) => {
-    const scrollAnchorRef = useRef<HTMLDivElement>(null);
+    const transcriptRef = useRef<HTMLDivElement>(null);
+    const [transcriptOpen, setTranscriptOpen] = useState(false);
+    const followTranscript = useRef(true);
     const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
     const lastActivityRef = useRef<number>(Date.now());
     const hasSubmittedRef = useRef(false);
@@ -68,8 +70,9 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
     const { peerCount } = usePresence(course.id, studentName, status === InterviewStatus.LIVE);
 
     useEffect(() => {
-        scrollAnchorRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [transcriptions, pendingAIText, pendingUserText, isInterviewerSpeaking]);
+        const log = transcriptRef.current;
+        if (transcriptOpen && log && followTranscript.current) log.scrollTop = log.scrollHeight;
+    }, [transcriptions, pendingAIText, pendingUserText, isInterviewerSpeaking, transcriptOpen]);
 
     useEffect(() => {
         if (status !== InterviewStatus.LIVE || turnPhase !== 'recording' || isInterviewerSpeaking || isUserSpeaking) {
@@ -144,25 +147,14 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
     ];
 
     const analyticsVisible = status === InterviewStatus.LIVE && showAnalytics;
-    const phaseCards = [
-        { label: 'Connect', active: status === InterviewStatus.CONNECTING || status === InterviewStatus.LIVE || status === InterviewStatus.ENDED, hint: 'Audio link and session setup' },
-        { label: 'Listen', active: turnPhase === 'ai_speaking', hint: 'Hear the full prompt first' },
-        { label: 'Respond', active: turnPhase === 'recording' || !!pendingUserText, hint: 'Speak at your own pace' },
-        { label: 'Review', active: turnPhase === 'transcribing' || status === InterviewStatus.ENDED, hint: 'Transcript and scoring prep' }
-    ];
+    const currentPrompt = pendingAIText?.trim() || [...transcriptions].reverse().find(turn => turn.speaker === 'interviewer' && turn.text.trim())?.text;
 
     return (
-        <div className="w-full max-w-6xl grid grid-cols-1 xl:grid-cols-12 gap-4 lg:gap-8 animate-fade-in">
-            <div className="xl:col-span-4 space-y-4 lg:space-y-6">
-                <div className="glass-panel p-5 sm:p-6 rounded-3xl space-y-5">
-                    <div className="text-center">
-                        <div className="w-20 h-20 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto border border-emerald-500/20 mb-4">
-                            <svg className="w-10 h-10 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                            </svg>
-                        </div>
-                        <h2 className="text-xl font-bold text-white">{studentName}</h2>
-                        <p className="text-xs text-slate-500 uppercase tracking-widest mt-1">Course: {course.name}</p>
+        <div className="sw-interview mx-auto w-full max-w-3xl space-y-4">
+                <div className="glass-panel p-5 sm:p-6 rounded-3xl space-y-4">
+                    <div className="sw-session-identity">
+                        <p className="text-xs text-slate-400">{course.name}</p>
+                        <h2 className="text-xl font-semibold text-white">{studentName}</h2>
                         {peerCount > 0 && (
                             <div className="inline-flex items-center gap-1.5 mt-3 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full">
                                 <span className="w-2 h-2 rounded-full bg-emerald-400" />
@@ -171,28 +163,21 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
                         )}
                     </div>
 
-                    <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
-                        <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600 font-bold mb-2">Current state</p>
-                        <p className="text-base font-semibold text-white">{statusCopy(status, turnPhase)}</p>
-                        <p className="text-xs text-slate-500 mt-2">
-                            {status === InterviewStatus.IDLE
-                                ? 'Prepare your microphone, then begin when you feel ready.'
-                                : status === InterviewStatus.LIVE
-                                    ? 'The transcript updates automatically while the system listens and responds.'
-                                    : 'Your work is being prepared for review.'}
-                        </p>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2">
-                        {phaseCards.map((phase) => (
-                            <div
-                                key={phase.label}
-                                className={`rounded-2xl border px-3 py-3 ${phase.active ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200' : 'border-slate-800 bg-slate-900/40 text-slate-500'}`}
-                            >
-                                <p className="text-[10px] uppercase tracking-[0.18em] font-bold">{phase.label}</p>
-                                <p className="text-[11px] mt-1">{phase.hint}</p>
-                            </div>
-                        ))}
+                    <div key={course.id} className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
+                        <StudentAvatar courseId={course.id} defaultVisible={course.interviewSettings?.showInterviewerAvatar ?? false}
+                            completedAnswers={transcriptions.filter(turn => turn.speaker === 'user').length}
+                            preparing={status === InterviewStatus.IDLE}
+                            speaking={status === InterviewStatus.LIVE && isInterviewerSpeaking}
+                            recording={status === InterviewStatus.LIVE && turnPhase === 'recording'} studentSpeaking={isUserSpeaking} />
+                        {currentPrompt && <div className="sw-live-question">
+                            <span>Current question</span>
+                            <h3>{currentPrompt}</h3>
+                        </div>}
+                        <div className="sw-live-status" data-recording={status === InterviewStatus.LIVE && turnPhase === 'recording'}>
+                            <span role="status">{statusCopy(status, turnPhase)}</span>
+                            {status === InterviewStatus.LIVE && turnPhase === 'recording' && <meter min={0} max={100} value={Math.min(100, audioLevel)} aria-label="Microphone level" />}
+                        </div>
+                        {showThinkingPrompt && turnPhase === 'recording' && <p className="text-sm text-slate-300 mt-2">{silenceSeconds >= 10 ? 'Take your time. Speak when you are ready.' : 'A short pause is fine.'}</p>}
                     </div>
 
                     {status === InterviewStatus.IDLE || status === InterviewStatus.ERROR ? (
@@ -214,14 +199,14 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
                         </div>
                     ) : (
                         <div className="space-y-3">
-                            <Button onClick={handleEndAndSubmit} disabled={turnPhase === 'transcribing'} variant="danger" size="lg" className="w-full">
-                                End and Submit Session
-                            </Button>
                             {status === InterviewStatus.LIVE && turnPhase === 'recording' && (
                                 <Button onClick={stopRecording} variant="primary" size="md" className="w-full">
                                     Done Speaking
                                 </Button>
                             )}
+                            <Button onClick={handleEndAndSubmit} disabled={turnPhase === 'transcribing'} variant="danger" size="lg" className="w-full">
+                                End and Submit Session
+                            </Button>
                         </div>
                     )}
 
@@ -241,76 +226,9 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
                     )}
                 </div>
 
-                <div className="glass-panel p-5 sm:p-6 rounded-3xl flex flex-col items-center justify-center min-h-[150px]">
-                    <AudioVisualizer isLive={status === InterviewStatus.LIVE} isActive={turnPhase === 'recording'} color={turnPhase === 'ai_speaking' ? 'accent' : 'primary'} />
-                    <p className={`text-[10px] mt-4 uppercase font-bold tracking-[0.2em] text-center ${turnPhase === 'recording' ? 'text-red-400' : turnPhase === 'ai_speaking' ? 'text-cyan-300' : turnPhase === 'transcribing' ? 'text-amber-400' : 'text-slate-600'}`} role="status" aria-live="polite">
-                        {statusCopy(status, turnPhase)}
-                    </p>
-                </div>
-
-                <div className="glass-panel p-4 rounded-2xl">
-                    <div className="flex items-center justify-between mb-2">
-                        <span className="text-[10px] text-slate-500 uppercase font-bold tracking-widest">Your voice</span>
-                        <span className={`text-[10px] font-bold uppercase ${isUserSpeaking ? 'text-emerald-400' : 'text-slate-600'}`}>{isUserSpeaking ? 'Speaking' : 'Silent'}</span>
-                    </div>
-                    <div className="h-3 bg-slate-800 rounded-full overflow-hidden">
-                        <div className={`h-full transition-all duration-75 rounded-full ${isUserSpeaking ? 'bg-gradient-to-r from-emerald-500 to-emerald-400' : 'bg-slate-700'}`} style={{ width: `${Math.min(100, audioLevel)}%` }} />
-                    </div>
-                </div>
-
-                <div className="glass-panel p-4 rounded-2xl">
-                    <div className="flex items-center justify-between gap-3">
-                        <div>
-                            <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600 font-bold">Student support</p>
-                            <p className="text-sm text-white mt-1">Keep the session calm and deliberate.</p>
-                        </div>
-                        <button type="button" onClick={() => setShowAnalytics((current) => !current)} className="results-tab">
-                            {showAnalytics ? 'Hide analytics' : 'Show analytics'}
-                        </button>
-                    </div>
-                    <div className="space-y-2 mt-4">
-                        {supportCards.map((card) => (
-                            <div key={card} className="rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-2 text-sm text-slate-300">
-                                {card}
-                            </div>
-                        ))}
-                    </div>
-                </div>
-
-                {analyticsVisible && status === InterviewStatus.LIVE && (
-                    <div className="glass-panel p-4 rounded-2xl space-y-3">
-                        <h4 className="text-[10px] text-slate-500 uppercase font-bold tracking-widest">Session analytics</h4>
-                        <div className="grid grid-cols-2 gap-3 text-xs">
-                            <div className="bg-slate-800/50 rounded-lg p-3 text-center">
-                                <p className="text-slate-400">Avg response</p>
-                                <p className="text-emerald-400 font-bold">{latencyMetrics.avgInitialLatency < 1000 ? `${latencyMetrics.avgInitialLatency}ms` : `${(latencyMetrics.avgInitialLatency / 1000).toFixed(1)}s`}</p>
-                            </div>
-                            <div className="bg-slate-800/50 rounded-lg p-3 text-center">
-                                <p className="text-slate-400">Turns</p>
-                                <p className="text-emerald-400 font-bold">{latencyMetrics.turnCount}</p>
-                            </div>
-                            <div className="col-span-2 bg-slate-800/50 rounded-lg p-3">
-                                <p className="text-slate-400">Reasoning score</p>
-                                <p className="text-white font-semibold mt-1">{getReasoningRubric().overallReasoningScore}/100</p>
-                                <p className="text-slate-500 mt-1">Barge-in events: {bargeInEvents.length}</p>
-                                <p className="text-slate-500 mt-1">Failed turns retained: {failedTranscriptions.length}</p>
-                            </div>
-                        </div>
-                    </div>
-                )}
-            </div>
-
-            <div className="xl:col-span-8 h-[52vh] min-h-[360px] sm:h-[500px] lg:h-[600px] flex flex-col">
-                <div className="glass-panel rounded-3xl flex-1 flex flex-col overflow-hidden">
-                    <div className="px-4 sm:px-6 py-4 border-b border-slate-800 bg-slate-900/30 flex justify-between items-center gap-3">
-                        <div>
-                            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Live transcript</h3>
-                            <p className="text-xs text-slate-600 mt-1">This transcript becomes the basis for evaluation and review.</p>
-                        </div>
-                        {status === InterviewStatus.LIVE && <div className="live-indicator live-indicator-ring" aria-label="Live session active" />}
-                    </div>
-
-                    <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-4 custom-scrollbar" role="log" aria-label="Interview transcript" aria-live="polite">
+                <details className="glass-panel sw-disclosure" onToggle={event => setTranscriptOpen(event.currentTarget.open)}>
+                    <summary>Interview transcript <span>{transcriptions.length} turns</span></summary>
+                    <div ref={transcriptRef} onScroll={event => { const log = event.currentTarget; followTranscript.current = log.scrollHeight - log.clientHeight - log.scrollTop < 32; }} className="max-h-96 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-4 custom-scrollbar" role="log" aria-label="Interview transcript" aria-live="polite">
                         {transcriptions.length === 0 ? (
                             <div className="h-full flex flex-col items-center justify-center opacity-30 text-center space-y-4">
                                 <svg className="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -362,22 +280,8 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
                             </div>
                         )}
 
-                        {status === InterviewStatus.LIVE && showThinkingPrompt && !pendingUserText && !pendingAIText && !isInterviewerSpeaking && (
-                            <div className="flex flex-col items-center py-4 animate-fade-in">
-                                <div className="glass-panel rounded-2xl px-6 py-4 border border-amber-500/30 bg-amber-500/5">
-                                    <p className="text-amber-300 font-medium">
-                                        {silenceSeconds >= 10 ? 'Take your time. The interview will continue when you are ready.' : 'A short pause is fine. Gather your response before speaking.'}
-                                    </p>
-                                    <p className="text-xs text-slate-400 mt-1">
-                                        {silenceSeconds >= 10 ? `Waiting for ${silenceSeconds}s. Say anything to continue.` : `${10 - silenceSeconds}s until the system checks in again.`}
-                                    </p>
-                                </div>
-                            </div>
-                        )}
-
-                        <div ref={scrollAnchorRef} />
                     </div>
-
+                </details>
                     {status === InterviewStatus.ENDED && !submissionNotice && (
                         <div className="p-6 lg:p-8 bg-slate-900/50 border-t border-slate-800 text-center space-y-4">
                             <div className="flex items-center justify-center gap-2 text-emerald-400">
@@ -389,8 +293,34 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
                             <p className="text-slate-400 text-xs">Preparing your evaluation. Keep this page open until your results appear.</p>
                         </div>
                     )}
-                </div>
-            </div>
+                <details className="glass-panel sw-disclosure">
+                    <summary>Session support</summary>
+                    <ul className="px-6 py-3 list-disc list-inside text-sm text-slate-300">{supportCards.map(card => <li key={card}>{card}</li>)}</ul>
+                    {status === InterviewStatus.LIVE && <button type="button" onClick={() => setShowAnalytics(current => !current)} className="results-tab mx-4 mb-3" aria-expanded={showAnalytics}>
+                        {showAnalytics ? 'Hide analytics' : 'Show analytics'}
+                    </button>}
+                {analyticsVisible && status === InterviewStatus.LIVE && (
+                    <div className="glass-panel p-4 rounded-2xl space-y-3">
+                        <h4 className="text-[10px] text-slate-500 uppercase font-bold tracking-widest">Session analytics</h4>
+                        <div className="grid grid-cols-2 gap-3 text-xs">
+                            <div className="bg-slate-800/50 rounded-lg p-3 text-center">
+                                <p className="text-slate-400">Avg response</p>
+                                <p className="text-emerald-400 font-bold">{latencyMetrics.avgInitialLatency < 1000 ? `${latencyMetrics.avgInitialLatency}ms` : `${(latencyMetrics.avgInitialLatency / 1000).toFixed(1)}s`}</p>
+                            </div>
+                            <div className="bg-slate-800/50 rounded-lg p-3 text-center">
+                                <p className="text-slate-400">Turns</p>
+                                <p className="text-emerald-400 font-bold">{latencyMetrics.turnCount}</p>
+                            </div>
+                            <div className="col-span-2 bg-slate-800/50 rounded-lg p-3">
+                                <p className="text-slate-400">Reasoning score</p>
+                                <p className="text-white font-semibold mt-1">{getReasoningRubric().overallReasoningScore}/100</p>
+                                <p className="text-slate-500 mt-1">Barge-in events: {bargeInEvents.length}</p>
+                                <p className="text-slate-500 mt-1">Failed turns retained: {failedTranscriptions.length}</p>
+                            </div>
+                        </div>
+                    </div>
+                )}
+                </details>
         </div>
     );
 };

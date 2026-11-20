@@ -224,6 +224,12 @@ export function useCourseStorage(): UseCourseStorageReturn {
         submissionId: string,
         review: InstructorReview
     ): Promise<void> => {
+        try {
+            await updateSubmissionReviewInDatabase(submissionId, review);
+        } catch (error) {
+            setError('Failed to save instructor review. Please try again.');
+            throw error;
+        }
         setCourses(prev => prev.map(course =>
             course.id === courseId
                 ? {
@@ -237,15 +243,6 @@ export function useCourseStorage(): UseCourseStorageReturn {
                 : course
         ));
 
-        try {
-            await updateSubmissionReviewInDatabase(submissionId, review);
-        } catch (e) {
-            console.error('Failed to update submission review:', e);
-            setError('Failed to save instructor review. Please try again.');
-            if (isSupabaseConfigured()) {
-                getAllCourses().then(setCourses);
-            }
-        }
     }, []);
 
     return {
