@@ -65,17 +65,17 @@ function getNodeVisual(node: ArgumentNode) {
     switch (node.metadata?.conceptType?.toUpperCase()) {
         case 'DEFINITION':
         case 'THEORY':
-            return { fill: '#0f172a', stroke: '#818cf8', text: '#e0e7ff' };
+            return { fill: '#e6e4fa', stroke: '#6355a4', text: '#342a54' };
         case 'PRINCIPLE':
-            return { fill: '#1f2937', stroke: '#f59e0b', text: '#fde68a' };
+            return { fill: '#f8e8c5', stroke: '#94631b', text: '#473817' };
         case 'DOMAIN':
-            return { fill: '#312e81', stroke: '#a78bfa', text: '#ddd6fe' };
+            return { fill: '#eadff9', stroke: '#7548ad', text: '#332344' };
         case 'TOOL':
-            return { fill: '#083344', stroke: '#22d3ee', text: '#cffafe' };
+            return { fill: '#d7ebee', stroke: '#2c6f7d', text: '#163d49' };
         case 'EXAMPLE':
-            return { fill: '#052e2b', stroke: '#2dd4bf', text: '#ccfbf1' };
+            return { fill: '#d7efe5', stroke: '#25735c', text: '#143d32' };
         default:
-            return { fill: '#1e293b', stroke: '#64748b', text: '#e2e8f0' };
+            return { fill: '#e3e8ec', stroke: '#516374', text: '#273947' };
     }
 }
 
@@ -92,28 +92,28 @@ const TOULMIN_LABELS: Record<ToulminType, string> = {
     question: 'Question'
 };
 const TOULMIN_VISUALS: Record<ToulminType, { fill: string; stroke: string; text: string }> = {
-    claim:          { fill: '#442950', stroke: '#dcadff', text: '#fcf2ff' },
-    evidence:       { fill: '#16403e', stroke: '#70e7c4', text: '#defff6' },
-    justification:  { fill: '#2a1d05', stroke: '#fbbf24', text: '#fde68a' },
-    counterargument:{ fill: '#472642', stroke: '#ff9ab3', text: '#ffe4ef' },
-    question:       { fill: '#0f1b31', stroke: '#60a5fa', text: '#dbeafe' }
+    claim:          { fill: '#eadff9', stroke: '#7548ad', text: '#332344' },
+    evidence:       { fill: '#d7efe5', stroke: '#25735c', text: '#143d32' },
+    justification:  { fill: '#f9e8bd', stroke: '#94631b', text: '#4b3616' },
+    counterargument:{ fill: '#f8e1e5', stroke: '#ab4568', text: '#502337' },
+    question:       { fill: '#daeafa', stroke: '#3672a2', text: '#173951' }
 };
 function getToulminVisual(node: ArgumentNode) {
-    return TOULMIN_VISUALS[node.type] || { fill: '#1e293b', stroke: '#64748b', text: '#e2e8f0' };
+    return TOULMIN_VISUALS[node.type] || { fill: '#e3e8ec', stroke: '#516374', text: '#273947' };
 }
 
 function buildRadialLayout(nodes: ArgumentNode[], edges: ArgumentEdge[]): Record<string, Position> {
     const positions: Record<string, Position> = {};
     const root = nodes.find((node) => node.metadata?.level === 0) || nodes[0];
-    const level1 = nodes.filter((node) => node.metadata?.level === 1);
-    const level2 = nodes.filter((node) => node.metadata?.level === 2);
+    const level1 = nodes.filter((node) => node !== root && node.metadata?.level === 1);
+    const level2 = nodes.filter((node) => node !== root && node.metadata?.level === 2);
 
     positions[root.id] = { x: VIEW_WIDTH / 2, y: VIEW_HEIGHT / 2 };
 
     level1.forEach((node, index) => {
-        const angle = (-Math.PI / 2) + (index / Math.max(level1.length, 1)) * Math.PI * 2;
+        const angle = (-Math.PI / 4) + (index / Math.max(level1.length, 1)) * Math.PI * 2;
         positions[node.id] = {
-            x: VIEW_WIDTH / 2 + 150 * Math.cos(angle),
+            x: VIEW_WIDTH / 2 + 202 * Math.cos(angle),
             y: VIEW_HEIGHT / 2 + 150 * Math.sin(angle)
         };
     });
@@ -125,10 +125,20 @@ function buildRadialLayout(nodes: ArgumentNode[], edges: ArgumentEdge[]): Record
             ? Math.atan2(positions[parentId].y - VIEW_HEIGHT / 2, positions[parentId].x - VIEW_WIDTH / 2)
             : (-Math.PI / 2) + (index / Math.max(level2.length, 1)) * Math.PI * 2;
         const angle = base + (((index % 3) - 1) * 0.22);
-        positions[node.id] = {
-            x: VIEW_WIDTH / 2 + 255 * Math.cos(angle),
-            y: VIEW_HEIGHT / 2 + 255 * Math.sin(angle)
-        };
+        const outerPoint = (direction: number) => ({
+            x: VIEW_WIDTH / 2 + 328 * Math.cos(direction),
+            y: VIEW_HEIGHT / 2 + 210 * Math.sin(direction)
+        });
+        const size = getNodeSize(node);
+        const fits = (point: Position) => !nodes.some(other => {
+            const placed = positions[other.id];
+            if (!placed || other.id === node.id) return false;
+            const box = getNodeSize(other);
+            return Math.abs(point.x - placed.x) < (size.width + box.width) / 2 + 24
+                && Math.abs(point.y - placed.y) < (size.height + box.height) / 2 + 28;
+        });
+        const candidates = [0, .22, -.22, .44, -.44, .66, -.66, .88, -.88].map(offset => outerPoint(angle + offset));
+        positions[node.id] = candidates.find(fits) ?? candidates[0];
     });
 
     nodes.forEach((node, index) => {
@@ -599,12 +609,12 @@ const FullArgumentMap: React.FC<ArgumentMapViewProps> = ({
 
     return (
         <div className="sw-concept-map space-y-4">
-            <div className="sw-map-toolbar flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
+            <div className="sw-atlas-header">
                 <div>
-                    <h4 className="text-slate-300 font-semibold">Interactive concept map</h4>
+                    <h4 className="sw-atlas-title">Argument map</h4>
                     <p className="text-xs text-slate-500 mt-1">Select a concept to see its connections and original words.</p>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="sw-atlas-search">
                     <input
                         type="search"
                         value={searchQuery}
@@ -612,11 +622,16 @@ const FullArgumentMap: React.FC<ArgumentMapViewProps> = ({
                         aria-label="Search concepts" placeholder="Search concepts"
                         className="w-full sm:w-44 rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
                     />
+                </div>
+            </div>
+            <details className="sw-map-options">
+                <summary>Layout, filters and export</summary>
+                <div className="sw-map-toolbar flex flex-wrap gap-2">
                     <button type="button" onClick={() => { setLayoutMode('radial'); setPositions(radialPositions); }} className={`px-3 py-2 rounded-xl text-xs border ${layoutMode === 'radial' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-slate-700 bg-slate-900/60 text-slate-400'}`}>Radial</button>
                     <button type="button" onClick={() => { setLayoutMode('force'); setPositions((current) => buildForceLayout(graph.nodes, graph.edges, current)); }} className={`px-3 py-2 rounded-xl text-xs border ${layoutMode === 'force' ? 'border-indigo-500/30 bg-indigo-500/10 text-indigo-300' : 'border-slate-700 bg-slate-900/60 text-slate-400'}`}>Force</button>
                     <button
                         type="button"
-                        onClick={() => setColorMode((m) => (m === 'concept' ? 'toulmin' : 'concept'))}
+                        onClick={() => { setToulminFilter(null); setColorMode(m => m === 'concept' ? 'toulmin' : 'concept'); }}
                         className={`px-3 py-2 rounded-xl text-xs border ${colorMode === 'toulmin' ? 'border-amber-500/30 bg-amber-500/10 text-amber-300' : 'border-slate-700 bg-slate-900/60 text-slate-400'}`}
                         title="Toggle between concept-type and Toulmin colouring"
                     >
@@ -627,7 +642,6 @@ const FullArgumentMap: React.FC<ArgumentMapViewProps> = ({
                     <button type="button" onClick={handleExportJson} className="px-3 py-2 rounded-xl text-xs border border-slate-700 bg-slate-900/60 text-slate-400">Export JSON</button>
                     <button type="button" onClick={handleExportSvg} className="px-3 py-2 rounded-xl text-xs border border-slate-700 bg-slate-900/60 text-slate-400">Export SVG</button>
                 </div>
-            </div>
 
             {deferredSearchQuery.trim() && (
                 <div className="rounded-2xl border border-slate-800 bg-slate-900/40 px-4 py-3 text-xs text-slate-400">
@@ -643,18 +657,26 @@ const FullArgumentMap: React.FC<ArgumentMapViewProps> = ({
                 ))}
             </div>
 
-            {/* Toulmin component filter. Click a chip to isolate nodes of that
-                 discourse role; click again to clear. The chip's colour matches
-                 the node's stroke so the legend is the filter. */}
+            {Array.from(clusterMap.keys()).length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                    {Array.from(clusterMap.keys()).map((clusterId) => (
+                        <button key={clusterId} type="button" onClick={() => setCollapsedClusterIds((current) => current.includes(clusterId) ? current.filter((id) => id !== clusterId) : [...current, clusterId])} className={`px-3 py-1.5 rounded-full text-[11px] border ${collapsedClusterIds.includes(clusterId) ? 'border-amber-500/30 bg-amber-500/10 text-amber-300' : 'border-slate-700 bg-slate-900/40 text-slate-400'}`}>
+                            {collapsedClusterIds.includes(clusterId) ? 'Expand' : 'Collapse'} {nodesById[clusterId]?.content}
+                        </button>
+                    ))}
+                </div>
+            )}
+
+            </details>
             {colorMode === 'toulmin' && (
-                <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[10px] uppercase tracking-[0.18em] text-slate-600 font-bold pr-1">Toulmin</span>
-                    {(Object.keys(TOULMIN_LABELS) as ToulminType[]).map((t) => {
+                <div className="sw-role-key" aria-label="Filter by argument role" role="group">
+                    <span className="text-[10px] uppercase tracking-[0.18em] text-slate-600 font-bold pr-1">Roles</span>
+                    {(Object.keys(TOULMIN_LABELS) as ToulminType[]).filter(type => graph.nodes.some(node => node.type === type)).map((t) => {
                         const v = TOULMIN_VISUALS[t];
                         const active = toulminFilter === t;
                         return (
                             <button
-                                key={t}
+                                key={t} aria-pressed={active} data-role={t}
                                 type="button"
                                 onClick={() => setToulminFilter((current) => (current === t ? null : t))}
                                 className={`px-3 py-1.5 rounded-full text-[11px] border flex items-center gap-1.5 ${active ? 'bg-slate-900/70 text-slate-100' : 'bg-slate-900/40 text-slate-400'}`}
@@ -663,22 +685,12 @@ const FullArgumentMap: React.FC<ArgumentMapViewProps> = ({
                                 <span
                                     aria-hidden="true"
                                     className="inline-block w-2.5 h-2.5 rounded-full"
-                                    style={{ backgroundColor: v.stroke }}
+                                    style={{ backgroundColor: v.fill }}
                                 />
                                 {TOULMIN_LABELS[t]}
                             </button>
                         );
                     })}
-                </div>
-            )}
-
-            {Array.from(clusterMap.keys()).length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                    {Array.from(clusterMap.keys()).map((clusterId) => (
-                        <button key={clusterId} type="button" onClick={() => setCollapsedClusterIds((current) => current.includes(clusterId) ? current.filter((id) => id !== clusterId) : [...current, clusterId])} className={`px-3 py-1.5 rounded-full text-[11px] border ${collapsedClusterIds.includes(clusterId) ? 'border-amber-500/30 bg-amber-500/10 text-amber-300' : 'border-slate-700 bg-slate-900/40 text-slate-400'}`}>
-                            {collapsedClusterIds.includes(clusterId) ? 'Expand' : 'Collapse'} {nodesById[clusterId]?.content}
-                        </button>
-                    ))}
                 </div>
             )}
 
@@ -704,17 +716,17 @@ const FullArgumentMap: React.FC<ArgumentMapViewProps> = ({
                     >
                         <defs>
                             <radialGradient id={paintId + '-sky'} cx="45%" cy="42%" r="76%">
-                                <stop stopColor="#283250" /><stop offset=".58" stopColor="#182339" /><stop offset="1" stopColor="#101528" />
+                                <stop stopColor="#fffcf5" /><stop offset=".58" stopColor="#f8f5eb" /><stop offset="1" stopColor="#ece8db" />
                             </radialGradient>
                             <pattern id={paintId + '-grid'} width="22" height="22" patternUnits="userSpaceOnUse">
-                                <circle cx="1" cy="1" r=".95" fill="#93b1cf" opacity=".28" />
+                                <circle cx="1" cy="1" r=".95" fill="#757e71" opacity=".26" />
                             </pattern>
                         </defs>
                         <rect width={VIEW_WIDTH} height={VIEW_HEIGHT} fill={`url(#${paintId}-sky)`} />
                         <rect width={VIEW_WIDTH} height={VIEW_HEIGHT} fill={`url(#${paintId}-grid)`} />
                         <g transform={`translate(${viewport.x} ${viewport.y}) scale(${viewport.scale})`}>
-                            <circle cx={VIEW_WIDTH / 2} cy={VIEW_HEIGHT / 2} r="150" fill="none" stroke="#54607e" strokeOpacity=".48" strokeDasharray="3 9" />
-                            <circle cx={VIEW_WIDTH / 2} cy={VIEW_HEIGHT / 2} r="255" fill="none" stroke="#54607e" strokeOpacity=".48" strokeDasharray="3 9" />
+                            <circle cx={VIEW_WIDTH / 2} cy={VIEW_HEIGHT / 2} r="150" fill="none" stroke="#928c89" strokeOpacity=".19" strokeDasharray="3 9" />
+                            <circle cx={VIEW_WIDTH / 2} cy={VIEW_HEIGHT / 2} r="255" fill="none" stroke="#928c89" strokeOpacity=".19" strokeDasharray="3 9" />
                             {filteredEdges.map((edge, index) => {
                                 const from = positions[edge.from];
                                 const to = positions[edge.to];
@@ -724,11 +736,15 @@ const FullArgumentMap: React.FC<ArgumentMapViewProps> = ({
                                 const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
                                 const ux = dx / dist;
                                 const uy = dy / dist;
-                                const startX = from.x + ux * 28;
-                                const startY = from.y + uy * 28;
-                                const endX = to.x - ux * 28;
-                                const endY = to.y - uy * 28;
-                                const bend = index % 2 === 0 ? 18 : -18;
+                                // Start and end at the visible labels, including wide labels on near-horizontal links.
+                                const extent = (node: ArgumentNode) => {
+                                    const size = getNodeSize(node);
+                                    return Math.min(size.width / (2 * Math.abs(ux) || 1e-8), size.height / (2 * Math.abs(uy) || 1e-8), dist / 2);
+                                };
+                                const start = extent(nodesById[edge.from]), end = extent(nodesById[edge.to]);
+                                const startX = from.x + ux * start, startY = from.y + uy * start;
+                                const endX = to.x - ux * end, endY = to.y - uy * end;
+                                const bend = (index % 2 === 0 ? 1 : -1) * Math.min(18, (dist - start - end) / 4);
                                 const midX = (startX + endX) / 2 - uy * bend;
                                 const midY = (startY + endY) / 2 + ux * bend;
                                 const edgeKey = `${edge.from}-${edge.to}-${edge.relation}`;
@@ -745,7 +761,7 @@ const FullArgumentMap: React.FC<ArgumentMapViewProps> = ({
                                         {isFocused && <path d={path} fill="none" stroke={ink} strokeWidth="9" opacity=".19" />}
                                         <path d={path} fill="none" stroke={ink} strokeWidth={isFocused ? 3 : 1.9} opacity={isFocused ? 1 : .86} strokeDasharray={edge.relation === 'requires' || edge.relation === 'located_in' ? '5 5' : undefined} />
                                         <path data-edge="true" d={path} fill="none" stroke="transparent" strokeWidth="12" className="cursor-pointer" onClick={(event) => { event.stopPropagation(); setSelectedEdgeKey(edgeKey); setSelectedRelation(edge.relation); }} />
-                                        <text x={midX} y={midY - 7} pointerEvents="none" stroke="#19233a" strokeWidth="4" paintOrder="stroke" fill={isFocused ? '#ffffff' : '#c7d5ec'} fontSize="12" fontWeight="600" textAnchor="middle">{RELATION_LABELS[edge.relation] || edge.relation}</text>
+                                        <text x={(startX + 2 * midX + endX) / 4} y={(startY + 2 * midY + endY) / 4 - 6} pointerEvents="none" stroke="#faf6eb" strokeWidth="5" paintOrder="stroke" fill={isFocused ? '#242b31' : '#545c60'} fontSize="12" fontWeight="600" textAnchor="middle">{RELATION_LABELS[edge.relation] || edge.relation}</text>
                                     </g>
                                 );
                             })}
@@ -788,9 +804,9 @@ const FullArgumentMap: React.FC<ArgumentMapViewProps> = ({
                                         <title>{node.content}</title>
                                         <g className={`arg-node${isEntering ? ' arg-node-enter' : ''}${isMentioned ? ' arg-node-active' : ''}`}>
                                         {isFocused && <rect x={-size.width / 2 - 5} y={-size.height / 2 - 5} width={size.width + 10} height={size.height + 10} rx="18" stroke={visual.stroke} strokeOpacity=".35" strokeWidth="5" fill="none" />}
-                                        <rect x={-size.width / 2} y={-size.height / 2} width={size.width} height={size.height} rx="12" fill={visual.fill} stroke={isFocused ? '#ffffff' : visual.stroke} strokeWidth={isFocused ? 2.8 : 1.7} />
+                                        <rect x={-size.width / 2} y={-size.height / 2} width={size.width} height={size.height} rx="12" fill={visual.fill} stroke={isFocused ? '#332840' : visual.stroke} strokeWidth={isFocused ? 2.8 : 1.7} />
                                         <text x="0" y="-6" fill={visual.stroke} fontSize="9" letterSpacing="1.1" fontWeight="700" textAnchor="middle">{(colorMode === 'toulmin' ? TOULMIN_LABELS[node.type] : node.metadata?.conceptType || node.type).toUpperCase()}</text>
-                                        {isMentioned && <rect x={-size.width / 2 - 4} y={-size.height / 2 - 4} width={size.width + 8} height={size.height + 8} rx={node.metadata?.level === 0 ? 20 : 16} fill="none" stroke="#22c55e" strokeWidth={2} strokeDasharray="4 4" />}
+                                        {isMentioned && <rect x={-size.width / 2 - 4} y={-size.height / 2 - 4} width={size.width + 8} height={size.height + 8} rx={node.metadata?.level === 0 ? 20 : 16} fill="none" stroke="#16795a" strokeWidth={2} strokeDasharray="4 4" />}
                                         <text x="0" y="12" fill={visual.text} fontSize={node.metadata?.level === 0 ? 16 : 14} fontWeight={node.metadata?.level === 0 ? 800 : 700} textAnchor="middle">{node.content.length > 24 ? node.content.slice(0, 23) + '…' : node.content}</text>
                                         </g>
                                     </g>
