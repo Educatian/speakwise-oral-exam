@@ -81,7 +81,7 @@ For the guiding principles behind the product, see [PRODUCT_PHILOSOPHY.md](C:\Us
 
 Copy the browser-visible Supabase settings from [.env.example](.env.example) into `.env`.
 For AI requests, place the Foundry settings from the same example in `.dev.vars`.
-Supply the exact names of the chat, transcription and speech deployments on the configured resource.
+Supply the chat deployment name and the Foundry Speech resource endpoint. As an alternative to Foundry Speech, supply the names of transcription and speech synthesis deployments.
 The Pages worker uses the API key server-side.
 
 ### Run

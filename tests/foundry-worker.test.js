@@ -46,6 +46,27 @@ describe('Microsoft Foundry proxy', () => {
     expect(res.headers.get('content-type')).toBe('audio/pcm');
     expect([...new Uint8Array(await res.arrayBuffer())]).toEqual([1,2]);
   });
+  it('uses the shared resource for Speech synthesis and escapes spoken text', async () => {
+    const upstream = vi.fn().mockResolvedValue(new Response(new Uint8Array([0, 0])));
+    vi.stubGlobal('fetch', upstream);
+    const res = await post('speech', {input:'A < B & C'}, {...env, AZURE_SPEECH_ENDPOINT:'https://example.cognitiveservices.azure.com'});
+    const [url, options] = upstream.mock.calls[0];
+    expect(url.pathname).toBe('/tts/cognitiveservices/v1');
+    expect(options.headers['X-Microsoft-OutputFormat']).toBe('raw-24khz-16bit-mono-pcm');
+    expect(options.body).toContain('A &lt; B &amp; C');
+    expect(res.headers.get('content-type')).toBe('audio/pcm');
+  });
+  it('maps fast transcription phrases to the client text response', async () => {
+    const upstream = vi.fn().mockResolvedValue(Response.json({combinedPhrases:[{text:'First.'},{text:'Second.'}]}));
+    vi.stubGlobal('fetch', upstream);
+    const res = await post('transcriptions', {input_audio:{format:'wav',data:'AAEC'}},
+      {...env, AZURE_OPENAI_TRANSCRIPTION_DEPLOYMENT:undefined, AZURE_SPEECH_ENDPOINT:'https://example.cognitiveservices.azure.com'});
+    const [url, options] = upstream.mock.calls[0];
+    expect(url.pathname).toBe('/speechtotext/transcriptions:transcribe');
+    expect(url.searchParams.get('api-version')).toBe('2024-11-15');
+    expect(options.body.get('audio').name).toBe('answer.wav');
+    expect(await res.json()).toEqual({text:'First. Second.'});
+  });
   it('fails without forwarding when configuration or audio is invalid', async () => {
     const upstream = vi.fn();
     vi.stubGlobal('fetch', upstream);
