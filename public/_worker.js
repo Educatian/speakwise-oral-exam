@@ -15,6 +15,11 @@ const json = (obj, status = 200) =>
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (url.pathname === '/api/llm' || url.pathname === '/api/gemini-token') {
+      if (request.method !== 'POST') return json({ error: 'POST only' }, 405);
+      const denied = await requireUser(request, env);
+      if (denied) return denied;
+    }
 
     // ── OpenRouter chat-completions proxy (chat + audio transcription) ──
     if (url.pathname === '/api/llm') {
@@ -58,3 +63,21 @@ export default {
     return env.ASSETS.fetch(request);
   }
 };
+
+async function requireUser(request, env) {
+  const authorization = request.headers.get('Authorization') || '';
+  if (!/^Bearer\s+\S+$/i.test(authorization)) return json({ error: 'Sign in required' }, 401);
+  const url = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
+  const key = env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
+  if (!url || !key) return json({ error: 'Session verification is not configured' }, 503);
+  try {
+    const response = await fetch(`${url.replace(/\/$/, '')}/auth/v1/user`, {
+      headers: { Authorization: authorization, apikey: key },
+      signal: AbortSignal.timeout(10000)
+    });
+    if (!response.ok || !(await response.json())?.id) return json({ error: 'Sign in required' }, 401);
+  } catch {
+    return json({ error: 'Session verification unavailable' }, 503);
+  }
+  return null;
+}

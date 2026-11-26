@@ -11,6 +11,8 @@
  * because OpenRouter does not expose those interfaces.
  */
 
+import { sessionHeaders } from './sessionHeaders';
+
 export const DEFAULT_MODEL = 'google/gemini-3-flash-preview';
 
 export interface ChatMessage {
@@ -75,7 +77,7 @@ export async function chatComplete(options: ChatCompleteOptions): Promise<string
     try {
         const res = await fetch(ENDPOINT, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...await sessionHeaders() },
             body: JSON.stringify(payload),
             signal: controller.signal
         });
