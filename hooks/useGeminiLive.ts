@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { LiveServerMessage } from '@google/genai';
+import { sessionHeaders } from '../lib/services/sessionHeaders';
 import {
     InterviewStatus,
     TranscriptionItem,
@@ -720,7 +721,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
 
                 // Short-lived ephemeral token from our server proxy; the
                 // long-lived Gemini key stays server-side.
-                const tokenResp = await fetch('/api/gemini-token', { method: 'POST' });
+                const tokenResp = await fetch('/api/gemini-token', { method: 'POST', headers: await sessionHeaders() });
                 if (!tokenResp.ok) {
                     throw new Error('Could not start the voice session (token unavailable).');
                 }
