@@ -47,8 +47,8 @@ export function InterviewerAvatar({ pose, request = 0 }: { pose: CuePose; reques
     </div>;
 }
 
-export function StudentAvatar({ courseId, defaultVisible, speaking, recording, studentSpeaking, completedAnswers, preparing }: {
-    courseId: string; defaultVisible: boolean; speaking: boolean; recording: boolean; studentSpeaking: boolean; completedAnswers: number; preparing: boolean;
+export function StudentAvatar({ courseId, defaultVisible, speaking, recording, studentSpeaking, completedAnswers, preparing, finished = false }: {
+    courseId: string; defaultVisible: boolean; speaking: boolean; recording: boolean; studentSpeaking: boolean; completedAnswers: number; preparing: boolean; finished?: boolean;
 }) {
     const key = 'speakwise:avatar:' + courseId;
     const [visible, setVisible] = useState(() => {
@@ -100,7 +100,8 @@ export function StudentAvatar({ courseId, defaultVisible, speaking, recording, s
     }, [recording, speaking, studentSpeaking, completedAnswers, preparing, visible]);
     const askingPose = (['speak','pinpoint','explain'] as const)[completedAnswers % 3];
     const invitation = completedAnswers % 2 === 0 ? 'offer' : 'invite';
-    const pose = speaking ? askingPose : recording && inviting && !studentSpeaking ? invitation : listeningPose;
+    // Applause thanks the student for finishing. It plays once and says nothing about the score.
+    const pose = finished ? 'applaud' : speaking ? askingPose : recording && inviting && !studentSpeaking ? invitation : listeningPose;
     return <div className="cue-controls">
         <div className="flex items-center justify-between gap-2">
             <span className="text-xs font-semibold text-slate-300">AI interviewer</span>
@@ -139,11 +140,11 @@ export function TeacherAvatarPreview() {
             <InterviewerAvatar pose={preview} request={manualRequest} />
             <div className="flex flex-wrap justify-center gap-3">
                 {([['offer','Invite an answer'],['attend','Listen closely'],['pinpoint','Emphasize a detail'],
-                    ['consider','Rest chin'],['yawn','Cover a yawn'],['stretch','Stretch']] as const).map(([pose,label]) =>
+                    ['consider','Think it over'],['yawn','Cover a yawn'],['stretch','Stretch'],['applaud','Applaud at the end']] as const).map(([pose,label]) =>
                     <button key={pose} type="button" className="text-xs text-emerald-300 underline"
                         onClick={() => { setPreview(pose); setManualRequest(value => value+1); }}>{label}</button>)}
             </div>
-            <p className="text-sm text-center" role="status">{['speak','explain','pinpoint'].includes(preview) ? 'Asking a question' : ['invite','offer'].includes(preview) ? 'Your turn' : preview === 'fold' || preview === 'consider' ? 'Waiting for a response' : preview === 'stretch' || preview === 'yawn' ? 'Before the interview' : 'Listening'}</p>
+            <p className="text-sm text-center" role="status">{['speak','explain','pinpoint'].includes(preview) ? 'Asking a question' : ['invite','offer'].includes(preview) ? 'Your turn' : preview === 'fold' || preview === 'consider' ? 'Waiting for a response' : preview === 'stretch' || preview === 'yawn' ? 'Before the interview' : preview === 'applaud' ? 'Interview completed' : 'Listening'}</p>
         </>}
     </div>;
 }

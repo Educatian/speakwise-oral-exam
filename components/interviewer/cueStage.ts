@@ -3,7 +3,11 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { createArcadeInk } from './arcadeInk';
 
-export type CuePose = 'listen' | 'speak' | 'invite' | 'focus' | 'fold' | 'explain' | 'lean' | 'consider' | 'yawn' | 'stretch' | 'offer' | 'attend' | 'pinpoint';
+export type CuePose = 'listen' | 'speak' | 'invite' | 'focus' | 'fold' | 'explain' | 'lean' | 'consider' | 'yawn' | 'stretch' | 'offer' | 'attend' | 'pinpoint' | 'applaud';
+
+// The earlier Blender-built Cue stays in the repo as a fallback: set this to true to load
+// cue-classic.glb with its ink outline (it has every pose except 'applaud').
+const CLASSIC = false;
 
 /** The caller owns the canvas. All assets are served by SpeakWise. */
 export function mountCue(canvas: HTMLCanvasElement, onReady: () => void, onFailure: () => void) {
@@ -11,13 +15,13 @@ export function mountCue(canvas: HTMLCanvasElement, onReady: () => void, onFailu
     renderer.setPixelRatio(THREE.MathUtils.clamp(window.devicePixelRatio, 1.3, 1.6));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    const ink = createArcadeInk(renderer);
+    const ink = CLASSIC ? createArcadeInk(renderer) : undefined;
     const scene = new THREE.Scene();
     const studio = new RoomEnvironment();
     const pmrem = new THREE.PMREMGenerator(renderer);
     const environment = pmrem.fromScene(studio, .05, .1, 20, { size: 64 });
     scene.environment = environment.texture;
-    scene.environmentIntensity = .38;
+    scene.environmentIntensity = CLASSIC ? .38 : .55;
     studio.dispose();
     pmrem.dispose();
     const camera = new THREE.OrthographicCamera(-1.8, 1.8, 1.48, -1.48, .1, 20);
@@ -71,12 +75,12 @@ export function mountCue(canvas: HTMLCanvasElement, onReady: () => void, onFailu
         camera.bottom = -camera.top;
         camera.updateProjectionMatrix();
         renderer.setSize(width, height, false);
-        ink.resize(width,height);
+        ink?.resize(width,height);
     });
     observer.observe(canvas);
     const fail = () => { if (!disposed) onFailure(); };
     canvas.addEventListener('webglcontextlost', fail);
-    new GLTFLoader().load('/interviewer/cue.glb?v=7', gltf => {
+    new GLTFLoader().load(CLASSIC ? '/interviewer/cue-classic.glb?v=7' : '/interviewer/cue.glb?v=10', gltf => {
         if (disposed) { release(gltf.scene); return; }
         scene.add(gltf.scene);
         const timeline = gltf.animations[0];
@@ -101,7 +105,8 @@ export function mountCue(canvas: HTMLCanvasElement, onReady: () => void, onFailu
         const after = new Map<THREE.AnimationAction, CuePose>([
             [invite, 'listen'], [action('yawn', 1022, 1130), 'listen'],
             [action('stretch', 1132, 1276), 'listen'], [action('offer', 1278, 1336), 'listen'],
-            [action('attend', 1338, 1432), 'focus'], [action('pinpoint', 1434, 1530), 'speak']
+            [action('attend', 1338, 1432), 'focus'], [action('pinpoint', 1434, 1530), 'speak'],
+            [action('applaud', 1532, 1640), 'listen']
         ]);
         for (const gesture of after.keys()) {
             gesture.setLoop(THREE.LoopOnce, 1);
@@ -117,7 +122,7 @@ export function mountCue(canvas: HTMLCanvasElement, onReady: () => void, onFailu
             if (document.hidden || now - lastFrame < 1000 / 30) return;
             mixer!.update(Math.min((now - lastFrame) / 1000, .08));
             lastFrame = now;
-            ink.render(scene, camera);
+            if (ink) ink.render(scene, camera); else renderer.render(scene, camera);
             if (!ready) { ready = true; onReady(); }
         });
     }, undefined, fail);
@@ -131,7 +136,7 @@ export function mountCue(canvas: HTMLCanvasElement, onReady: () => void, onFailu
             mixer?.stopAllAction();
             release(scene);
             environment.dispose();
-            ink.dispose();
+            ink?.dispose();
             renderer.dispose();
             renderer.forceContextLoss();
         }

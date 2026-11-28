@@ -1,0 +1,13 @@
+{
+ "space": "world",
+ "note": "Blender world metres on work/rigged_meshy.glb (x = her left, -y = front, z = up), read off a measured front render. The automatic landmarks put the mouth about 1 cm low and sized the lids to the lens openings.",
+ "points": {
+  "eye_L": [0.038, -0.139, 1.406], "eye_R": [-0.040, -0.139, 1.404],
+  "eye_L_top": [0.038, -0.137, 1.419], "eye_L_bot": [0.038, -0.137, 1.392],
+  "eye_R_top": [-0.040, -0.137, 1.418], "eye_R_bot": [-0.040, -0.137, 1.391],
+  "brow_L": [0.043, -0.130, 1.456], "brow_R": [-0.043, -0.130, 1.456],
+  "mouth_L": [0.043, -0.132, 1.344], "mouth_R": [-0.044, -0.132, 1.343],
+  "mouth_top": [0.0, -0.155, 1.337], "mouth_bot": [0.0, -0.155, 1.328],
+  "nose": [0.0, -0.160, 1.362], "chin": [0.0, -0.120, 1.292], "forehead": [0.0, -0.147, 1.486]
+ }
+}
