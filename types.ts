@@ -268,6 +268,7 @@ export interface CourseTemplate {
 }
 
 export interface CourseInterviewSettings {
+  showInterviewerAvatar?: boolean;
   silenceThresholdMs: number;
   minTurnDurationMs: number;
 }

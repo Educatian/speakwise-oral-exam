@@ -65,6 +65,7 @@ export default defineConfig(({ mode }) => {
                 output: {
                     manualChunks(id) {
                         if (!id.includes('node_modules')) return undefined;
+                        if (id.includes('/three/')) return 'avatar-renderer';
                         if (id.includes('@supabase')) return 'supabase-vendor';
                         if (id.includes('@google/genai')) return 'gemini-vendor';
                         if (id.includes('mammoth')) return 'document-vendor';
