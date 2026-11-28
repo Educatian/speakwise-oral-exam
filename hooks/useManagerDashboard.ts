@@ -57,6 +57,7 @@ export function useManagerDashboard({
     const [instructorPin, setInstructorPin] = useState('');
     const [coursePassword, setCoursePassword] = useState('');
     const [coursePrompt, setCoursePrompt] = useState('');
+    const [showInterviewerAvatar, setShowInterviewerAvatar] = useState(false);
     const [silenceThresholdMs, setSilenceThresholdMs] = useState(3000);
     const [minTurnDurationMs, setMinTurnDurationMs] = useState(700);
     const [selectedInstitutionId, setSelectedInstitutionId] = useState(currentInstitution?.schoolId || '');
@@ -306,6 +307,7 @@ export function useManagerDashboard({
             createdByEmail: effectiveEmail || '',
             createdAt: Date.now(),
             interviewSettings: {
+                showInterviewerAvatar,
                 silenceThresholdMs,
                 minTurnDurationMs
             }
@@ -354,6 +356,7 @@ export function useManagerDashboard({
         setCoursePrompt(template.prompt);
         setSelectedInstitutionId(template.institutionId || currentInstitution?.schoolId || '');
         setTemplateDraftName(template.name);
+        setShowInterviewerAvatar(template.interviewSettings?.showInterviewerAvatar ?? false);
         setSilenceThresholdMs(template.interviewSettings?.silenceThresholdMs || 3000);
         setMinTurnDurationMs(template.interviewSettings?.minTurnDurationMs || 700);
         setLeftPanelMode('create');
@@ -433,6 +436,7 @@ export function useManagerDashboard({
             institutionId: selectedInstitutionId,
             institutionName: selectedInstitution?.name || currentInstitution?.schoolName || '',
             interviewSettings: {
+                showInterviewerAvatar,
                 silenceThresholdMs,
                 minTurnDurationMs
             }
@@ -446,6 +450,7 @@ export function useManagerDashboard({
         setInstructorPin('');
         setCoursePassword('');
         setCoursePrompt('');
+        setShowInterviewerAvatar(false);
         setSilenceThresholdMs(3000);
         setMinTurnDurationMs(700);
         setSelectedInstitutionId(currentInstitution?.schoolId || '');
@@ -518,6 +523,7 @@ export function useManagerDashboard({
             instructorPin, setInstructorPin,
             coursePassword, setCoursePassword,
             coursePrompt, setCoursePrompt,
+            showInterviewerAvatar, setShowInterviewerAvatar,
             silenceThresholdMs, setSilenceThresholdMs,
             minTurnDurationMs, setMinTurnDurationMs,
             selectedInstitutionId, setSelectedInstitutionId,

@@ -3,6 +3,7 @@ import { Course, InterviewStatus, Submission } from '../../types';
 import { useGeminiLive } from '../../hooks';
 import { createInterviewerPrompt } from '../../lib/prompts/interviewerSystem';
 import { AudioVisualizer } from '../AudioVisualizer';
+import { StudentAvatar } from '../interviewer/InterviewerAvatar';
 import { Button, MicTest } from '../ui';
 import { EvaluationService } from '../../lib/services/EvaluationService';
 import { usePresence } from '../../hooks/usePresence';
@@ -263,6 +264,13 @@ export const InterviewSessionView: React.FC<InterviewSessionViewProps> = ({ cour
                 </div>
 
                 <div className="glass-panel p-5 sm:p-6 rounded-3xl flex flex-col items-center justify-center min-h-[150px]">
+                    <div key={course.id} className="w-full">
+                        <StudentAvatar courseId={course.id} defaultVisible={course.interviewSettings?.showInterviewerAvatar ?? false}
+                            completedAnswers={transcriptions.filter(turn => turn.speaker === 'user').length}
+                            preparing={status === InterviewStatus.IDLE}
+                            speaking={status === InterviewStatus.LIVE && isInterviewerSpeaking}
+                            recording={status === InterviewStatus.LIVE && turnPhase === 'recording'} studentSpeaking={isUserSpeaking} />
+                    </div>
                     <AudioVisualizer isLive={status === InterviewStatus.LIVE} isActive={turnPhase === 'recording'} color={turnPhase === 'ai_speaking' ? 'accent' : 'primary'} audioLevel={turnPhase === 'recording' ? audioLevel : 0} />
                     <p className={`text-[10px] mt-4 uppercase font-bold tracking-[0.2em] text-center ${turnPhase === 'recording' ? 'text-red-400' : turnPhase === 'ai_speaking' ? 'text-cyan-300' : turnPhase === 'transcribing' ? 'text-amber-400' : 'text-slate-600'}`} aria-hidden="true">
                         {statusCopy(status, turnPhase)}

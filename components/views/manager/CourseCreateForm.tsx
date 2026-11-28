@@ -2,6 +2,7 @@ import React from 'react';
 import { Institution } from '../../../types';
 import { Button, Input, Textarea } from '../../ui';
 import { ManagerDashboard } from '../../../hooks/useManagerDashboard';
+import { TeacherAvatarPreview } from '../../interviewer/InterviewerAvatar';
 
 interface CourseCreateFormProps {
     form: ManagerDashboard['form'];
@@ -29,6 +30,7 @@ export const CourseCreateForm: React.FC<CourseCreateFormProps> = ({
         instructorPin, setInstructorPin,
         coursePassword, setCoursePassword,
         coursePrompt, setCoursePrompt,
+        showInterviewerAvatar, setShowInterviewerAvatar,
         silenceThresholdMs, setSilenceThresholdMs,
         minTurnDurationMs, setMinTurnDurationMs,
         selectedInstitutionId, setSelectedInstitutionId,
@@ -126,7 +128,12 @@ export const CourseCreateForm: React.FC<CourseCreateFormProps> = ({
 
             <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4 space-y-4">
                 <div>
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Interview tuning</p>
+                    <label className="flex items-center gap-2 text-sm text-slate-200">
+                        <input type="checkbox" checked={showInterviewerAvatar} onChange={e => setShowInterviewerAvatar(e.target.checked)} />
+                        Show interviewer avatar by default
+                    </label>
+                    <TeacherAvatarPreview />
+                    <p className="mt-4 text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Interview tuning</p>
                     <p className="text-xs text-slate-500 mt-1">Adjust how long the system waits before closing a turn and how short a captured response can be.</p>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
